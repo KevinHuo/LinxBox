@@ -41,8 +41,10 @@ pnpm install        # 安装依赖
 pnpm check          # 格式检查 + lint + 类型检查 + 测试与覆盖率
 pnpm dev            # 构建后启动 Electron 窗口
 pnpm build          # 构建 dist/ 与 dist-preload/
-pnpm package        # 构建未签名的 macOS 开发包（release/）
+pnpm package        # 构建未签名的 macOS 开发包（release/mac-arm64/LinxBox.app）
 ```
+
+`pnpm package` 产出的是**未签名、未 notarize** 的开发包，只用于本机验证。代码签名与最低安全版本属于功能启用门禁，不在本阶段。
 
 单项命令：
 
@@ -106,3 +108,18 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - 本地状态保存在内存，进程退出即丢失；数据库路径在诊断页显示为"尚未创建"
 - 项目路径显示时折叠家目录并只保留末两段
 - `renderer-prototype/` 与 `renderer/` 的展示层存在重复，等 Spec Accepted 后逐文件复核迁移并删除原型
+
+## 已验证与未验证
+
+已验证（本机，2026-10-24）：
+
+- `pnpm check` 全绿：Prettier、ESLint（type-aware）、`tsc --noEmit`、281 个测试
+- 覆盖率门槛通过：语句 100%、行 100%、函数 100%、分支 99.41%
+- `pnpm dev` 启动后主窗口就绪、渲染进程加载完成、preload 无报错、页面无 CSP 警告
+- `pnpm package` 产出 `release/mac-arm64/LinxBox.app`，该产物可启动且 renderer 从 `app.asar` 内正常加载
+
+未验证：
+
+- 真实 Gateway 连接、真实 Codex app-server、真实 SQLite 持久化、真实 macOS 端到端任务链路
+- 安装包签名与 notarize
+- 其他 macOS 架构与系统版本
