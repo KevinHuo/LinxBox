@@ -10,7 +10,7 @@
 
 - **规则从仓库来，不从个人环境来**。无论用哪个助手，都以本文件、[docs/README.md](docs/README.md) 及其索引的文档为准。个人机器上的私有配置、prompt、skill、记忆只是加速器，不构成契约；只存在于个人工具里的规则对其他协作者（包括用 Codex 的同事）不生效，所以需要团队遵守的规则必须写进仓库。
 - **执行点可以不同，行为必须一致**。Codex 自动读取仓库根的 `AGENTS.md`，其他助手按各自的约定读取本文件或等价入口；无论从哪进入，读到的约束层级、产出格式和门禁要求相同。
-- **一个任务一个 DRI**。同一模块的公共契约文件同一时间只由 [OWNERS.md](OWNERS.md) 中的 DRI 修改。多个助手并行推进时按主模块和受影响模块分工，不并行写同一份契约、schema 或状态定义；公共状态字符串、DTO 和错误码一律来自契约包，不在各自分支里各造一份。
+- **一个任务一个 DRI**。同一模块的公共契约文件同一时间只由当前开发 Issue 中指定的 DRI 修改。多个助手并行推进时按主模块和受影响模块分工，不并行写同一份契约、schema 或状态定义；公共状态字符串、DTO 和错误码一律来自契约包，不在各自分支里各造一份。
 - **交接以仓库为准**。换助手或换人继续同一任务时，交接依据是仓库内文件、当前开发 Issue 和 PR，不依赖上一位的对话记录或未提交到仓库的中间结论。
 - **验收与工具无关**。判断交付是否合格，只看开发 Issue 的验收条件、契约引用、门禁证据分级和格式；不因使用了某个助手而放宽或加严。
 - **被控制的目标仓库遵守其自身规则**。在 LinxBox 之外操作他人仓库时，不擅自覆盖其指令、配置和 CI。
@@ -45,7 +45,7 @@ MCP 工具、Device/Linx Presentation、Gateway/Desktop WSS、任务/回执状�
 
 ## 开始前
 
-- 读取 [README.md](README.md)、[docs/README.md](docs/README.md)、[CODING_STANDARDS.md](CODING_STANDARDS.md)、[CONTRIBUTING.md](CONTRIBUTING.md)、[OWNERS.md](OWNERS.md)、主模块文档、当前开发 Issue、其关联的 Proposal 与契约，以及相关实现和测试。
+- 读取 [README.md](README.md)、[docs/README.md](docs/README.md)、[CODING_STANDARDS.md](CODING_STANDARDS.md)、[CONTRIBUTING.md](CONTRIBUTING.md)、主模块文档、当前开发 Issue、其关联的 Proposal 与契约，以及相关实现和测试。
 - 若任务改变协议、状态权威、持久化、失败语义、运行时职责、安全边界或跨模块行为，先按 [Spec 流程](docs/specs/README.md)建立 bounded Spec；`Proposed` 不授权实现。
 - 用一句话复述本次目标，列出范围、非目标和可检查的验收条件，并确认实现与每项条件的对应关系。
 - 确认开发 Issue 的主模块、受影响模块和对应负责人；跨模块契约变更须由边界两侧共同评审。

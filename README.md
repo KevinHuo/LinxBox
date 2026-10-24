@@ -30,14 +30,13 @@
 | `contracts` 契约与领域 | MCP、Gateway/Desktop、状态机、结果 schema 和 fixtures |
 | `quality` 集成与质量 | 端到端验收、契约测试、CI 和使用文档 |
 
-详细边界、主负责人和跨模块评审规则见 [OWNERS.md](OWNERS.md)。物理代码目录由首个 bootstrap Task 按已接受的目录树创建；客户端操作细节与 MCP 工具契约分离。
+详细模块边界见 [docs/modules.md](docs/modules.md)；各模块的主负责人、必要 Reviewer 与跨模块 Integration Owner 在对应开发 Issue 中指定。物理代码目录由首个 bootstrap Task 按已接受的目录树创建；客户端操作细节与 MCP 工具契约分离。
 
 ## 参与开发
 
 - [AGENTS.md](AGENTS.md)：Claude Code、Codex 等 Agent 的工作要求。
 - [CODING_STANDARDS.md](CODING_STANDARDS.md)：代码组织、输入与错误处理、测试及覆盖率要求。
 - [CONTRIBUTING.md](CONTRIBUTING.md)：Issue、分支、Commit、PR 和审查流程。
-- [OWNERS.md](OWNERS.md)：模块边界、负责人矩阵和跨模块协作规则。
 - [Issue 模板](.github/ISSUE_TEMPLATE/)及 [PR 模板](.github/pull_request_template.md)：后续协作入口。
 
 ## 需求与契约

@@ -61,12 +61,12 @@ description: |
 
 ### 仓库当前没有实现代码
 
-`apps/`、`contracts/`、`tests/` 目前只有空骨架（`.gitkeep`），且 SPEC-0001 的工具链选型（D-2 校验库、D-3 类型生成、D-4 测试与覆盖率工具）还没锁定。这种状态下：
+`apps/` 与 `tests/` 目前只有空骨架（`.gitkeep`），且 SPEC-0001 的工具链选型（D-2 校验库、D-3 类型生成、D-4 测试与覆盖率工具）还没锁定。这种状态下：
 
 - 交付物是契约文本 + Task Issue + 关联 Proposal + Execution Spec + 验收条件，不是代码。
 - 不要写依赖具体库 API 的实现，也不要在仓库里预置 `package.json`、`tsconfig.json`、`pnpm-workspace.yaml` 或 CI——那些属于 SPEC-0001 Slice 1 的工具链 bootstrap，选型锁定前进入仓库就是替维护者做了决定。
 - 文件清单可以按 `docs/code-structure.md` §2 的冻结目录树给出落位示意，但要注明实际布局以 Slice 1 的结果为准。
-- 共享契约落在仓库根 `contracts/` 纯数据目录（schema 与 fixtures），不是独立包；见 `docs/adr/0004-shared-contracts-as-plain-data.md`。
+- 契约的权威表述在 `docs/contracts/` 的文档；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定，文档阶段不预建目录。见 `docs/adr/0004-shared-contracts-as-plain-data.md`。
 
 缺少实现所必需的契约、Issue 未关联 Proposal、或 Issue 与契约互相矛盾时，先说明缺口并请维护者裁定，不要靠推断先写实现。
 

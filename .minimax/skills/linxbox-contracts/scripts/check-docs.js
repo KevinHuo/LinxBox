@@ -251,7 +251,7 @@ if (fs.existsSync(treePath)) {
     expected.add(stack.join('/'));
   }
 
-  const ROOTS = ['apps', 'contracts', 'tests'];
+  const ROOTS = ['apps', 'tests'];
   const actual = new Set();
   for (const root of ROOTS) {
     const full = path.join(REPO, root);

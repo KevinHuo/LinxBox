@@ -83,4 +83,4 @@ sequenceDiagram
 | 设备页面、游标、未确认草稿和有界缓存 | Device |
 | 自然语言指代 | 灵矽会话，仅作提示 |
 
-完整消息字段见[契约索引](./contracts/README.md)，模块实现顺序和负责人见[模块规范](./modules.md)与 [`OWNERS.md`](../OWNERS.md)。
+完整消息字段见[契约索引](./contracts/README.md)，模块实现顺序见[模块规范](./modules.md)；各模块负责人见对应开发 Issue。

@@ -6,15 +6,17 @@
 
 本文件定义七个模块的职责、依赖方向、状态所有权与交付门禁。跨模块完整链路见[端到端串联](./end-to-end.md)，字段级语义见[契约索引](./contracts/README.md)，目录与分层见[代码与 Desktop UI 结构](./code-structure.md)。
 
-| 模块 | 一句话职责 | 主负责人 |
-| --- | --- | --- |
-| `device` | 三键任务阅读、图片浏览、输入确认、回执和离线恢复 | `OWNERS.md` 中的 `device` |
-| `linx` | 语音理解、MCP 控制和设备展示通道编排 | `OWNERS.md` 中的 `linx` |
-| `gateway` | 身份绑定、任务事实、可靠投递和脱敏设备投影 | `OWNERS.md` 中的 `gateway` |
-| `desktop` | 本地授权、执行事实、结果整理和用户审阅 | `OWNERS.md` 中的 `desktop` |
-| `codex` | app-server 生命周期到领域事件的唯一适配层 | `OWNERS.md` 中的 `codex` |
-| `contracts` | schema、状态机、版本和跨实现 fixtures | `OWNERS.md` 中的 `contracts` |
-| `quality` | Spec 流程、CI、证据矩阵和真实链路门禁 | `OWNERS.md` 中的 `quality` |
+| 模块 | 一句话职责 |
+| --- | --- |
+| `device` | 三键任务阅读、图片浏览、输入确认、回执和离线恢复 |
+| `linx` | 语音理解、MCP 控制和设备展示通道编排 |
+| `gateway` | 身份绑定、任务事实、可靠投递和脱敏设备投影 |
+| `desktop` | 本地授权、执行事实、结果整理和用户审阅 |
+| `codex` | app-server 生命周期到领域事件的唯一适配层 |
+| `contracts` | schema、状态机、版本和跨实现 fixtures |
+| `quality` | Spec 流程、CI、证据矩阵和真实链路门禁 |
+
+各模块的主负责人、必要 Reviewer 与跨模块 Integration Owner 在对应开发 Issue 的"模块、Spec 与负责人"一节指定，不另设负责人矩阵。
 
 ```text
 device <== device presentation ==> linx <== MCP ==> gateway

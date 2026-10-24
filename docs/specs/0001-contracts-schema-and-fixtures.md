@@ -14,17 +14,17 @@
 ## 1. 定位、依赖和消费者
 
 - 上游契约：本 Spec 只实现 `docs/contracts/` 下四份已接受契约的字段与语义，不新增、不改写契约含义。
-- 下游消费者：`apps/gateway` 的 `mcp-transport`、`presentation`、`broker`、`tasks`；`apps/desktop` 的 `daemon/gateway-client`、`tasks`、`codex-adapter`、`local-store`；`apps/admin-cli`；`tests/fixtures/device`（Issue #4 离线演示 fixture）；`contracts/fixtures` 的 producer/consumer 契约测试。
+- 下游消费者：`apps/gateway` 的 `mcp-transport`、`presentation`、`broker`、`tasks`；`apps/desktop` 的 `daemon/gateway-client`、`tasks`、`codex-adapter`、`local-store`；`apps/admin-cli`；`tests/fixtures/device`（Issue #4 离线演示 fixture）；producer/consumer 契约测试。
 - 依赖 Spec/PR：[Task #5](https://github.com/KevinHuo/LinxBox/issues/5)（仓库内契约基线入库）。
 - 被替代内容：无。这是本仓库首次把契约实现为 schema、类型与 fixtures。
 - 接受阻塞项：
-  1. DRI、必要 Reviewer、Integration Owner 尚未指派（`OWNERS.md` 全部为"待分配"）。
+  1. DRI、必要 Reviewer、Integration Owner 尚未指派。
   2. JSON Schema 校验库、类型生成方式、测试运行器与覆盖率工具未锁定。按 [`docs/code-structure.md`](../code-structure.md) §1，这些由 bootstrap Task/ADR 一次性选定并锁版，锁版前不得开始依赖其 API 的实现。
   3. `device-presentation/v1` 的 wire encoding 未冻结，需按真实灵矽能力确认。
 
 ## 2. 当前实现事实
 
-- 仓库当前没有业务代码：`apps/` 与 `contracts/` 只有空骨架，`.minimax/` 是助手工作规范。
+- 仓库当前没有业务代码：`apps/` 只有空骨架，`.minimax/` 是助手工作规范。
 - 没有 schema 文件、类型定义、fixtures、测试运行器或 CI。
 - 已有事实仅限 `docs/` 下的语义基线文档，以及 Issue #4 提供的设备端 UI/状态机离线 fixture 需求。
 
@@ -57,14 +57,16 @@
 
 ## 6. 组件、接口与版本策略
 
-| 位置 | 内容 | 上游契约 |
+契约的权威表述是 [`docs/contracts/`](../contracts/) 的文档；下表是本 Spec 要产出的实现产物，落位由对应 Slice 决定，文档阶段不预建目录。
+
+| 产物 | 内容 | 上游契约 |
 | --- | --- | --- |
-| `contracts/schemas/mcp.schema.json` | 六个工具的请求/结果 schema、progress payload、`PublicError` | `linxbox.mcp/v1` |
-| `contracts/schemas/device.schema.json` | snapshot/delta、content.page、image manifest、draft、receipt | `device-presentation/v1` |
-| `contracts/schemas/gateway-desktop.schema.json` | envelope、`client.*`、`project.*`、`task.*`、`presentation.*`、`command.receipt` | `1.0` |
-| `contracts/schemas/result.schema.json` | `task-result-v1` 结构与字段规则 | `task-result-v1` |
-| `contracts/schemas/domain.schema.json` | 标识符值对象、Task/Receipt 状态与转换、风险等级 | `task-domain/v1` |
-| `contracts/fixtures/` | 跨实现正反例输入 | 以上全部 |
+| MCP schema | 六个工具的请求/结果 schema、progress payload、`PublicError` | `linxbox.mcp/v1` |
+| Device schema | snapshot/delta、content.page、image manifest、draft、receipt | `device-presentation/v1` |
+| Gateway/Desktop schema | envelope、`client.*`、`project.*`、`task.*`、`presentation.*`、`command.receipt` | `1.0` |
+| Result schema | `task-result-v1` 结构与字段规则 | `task-result-v1` |
+| Domain 类型 | 标识符值对象、Task/Receipt 状态与转换、风险等级 | `task-domain/v1` |
+| Fixtures | 跨实现正反例输入 | 以上全部 |
 
 - 版本策略：新增 optional 字段在同一主版本内演进；删除、改名、改变类型或改变语义必须升约主版本，并在 fixture 与迁移说明中体现。
 - `contract_version` 与 `protocol_version` 由 schema 常量导出，不允许散落硬编码字面量。
@@ -182,7 +184,7 @@ sending -> desktop_received -> queued -> agent_accepted -> running
 | --- | --- | --- | --- | --- |
 | Docs / Schema | 四份契约的 schema 文件与字段级 fixture 全部存在且可校验 | 仓库内 schema 校验命令（随工具链锁定） | contracts DRI | Not run |
 | Unit / Coverage | 状态机合法/非法转换、标识符类型约束、上限与长度约束 | 单测 + 覆盖率报告 | contracts DRI | Not run |
-| Contract | producer（Gateway）与 consumer（Desktop、Device）共用同一 fixture 双向校验 | `contracts/fixtures` 契约测试 | contracts DRI + Integration Owner | Not run |
+| Contract | producer（Gateway）与 consumer（Desktop、Device）共用同一 fixture 双向校验 | producer/consumer 契约测试 | contracts DRI + Integration Owner | Not run |
 | Integration | schema 与真实 app-server / 灵矽 payload 的字段映射 | 随 Gateway/Desktop slice 提供 | integration owner | Not run |
 | Fault / Security | 未知字段、越权项目、路径逃逸、重复幂等键、乱序 sequence、`details` 泄漏检查 | 安全负例 fixture + 校验测试 | quality 模块 | Not run |
 | Simulated E2E | mock app-server 与模拟灵矽下的消息往返 | 随 Gateway/Desktop slice 提供 | integration owner | Not run |
@@ -194,9 +196,9 @@ sending -> desktop_received -> queued -> agent_accepted -> running
 | --- | --- | --- | --- | --- | --- |
 | 1 | 工具链与骨架：pnpm workspace、schema 校验库、类型生成、测试运行器与覆盖率接入 | 待指派 | quality 模块主负责人 | ADR-0003、ADR-0004、工具链选型决策 | 可运行的 `apps/*` 骨架与 CI 入口 |
 | 2 | 领域类型与状态机：标识符值对象、Task/Receipt 转换、风险等级（实现于各应用，语义以 schema 为准） | 待指派 | contracts 备份评审人 | Slice 1 | 领域类型与状态机单测 |
-| 3 | `contracts/schemas/` 的 MCP 与 Result schema | 待指派 | contracts 备份评审人 | Slice 2 | MCP 工具与结果 schema、错误 schema |
-| 4 | `contracts/schemas/` 的 Device 与 Gateway/Desktop schema | 待指派 | contracts 备份评审人 | Slice 2 | 展示投影、envelope 与命令/事件 schema |
-| 5 | `contracts/fixtures/` 与 producer/consumer 契约测试 | 待指派 | quality 模块主负责人 | Slice 3、4 | 跨实现契约测试与安全负例 |
+| 3 | MCP 与 Result schema（落位由本 Slice 决定） | 待指派 | contracts 备份评审人 | Slice 2 | MCP 工具与结果 schema、错误 schema |
+| 4 | Device 与 Gateway/Desktop schema（落位由本 Slice 决定） | 待指派 | contracts 备份评审人 | Slice 2 | 展示投影、envelope 与命令/事件 schema |
+| 5 | 跨实现 fixtures 与 producer/consumer 契约测试（落位由本 Slice 决定） | 待指派 | quality 模块主负责人 | Slice 3、4 | 跨实现契约测试与安全负例 |
 
 ## 14. 待决策与风险
 

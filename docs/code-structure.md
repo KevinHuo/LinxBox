@@ -7,7 +7,7 @@
 ## 1. 技术基线
 
 - TypeScript strict monorepo，使用 `pnpm-workspace.yaml` 管理 `apps/*`；`packageManager` 字段和 lockfile 锁定 pnpm 版本。
-- 跨实现共享的 schema、领域语义和 fixtures 以仓库根 `contracts/` 承载，只放纯数据、不含运行时代码；见 [ADR-0004](adr/0004-shared-contracts-as-plain-data.md)。
+- 契约的权威表述是 [`docs/contracts/`](./contracts/) 的文档；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定，文档阶段不预建目录。见 [ADR-0004](adr/0004-shared-contracts-as-plain-data.md)。
 - Node.js 使用开始实现时的 active LTS，在 `.node-version`、CI 和 Desktop 构建中锁定同一版本，不跟随本机漂移。
 - Gateway 是单进程模块化单体，使用 PostgreSQL 保存云端事实。
 - Desktop 使用 Electron，Renderer、Main 和 Daemon 分离；Renderer 启用 sandbox 和 context isolation、禁用 Node integration，只通过最小化 `contextBridge` API 访问 Main/Daemon；SQLite 保存本地执行事实。
@@ -50,9 +50,6 @@ LinxBox/
 │   │           ├── local-store/
 │   │           └── codex-adapter/
 │   └── admin-cli/                      # client/binding/token 运维
-├── contracts/                          # 跨实现共享的纯数据，无运行时代码
-│   ├── schemas/                        # MCP / Device / Gateway-Desktop / Result 的 JSON Schema
-│   └── fixtures/                       # producer/consumer 共用的正反例输入
 ├── docs/
 │   ├── contracts/
 │   ├── adr/
@@ -128,7 +125,7 @@ MVP 没有可信审批 UI；`approval_required` 显示为已拒绝/需要未来�
 ## 5. 模块交付约定
 
 - 一个 Task 只能有一个主模块，但可列出多个受影响模块。
-- 修改 `contracts/schemas/` 时必须同时修改 `contracts/fixtures/` 和受影响的 producer/consumer 测试。
+- 修改公共 schema 时必须同时修改对应 fixtures 和受影响的 producer/consumer 测试。
 - 跨模块的重复 DTO、状态字符串或 ID 别名不得私自复制，必须来自契约包。
 - 固件和灵矽实现可位于各自工程；LinxBox 仍拥有跨边界 schema、sanitized fixtures 和 E2E 证据，不复制外部工程源码。
 - 任何子目录如需更细规则，可新增就近 `AGENTS.md`，但不得放宽根目录规则。

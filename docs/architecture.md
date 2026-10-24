@@ -320,10 +320,9 @@ apps/
 ├── gateway/
 ├── desktop/
 └── admin-cli/
-contracts/        # 跨实现共享的 schema 与 fixtures，纯数据
 ```
 
-插件能力属于产品化阶段，MVP 不预建目录。
+契约的权威表述在 `docs/contracts/`；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定。插件能力属于产品化阶段，MVP 不预建目录。
 
 MVP Profile：Gateway 模块化单体 + PostgreSQL；Electron Desktop 分离 UI/Main/Daemon + SQLite + Codex app-server；灵矽包含公共 MCP 和独立 Presentation Bridge；ESP32 实现三键任务阅读与确认状态机。完整的目录、分层和 UI 组件树见[代码与 Desktop UI 结构](./code-structure.md)，本节不另建一套实现规范。
 
