@@ -71,6 +71,50 @@ export interface CodexSessionFacts {
   readonly status: string;
 }
 
+/** A project the provider groups working directories under. */
+export interface CodexProjectFacts {
+  readonly projectId: string;
+  readonly name: string;
+  readonly roots: readonly string[];
+  readonly position: number;
+}
+
+/** The kind of a detail entry inside a conversation. */
+export type CodexDetailKind =
+  | 'user'
+  | 'agent'
+  | 'reasoning'
+  | 'command'
+  | 'file-change'
+  | 'mcp'
+  | 'web-search'
+  | 'image'
+  | 'image-generation'
+  | 'compaction'
+  | 'other';
+
+/** One entry inside a conversation. */
+export interface CodexDetailFacts {
+  readonly kind: CodexDetailKind;
+  readonly id: string;
+  readonly title: string;
+  readonly body: string;
+  readonly meta: string | null;
+}
+
+/** A conversation with every detail entry. */
+export interface CodexConversationFacts {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly turns: readonly {
+    readonly turnId: string;
+    readonly status: string;
+    readonly startedAt: string | null;
+    readonly details: readonly CodexDetailFacts[];
+  }[];
+}
+
 /** One message inside a session transcript. */
 export interface CodexSessionMessageFacts {
   readonly id: string;
@@ -177,6 +221,33 @@ export function projectStateLabel(project: ProjectFacts): string {
   return project.enabled ? '可供灵矽使用' : '当前已停用';
 }
 
+/**
+ * Find the project a session belongs to.
+ *
+ * A session belongs to a project when its working directory is the project
+ * root or lives inside it.
+ */
+export function findProjectForPath(
+  projects: readonly CodexProjectFacts[],
+  directory: string | null,
+): CodexProjectFacts | null {
+  if (directory === null) {
+    return null;
+  }
+  for (const project of projects) {
+    for (const root of project.roots) {
+      if (directory === root) {
+        return project;
+      }
+      const prefix = root.endsWith('/') ? root : `${root}/`;
+      if (directory.startsWith(prefix)) {
+        return project;
+      }
+    }
+  }
+  return null;
+}
+
 /** Flatten a session transcript into a chronological message list. */
 export function flattenSessionMessages(
   session: CodexSessionDetailFacts,
@@ -244,6 +315,8 @@ export function isCodexTurnRunning(turn: CodexTurnFacts): boolean {
 export interface LinxboxBridge {
   probeCodex(): Promise<unknown>;
   listCodexSessions(payload?: unknown): Promise<unknown>;
+  listCodexProjects(payload?: unknown): Promise<unknown>;
+  readCodexConversation(payload: unknown): Promise<unknown>;
   continueCodexSession(payload: unknown): Promise<unknown>;
   authorizeCodexSession(payload: unknown): Promise<unknown>;
   readCodexSession(payload: unknown): Promise<unknown>;

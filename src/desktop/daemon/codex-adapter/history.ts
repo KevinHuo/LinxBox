@@ -211,3 +211,307 @@ export function normalizeTurnList(raw: unknown): CodexHistoryTurn[] {
   const data = asArray(result['data']);
   return data.map((turn) => normalizeTurn(turn));
 }
+
+/* ------------------------------------------------------------------ */
+/* 项目                                                                */
+/* ------------------------------------------------------------------ */
+
+/** Codex 自己记录的项目。 */
+export interface CodexProjectSummary {
+  readonly projectId: string;
+  readonly name: string;
+  /** 项目的根目录。 */
+  readonly roots: readonly string[];
+  readonly position: number;
+}
+
+/** Map a raw project object into a project summary. */
+export function normalizeProject(raw: unknown): CodexProjectSummary | null {
+  const project = asRecord(raw);
+  const projectId = asString(project['id']);
+  if (projectId === null) {
+    return null;
+  }
+  const rawRoots = asArray(project['roots']);
+  const roots: string[] = [];
+  for (const root of rawRoots) {
+    const path = asString(asRecord(root)['path']);
+    if (path !== null) {
+      roots.push(path);
+    }
+  }
+  return {
+    projectId,
+    name: asString(project['name']) ?? '(未命名项目)',
+    roots,
+    position: asNumber(project['position']) ?? 0,
+  };
+}
+
+/** Map a raw project list into project summaries. */
+export function normalizeProjectList(raw: unknown): CodexProjectSummary[] {
+  const result = asRecord(raw);
+  const data = asArray(result['data']);
+  const projects: CodexProjectSummary[] = [];
+  for (const item of data) {
+    const project = normalizeProject(item);
+    if (project !== null) {
+      projects.push(project);
+    }
+  }
+  return projects.sort((left, right) => left.position - right.position);
+}
+
+/**
+ * Find the project a session belongs to.
+ *
+ * A session belongs to a project when its working directory is the project
+ * root or lives inside it. A session outside every project belongs to none.
+ */
+export function findProjectForPath(
+  projects: readonly CodexProjectSummary[],
+  directory: string | null,
+): CodexProjectSummary | null {
+  if (directory === null) {
+    return null;
+  }
+  for (const project of projects) {
+    for (const root of project.roots) {
+      if (directory === root) {
+        return project;
+      }
+      const prefix = root.endsWith('/') ? root : `${root}/`;
+      if (directory.startsWith(prefix)) {
+        return project;
+      }
+    }
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* 对话详情                                                            */
+/* ------------------------------------------------------------------ */
+
+/** The kind of a detail entry inside a conversation. */
+export const DETAIL_KINDS = [
+  'user',
+  'agent',
+  'reasoning',
+  'command',
+  'file-change',
+  'mcp',
+  'web-search',
+  'image',
+  'image-generation',
+  'compaction',
+  'other',
+] as const;
+
+export type CodexDetailKind = (typeof DETAIL_KINDS)[number];
+
+/** One entry inside a conversation. */
+export interface CodexDetailItem {
+  readonly kind: CodexDetailKind;
+  readonly id: string;
+  /** One-line summary. */
+  readonly title: string;
+  /** The detail body. May be long. */
+  readonly body: string;
+  /** Extra facts such as the working directory or the exit code. */
+  readonly meta: string | null;
+}
+
+const MAX_BODY = 20000;
+
+/** Cap a body so one huge diff cannot blow up the renderer. */
+function cap(text: string): string {
+  return text.length > MAX_BODY ? `${text.slice(0, MAX_BODY)}\n…(已截断)` : text;
+}
+
+function stringify(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2) ?? '';
+  } catch {
+    return '[无法序列化的值]';
+  }
+}
+
+/**
+ * Map one provider item into a detail entry.
+ *
+ * Every item type the provider emits is mapped to a kind with a readable
+ * title. Unknown types are kept as raw JSON so nothing is silently dropped.
+ */
+export function normalizeDetailItem(item: unknown): CodexDetailItem {
+  const record = asRecord(item);
+  const type = asString(record['type']) ?? 'unknown';
+  const id = asString(record['id']) ?? '';
+
+  switch (type) {
+    case 'userMessage': {
+      const content = asArray(record['content']);
+      const parts: string[] = [];
+      for (const part of content) {
+        const text = asString(asRecord(part)['text']);
+        if (text !== null) {
+          parts.push(text);
+        }
+      }
+      return { kind: 'user', id, title: '你', body: cap(parts.join('\n')), meta: null };
+    }
+
+    case 'agentMessage': {
+      const phase = asString(record['phase']);
+      return {
+        kind: 'agent',
+        id,
+        title: phase === 'commentary' ? 'Codex · 过程' : 'Codex',
+        body: cap(asString(record['text']) ?? ''),
+        meta: null,
+      };
+    }
+
+    case 'reasoning': {
+      const summary = asArray(record['summary']);
+      const content = asArray(record['content']);
+      const parts = [...summary, ...content]
+        .map((part) => stringify(part))
+        .filter((part) => part.length > 0);
+      return {
+        kind: 'reasoning',
+        id,
+        title: '推理',
+        body: parts.length > 0 ? cap(parts.join('\n')) : '(没有可读的推理文本)',
+        meta: null,
+      };
+    }
+
+    case 'commandExecution': {
+      const status = asString(record['status']) ?? 'unknown';
+      const exitCode = asNumber(record['exitCode']);
+      const meta = [asString(record['cwd']), exitCode === null ? null : `exit ${exitCode}`]
+        .filter((part): part is string => part !== null)
+        .join(' · ');
+      return {
+        kind: 'command',
+        id,
+        title: `命令 · ${status}`,
+        body: cap(asString(record['command']) ?? ''),
+        meta: meta.length > 0 ? meta : null,
+      };
+    }
+
+    case 'fileChange': {
+      const changes = asArray(record['changes']);
+      const parts: string[] = [];
+      for (const change of changes) {
+        const entry = asRecord(change);
+        const path = asString(entry['path']) ?? '(未知文件)';
+        const kind = asString(asRecord(entry['kind'])['type']) ?? 'modify';
+        const diff = asString(entry['diff']) ?? '';
+        parts.push(`### ${path} (${kind})\n${diff}`);
+      }
+      const status = asString(record['status']);
+      return {
+        kind: 'file-change',
+        id,
+        title: `文件改动 · ${changes.length} 个${status === null ? '' : ` · ${status}`}`,
+        body: cap(parts.join('\n\n')),
+        meta: null,
+      };
+    }
+
+    case 'mcpToolCall': {
+      const server = asString(record['server']) ?? 'unknown';
+      const tool = asString(record['tool']) ?? 'unknown';
+      const status = asString(record['status']) ?? 'unknown';
+      const result = record['result'];
+      const error = record['error'];
+      return {
+        kind: 'mcp',
+        id,
+        title: `MCP · ${server}/${tool} · ${status}`,
+        body: cap(stringify(record['arguments'])),
+        meta:
+          error !== null && error !== undefined ? cap(stringify(error)) : cap(stringify(result)),
+      };
+    }
+
+    case 'webSearch': {
+      const action = asRecord(record['action']);
+      return {
+        kind: 'web-search',
+        id,
+        title: '搜索',
+        body: cap(asString(record['query']) ?? ''),
+        meta: asString(action['url']) ?? asString(action['type']),
+      };
+    }
+
+    case 'imageView': {
+      return {
+        kind: 'image',
+        id,
+        title: '图片',
+        body: asString(record['path']) ?? '',
+        meta: null,
+      };
+    }
+
+    case 'imageGeneration': {
+      return {
+        kind: 'image-generation',
+        id,
+        title: `图片生成 · ${asString(record['status']) ?? 'unknown'}`,
+        body: cap(asString(record['revisedPrompt']) ?? ''),
+        meta: asString(record['savedPath']),
+      };
+    }
+
+    case 'contextCompaction': {
+      return { kind: 'compaction', id, title: '上下文压缩', body: '', meta: null };
+    }
+
+    default: {
+      return {
+        kind: 'other',
+        id,
+        title: type,
+        body: cap(stringify(record)),
+        meta: null,
+      };
+    }
+  }
+}
+
+/** Map a raw turn into its detail entries. */
+export function normalizeTurnDetails(raw: unknown): CodexDetailItem[] {
+  const turn = asRecord(raw);
+  const items = asArray(turn['items']);
+  const details: CodexDetailItem[] = [];
+  for (const item of items) {
+    details.push(normalizeDetailItem(item));
+  }
+  return details;
+}
+
+/** A conversation with its full detail entries. */
+export interface CodexConversation {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly updatedAt: string | null;
+  readonly turns: readonly {
+    readonly turnId: string;
+    readonly status: string;
+    readonly startedAt: string | null;
+    readonly details: readonly CodexDetailItem[];
+  }[];
+}

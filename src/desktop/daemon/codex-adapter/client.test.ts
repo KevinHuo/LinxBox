@@ -348,3 +348,115 @@ describe('CodexClient session history', () => {
     client.close();
   });
 });
+
+describe('CodexClient projects and conversations', () => {
+  it('lists the provider projects', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const listing = client.listProjects();
+    child.emitMessage({
+      id: 2,
+      result: {
+        data: [{ id: 'p1', name: 'app', roots: [{ path: '/tmp/app' }], position: 0 }],
+      },
+    });
+
+    const projects = await listing;
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.roots).toEqual(['/tmp/app']);
+    client.close();
+  });
+
+  it('reads a conversation with every detail entry', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const reading = client.readConversation('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    child.emitMessage({
+      id: 2,
+      result: { thread: { id: 'th_1', preview: '标题', cwd: '/tmp/app' } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    child.emitMessage({
+      id: 3,
+      result: {
+        data: [
+          {
+            id: 'tn_1',
+            status: 'completed',
+            startedAt: 1792840394,
+            items: [
+              { type: 'userMessage', content: [{ type: 'text', text: '你好' }] },
+              { type: 'commandExecution', command: 'ls', status: 'completed' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const conversation = await reading;
+    expect(conversation?.title).toBe('标题');
+    expect(conversation?.cwd).toBe('/tmp/app');
+    expect(conversation?.turns[0]?.details.map((detail) => detail.kind)).toEqual([
+      'user',
+      'command',
+    ]);
+    client.close();
+  });
+
+  it('reads an empty conversation', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const reading = client.readConversation('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    child.emitMessage({ id: 2, result: { thread: { id: 'th_1' } } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    child.emitMessage({ id: 3, result: { data: [] } });
+
+    const conversation = await reading;
+    expect(conversation?.turns).toEqual([]);
+    client.close();
+  });
+});
+
+describe('CodexClient interrupt and reuse', () => {
+  it('interrupts a running turn', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const interrupting = client.interruptTurn('th_1', 'tn_1');
+    child.emitMessage({ id: 2, result: {} });
+    await expect(interrupting).resolves.toBeUndefined();
+    client.close();
+  });
+
+  it('reuses the same provider process for a second operation', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const listing = client.listProjects();
+    child.emitMessage({ id: 2, result: { data: [] } });
+    await listing;
+
+    const second = client.listProjects();
+    child.emitMessage({ id: 3, result: { data: [] } });
+    await second;
+
+    const spawns = child.sentMessages().filter((message) => message['method'] === 'initialize');
+    expect(spawns).toHaveLength(1);
+    client.close();
+  });
+});

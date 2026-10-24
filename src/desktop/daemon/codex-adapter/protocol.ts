@@ -84,6 +84,8 @@ export const CODEX_METHODS = {
   threadResume: 'thread/resume',
   threadList: 'thread/list',
   threadRead: 'thread/read',
+  threadTurnsList: 'thread/turns/list',
+  projectList: 'project/list',
   turnStart: 'turn/start',
   turnInterrupt: 'turn/interrupt',
 } as const;

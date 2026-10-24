@@ -325,23 +325,35 @@
               <dd id="codex-status">空闲</dd>
             </div>
           </dl>
-          <div class="codex-workbench">
-            <section class="panel codex-sessions" aria-labelledby="codex-sessions-title">
+          <div class="codex-workbench codex-three">
+            <section class="panel codex-column" aria-labelledby="codex-projects-title">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">SESSIONS</p>
-                  <h2 id="codex-sessions-title">本机会话</h2>
+                  <p class="eyebrow">PROJECTS</p>
+                  <h2 id="codex-projects-title">Codex 项目</h2>
                 </div>
               </div>
-              <div class="codex-session-list" id="codex-session-list"></div>
+              <div class="codex-list" id="codex-project-list"></div>
             </section>
-            <section class="panel codex-transcript" aria-labelledby="codex-transcript-title">
+            <section class="panel codex-column" aria-labelledby="codex-sessions-title">
               <div class="panel-heading">
                 <div>
-                  <p class="eyebrow">TRANSCRIPT</p>
-                  <h2 id="codex-transcript-title">聊天记录</h2>
+                  <p class="eyebrow">CONVERSATIONS</p>
+                  <h2 id="codex-sessions-title">项目里的对话</h2>
                 </div>
-                <span class="micro-label" id="codex-transcript-meta">未选择会话</span>
+              </div>
+              <div class="codex-list" id="codex-session-list"></div>
+            </section>
+            <section
+              class="panel codex-column codex-detail-column"
+              aria-labelledby="codex-transcript-title"
+            >
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">DETAIL</p>
+                  <h2 id="codex-transcript-title">对话详情</h2>
+                </div>
+                <span class="micro-label" id="codex-transcript-meta">未选择对话</span>
               </div>
               <div class="codex-messages" id="codex-messages"></div>
               <div class="codex-run">
@@ -350,7 +362,7 @@
                   <textarea
                     id="codex-prompt"
                     rows="3"
-                    placeholder="选中左侧一个会话，然后在这里继续聊…"
+                    placeholder="选中左侧一个对话，然后在这里继续聊…"
                   ></textarea>
                 </label>
                 <div class="form-actions">

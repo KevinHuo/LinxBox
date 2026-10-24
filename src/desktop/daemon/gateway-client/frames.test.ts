@@ -188,3 +188,29 @@ describe('publicError', () => {
     });
   });
 });
+
+describe('parseInboundFrame cancel payloads', () => {
+  it('rejects a cancel payload with an unknown field', () => {
+    const result = parseInboundFrame({
+      protocol_version: '1.0',
+      message_id: 'msg_1',
+      sequence: 1,
+      type: 'task.cancel',
+      sent_at: '2026-10-24T01:00:00Z',
+      payload: { task_id: 'tsk_1', reason: 'x', force: true },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a cancel payload without a reason', () => {
+    const result = parseInboundFrame({
+      protocol_version: '1.0',
+      message_id: 'msg_1',
+      sequence: 1,
+      type: 'task.cancel',
+      sent_at: '2026-10-24T01:00:00Z',
+      payload: { task_id: 'tsk_1' },
+    });
+    expect(result.ok).toBe(false);
+  });
+});

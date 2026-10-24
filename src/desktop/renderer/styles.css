@@ -1233,3 +1233,74 @@ h3 {
   color: var(--muted);
   font: 400 12px/1.6 var(--font-sans);
 }
+
+/* 三层：项目 -> 对话 -> 详情 */
+.codex-three {
+  grid-template-columns: 200px 230px minmax(0, 1fr);
+}
+.codex-list {
+  display: grid;
+  gap: 6px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+.codex-turn {
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+.codex-turn-head {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.codex-detail {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-left: 9px;
+  border-left: 2px solid var(--line);
+}
+.codex-detail > span {
+  color: var(--muted);
+  font: 600 10px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.codex-detail > pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 400 12px/1.6 var(--font-mono);
+}
+.codex-detail > small {
+  color: var(--muted);
+  font: 400 10px/1.5 var(--font-mono);
+  word-break: break-all;
+}
+.codex-detail.is-user {
+  border-left-color: var(--line);
+}
+.codex-detail.is-agent {
+  border-left-color: var(--acid);
+}
+.codex-detail.is-command {
+  border-left-color: #7cc4ff;
+}
+.codex-detail.is-file-change {
+  border-left-color: #ffb26b;
+}
+.codex-detail.is-mcp {
+  border-left-color: #c39bff;
+}
+.codex-detail.is-reasoning {
+  border-left-color: #5d6b73;
+}
+.codex-detail.is-web-search,
+.codex-detail.is-image,
+.codex-detail.is-image-generation,
+.codex-detail.is-compaction {
+  border-left-color: #4b8f7a;
+}

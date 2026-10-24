@@ -4,8 +4,8 @@
   const fixtures = window.LINXBOX_PROTOTYPE_FIXTURES;
   const labels = {
     overview: ["LINXBOX HOME", "你好，这里是 LinxBox"],
-    lingxi: ["MCP WEBSOCKET", "连接 MCP WebSocket"],
-    projects: ["LOCAL PROJECTS", "本地项目"],
+    lingxi: ["CLOUD WEBSOCKET", "连接 LinxBox Cloud"],
+    projects: ["CODEX CATALOG", "Codex 项目目录"],
     tasks: ["TASK HISTORY", "任务记录"],
   };
   const state = {
@@ -55,18 +55,18 @@
 
   function renderProjects() {
     qs("#project-grid").innerHTML = state.projects.map((project) => `
-      <article class="project-card ${project.enabled ? "is-enabled" : ""}">
+      <article class="project-card is-enabled">
         <div class="project-topline"><span>${escapeHtml(project.id)}</span><span>${escapeHtml(project.updated)}</span></div>
         <div class="folder-mark" aria-hidden="true"><i></i></div>
         <h3>${escapeHtml(project.name)}</h3>
-        <p class="mock-path">${escapeHtml(project.path)}</p>
+        <p class="mock-path">Codex project · position ${escapeHtml(project.position)}</p>
         <div class="project-footer">
-          <span>${project.enabled ? "可供灵矽使用" : "当前已停用"}</span>
-          <button type="button" class="switch ${project.enabled ? "is-on" : ""}" data-toggle-project="${escapeHtml(project.id)}" aria-pressed="${project.enabled}"><i></i><span>${project.enabled ? "已启用" : "已停用"}</span></button>
+          <span>CATALOG COMPLETE</span>
+          <strong>${escapeHtml(project.conversations)} 个对话</strong>
         </div>
       </article>
     `).join("");
-    qs("#hero-project-count").textContent = `${state.projects.filter((project) => project.enabled).length} 个`;
+    qs("#hero-project-count").textContent = `${state.projects.length} 个`;
   }
 
   function taskItems() {
@@ -94,9 +94,11 @@
       <h3>${escapeHtml(task.title)}</h3>
       <p>${escapeHtml(task.summary)}</p>
       <dl>
-        <div><dt>MCP 指令</dt><dd>${escapeHtml(task.source)}</dd></div>
+        <div><dt>Cloud 消息</dt><dd>${escapeHtml(task.source)}</dd></div>
         <div><dt>项目</dt><dd>${escapeHtml(task.project)}</dd></div>
-        <div><dt>Codex 对话</dt><dd>${escapeHtml(task.thread)}</dd></div>
+        <div><dt>conversation_id</dt><dd>${escapeHtml(task.thread)}</dd></div>
+        <div><dt>turn_id</dt><dd>${escapeHtml(task.turn)}</dd></div>
+        <div><dt>client_message_id</dt><dd>${escapeHtml(task.clientMessageId)}</dd></div>
         <div><dt>任务编号</dt><dd>${escapeHtml(task.id)}</dd></div>
         <div><dt>时间</dt><dd>${escapeHtml(task.time)}</dd></div>
       </dl>
@@ -111,12 +113,12 @@
   function setConnection(connected) {
     state.connected = connected;
     qs("#connection-pill").dataset.state = connected ? "online" : "offline";
-    qs("#connection-label").textContent = connected ? "MCP 已连接" : "MCP 未连接";
+    qs("#connection-label").textContent = connected ? "Cloud WSS 在线" : "Cloud WSS 离线";
     qs("#hero-lingxi-status").textContent = connected ? "已连接" : "等待连接";
     qs("#hero-lingxi-status").classList.toggle("status-good", connected);
     qs("#connection-preview").dataset.state = connected ? "online" : "offline";
     qs("#preview-title").textContent = connected ? "LinxBox 已连接" : "等待连接";
-    qs("#preview-copy").textContent = connected ? "MCP WebSocket 已模拟在线，LinxBox 可以双向转发指令、状态和对话。" : "输入 MCP WebSocket 信息，然后测试 LinxBox 是否可以建立双向连接。";
+    qs("#preview-copy").textContent = connected ? "已模拟发送 hello/catalog，并开始 heartbeat；任务与 RPC 可在这条连接上双向传输。" : "输入现有 PC Agent 配置，然后模拟 hello + catalog 上线流程。";
     qs("#preview-network").textContent = connected ? "模拟在线" : "未发起";
     qs("#connect-button").textContent = connected ? "重新测试" : "测试并连接";
     qs("#disconnect-button").disabled = !connected;
@@ -130,9 +132,10 @@
     event.preventDefault();
     const url = qs("#gateway-url").value.trim();
     const token = qs("#access-token").value.trim();
+    const computerId = qs("#computer-id").value.trim();
     const computer = qs("#computer-name").value.trim();
-    if (!url || !token || !computer) {
-      showToast("请填写服务地址、访问令牌和电脑名称");
+    if (!url || !token || !computerId || !computer) {
+      showToast("请填写 Cloud 地址、Agent Token、电脑 ID 和名称");
       return;
     }
     qs("#connect-button").textContent = "连接中…";
@@ -142,7 +145,7 @@
       qs("#connect-button").disabled = false;
       qs("#preview-computer").textContent = computer;
       setConnection(true);
-      showToast("MCP WebSocket 模拟连接成功；没有发起真实网络请求");
+      showToast("Cloud WebSocket 模拟上线；未发起真实网络请求");
     }, 700);
   });
 
@@ -162,24 +165,16 @@
     qs("#preview-computer").textContent = event.currentTarget.value || "未命名 Mac";
   });
 
-  qs("#add-project").addEventListener("click", () => {
-    if (state.projects.some((project) => project.id === "PRJ_NEW")) {
-      showToast("模拟项目已经添加");
-      return;
-    }
-    state.projects.push({ id: "PRJ_NEW", name: "新的本地项目", path: "/Users/demo/Projects/new-project", enabled: true, updated: "刚刚" });
-    renderProjects();
-    showToast("已添加模拟项目；未访问文件系统");
-  });
-
-  qs("#project-grid").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-toggle-project]");
-    if (!button) return;
-    const project = state.projects.find((item) => item.id === button.dataset.toggleProject);
-    project.enabled = !project.enabled;
-    project.updated = "刚刚";
-    renderProjects();
-    showToast(`${project.name}已${project.enabled ? "启用" : "停用"}`);
+  qs("#refresh-projects").addEventListener("click", (event) => {
+    event.currentTarget.disabled = true;
+    event.currentTarget.textContent = "读取中…";
+    setTimeout(() => {
+      state.projects = state.projects.map((project) => ({ ...project, updated: "刚刚" }));
+      renderProjects();
+      event.currentTarget.disabled = false;
+      event.currentTarget.textContent = "刷新目录";
+      showToast("已模拟重新读取 Codex 目录；未访问 state_5.sqlite");
+    }, 650);
   });
 
   qs("#filter-tasks").addEventListener("click", (event) => {

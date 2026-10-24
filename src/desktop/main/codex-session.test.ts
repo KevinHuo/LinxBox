@@ -331,3 +331,114 @@ describe('CodexSession continuing a conversation', () => {
     session.close();
   });
 });
+
+describe('CodexSession projects and conversations', () => {
+  it('lists the provider projects', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const listing = session.listProjects();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({
+      id: 2,
+      result: { data: [{ id: 'p1', name: 'app', roots: [{ path: '/tmp/app' }], position: 0 }] },
+    });
+
+    const projects = await listing;
+    expect(projects[0]?.name).toBe('app');
+    expect(projects[0]?.roots).toEqual(['/tmp/app']);
+    session.close();
+  });
+
+  it('reads a conversation with its details', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const reading = session.readConversation('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: { id: 'th_1', preview: '标题' } } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({
+      id: 3,
+      result: {
+        data: [
+          {
+            id: 'tn_1',
+            status: 'completed',
+            items: [{ type: 'userMessage', content: [{ type: 'text', text: '你好' }] }],
+          },
+        ],
+      },
+    });
+
+    const conversation = await reading;
+    expect(conversation?.turns[0]?.details[0]?.body).toBe('你好');
+    session.close();
+  });
+
+  it('reports a conversation that cannot be read', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const reading = session.readConversation('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: {} } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 3, result: { data: [] } });
+
+    await expect(reading).resolves.toBeNull();
+    session.close();
+  });
+});
+
+describe('CodexSession connection lifecycle', () => {
+  it('fails when no provider binary exists', async () => {
+    const session = new CodexSession({ binary: null });
+    await expect(session.listProjects()).rejects.toThrow('未找到本机 Codex');
+    session.close();
+  });
+
+  it('reuses the same provider process across operations', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const listing = session.listProjects();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { data: [] } });
+    await listing;
+
+    const initializes = harness.child
+      .sentMessages()
+      .filter((message) => message['method'] === 'initialize');
+    expect(initializes).toHaveLength(1);
+    session.close();
+  });
+});

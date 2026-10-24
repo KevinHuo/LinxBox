@@ -255,6 +255,36 @@ async function handleCodexSessionAuthorize(payload: unknown): Promise<unknown> {
   return { ok: true, data: project };
 }
 
+async function handleCodexProjectsList(): Promise<unknown> {
+  try {
+    const projects = await codexSession.listProjects();
+    return { ok: true, data: projects };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '读取项目列表失败';
+    logger.error('读取 Codex 项目列表失败', { message });
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
+async function handleCodexConversationRead(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.conversation.read', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { threadId } = parsed.data as { threadId: string };
+  try {
+    const conversation = await codexSession.readConversation(threadId);
+    if (conversation === null) {
+      return { ok: false, code: 'NOT_FOUND', message: '会话不存在' };
+    }
+    return { ok: true, data: conversation };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '读取对话详情失败';
+    logger.error('读取 Codex 对话详情失败', { message });
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
 async function handleCodexSessionsList(payload: unknown): Promise<unknown> {
   const parsed = parseIpcRequest('codex.sessions.list', payload);
   if (!parsed.ok) {
@@ -334,6 +364,8 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'codex.probe': () => handleCodexProbe(),
   'codex.session.continue': (payload) => handleCodexSessionContinue(payload),
   'codex.session.authorize': (payload) => handleCodexSessionAuthorize(payload),
+  'codex.projects.list': () => handleCodexProjectsList(),
+  'codex.conversation.read': (payload) => handleCodexConversationRead(payload),
   'codex.sessions.list': (payload) => handleCodexSessionsList(payload),
   'codex.sessions.read': (payload) => handleCodexSessionsRead(payload),
   'codex.turn.start': (payload) => handleCodexTurnStart(payload),

@@ -255,3 +255,33 @@ describe('TaskDispatcher cancel and failure paths', () => {
     expect(harness.events.some((event) => event.type === 'task.failed')).toBe(true);
   });
 });
+
+describe('TaskDispatcher provider event mapping', () => {
+  it('maps a final answer to a progress event', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+    await harness.dispatcher.handle(dispatchFrame);
+
+    harness.emit({
+      type: 'final',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      text: '最终回答',
+    });
+
+    const progress = harness.events.find((event) => event.type === 'task.progress');
+    expect(progress?.payload.stage).toBe('summarizing');
+    expect(progress?.payload.summary).toBe('最终回答');
+  });
+
+  it('ignores events that carry no task meaning', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+    await harness.dispatcher.handle(dispatchFrame);
+
+    harness.emit({ type: 'turn-started', threadId: 'th_1', turnId: 'tn_1' });
+    harness.emit({ type: 'thread-started', threadId: 'th_1' });
+    harness.emit({ type: 'warning', threadId: 'th_1', message: '配置被忽略' });
+    harness.emit({ type: 'account', authMode: 'chatgpt', planType: 'plus' });
+
+    expect(harness.events.filter((event) => event.type === 'task.progress')).toHaveLength(0);
+  });
+});

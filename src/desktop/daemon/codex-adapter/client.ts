@@ -24,8 +24,12 @@ import {
 } from './protocol.js';
 import { mapNotification, type CodexDomainEvent } from './events.js';
 import {
+  normalizeProjectList,
   normalizeSessionDetail,
   normalizeSessionList,
+  normalizeTurnDetails,
+  type CodexConversation,
+  type CodexProjectSummary,
   type CodexSessionDetail,
   type CodexSessionSummary,
 } from './history.js';
@@ -251,6 +255,62 @@ export class CodexClient {
     this.assertInitialized();
     const raw = await this.process.call(CODEX_METHODS.threadList, { limit });
     return normalizeSessionList(raw);
+  }
+
+  /**
+   * List the projects the provider knows about.
+   *
+   * A project is the provider's own grouping of working directories.
+   */
+  async listProjects(): Promise<CodexProjectSummary[]> {
+    this.assertInitialized();
+    const raw = await this.process.call(CODEX_METHODS.projectList, {});
+    return normalizeProjectList(raw);
+  }
+
+  /**
+   * Read one conversation with every detail entry.
+   *
+   * The turn list is fetched with full items so command executions, file
+   * changes and tool calls are readable, not just the chat messages.
+   */
+  async readConversation(threadId: string, turnLimit = 50): Promise<CodexConversation | null> {
+    this.assertInitialized();
+    const meta = await this.process.call(CODEX_METHODS.threadRead, {
+      threadId,
+      includeTurns: true,
+    });
+    const parsed = normalizeSessionDetail(meta);
+    if (parsed === null) {
+      // The provider does not know this thread.
+      return null;
+    }
+    const turns = await this.process.call(CODEX_METHODS.threadTurnsList, {
+      threadId,
+      limit: turnLimit,
+      sortDirection: 'asc',
+      itemsView: 'full',
+    });
+    const raw = turns as { data?: unknown };
+    const data = Array.isArray(raw.data) ? raw.data : [];
+    return {
+      threadId,
+      title: parsed.title,
+      cwd: parsed.cwd,
+      updatedAt: null,
+      turns: data.map((turn) => {
+        const record = turn as { id?: unknown; status?: unknown; startedAt?: unknown };
+        return {
+          turnId: typeof record.id === 'string' ? record.id : '',
+          status: typeof record.status === 'string' ? record.status : 'unknown',
+          startedAt:
+            typeof record.startedAt === 'number'
+              ? new Date(record.startedAt * 1000).toISOString()
+              : null,
+          details: normalizeTurnDetails(turn),
+        };
+      }),
+    };
   }
 
   /**

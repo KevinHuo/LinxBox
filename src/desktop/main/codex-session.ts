@@ -13,7 +13,9 @@ import type { SpawnFn } from '../daemon/codex-adapter/process.js';
 import type { CodexDomainEvent } from '../daemon/codex-adapter/events.js';
 import { discoverCodexBinary, type CodexBinary } from '../daemon/codex-adapter/discovery.js';
 import type {
+  CodexConversationView,
   CodexProbeView,
+  CodexProjectView,
   CodexSessionDetailView,
   CodexSessionSummaryView,
   CodexTurnView,
@@ -137,6 +139,44 @@ export class CodexSession {
     const threadId = await client.startThread(cwd);
     await client.startTurn(threadId, prompt, `linxbox-${Date.now().toString(36)}`);
     return this.status();
+  }
+
+  /** List the projects the provider knows about. */
+  async listProjects(): Promise<CodexProjectView[]> {
+    const client = await this.connect();
+    const projects = await client.listProjects();
+    return projects.map((project) => ({
+      projectId: project.projectId,
+      name: project.name,
+      roots: project.roots,
+      position: project.position,
+    }));
+  }
+
+  /** Read one conversation with every detail entry. */
+  async readConversation(threadId: string): Promise<CodexConversationView | null> {
+    const client = await this.connect();
+    const conversation = await client.readConversation(threadId);
+    if (conversation === null) {
+      return null;
+    }
+    return {
+      threadId: conversation.threadId,
+      title: conversation.title,
+      cwd: conversation.cwd,
+      turns: conversation.turns.map((turn) => ({
+        turnId: turn.turnId,
+        status: turn.status,
+        startedAt: turn.startedAt,
+        details: turn.details.map((detail) => ({
+          kind: detail.kind,
+          id: detail.id,
+          title: detail.title,
+          body: detail.body,
+          meta: detail.meta,
+        })),
+      })),
+    };
   }
 
   /**

@@ -7,6 +7,7 @@ import {
   connectionStatus,
   diagnosticsRows,
   filterTasks,
+  findProjectForPath,
   flattenSessionMessages,
   formatRootPath,
   formatSessionTime,
@@ -286,5 +287,25 @@ describe('formatSessionTime', () => {
 
   it('reports a missing timestamp', () => {
     expect(formatSessionTime(null)).toBe('-');
+  });
+});
+
+describe('findProjectForPath', () => {
+  const projects = [{ projectId: 'p1', name: 'app', roots: ['/Users/demo/app'], position: 0 }];
+
+  it('matches the project root', () => {
+    expect(findProjectForPath(projects, '/Users/demo/app')?.projectId).toBe('p1');
+  });
+
+  it('matches a directory inside the project', () => {
+    expect(findProjectForPath(projects, '/Users/demo/app/src')?.projectId).toBe('p1');
+  });
+
+  it('does not match a sibling with a shared prefix', () => {
+    expect(findProjectForPath(projects, '/Users/demo/app-other')).toBeNull();
+  });
+
+  it('returns null for a missing directory', () => {
+    expect(findProjectForPath(projects, null)).toBeNull();
   });
 });

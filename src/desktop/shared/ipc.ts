@@ -126,6 +126,14 @@ const codexSessionAuthorizeSchema = z
   })
   .strict();
 
+const codexProjectsListSchema = z.object({}).strict();
+
+const codexConversationReadSchema = z
+  .object({
+    threadId: z.string().min(1).max(128),
+  })
+  .strict();
+
 export type ConnectionSaveInput = z.infer<typeof connectionSaveSchema>;
 export type ProjectGrantInput = z.infer<typeof projectGrantSchema>;
 export type ProjectRevokeInput = z.infer<typeof projectRevokeSchema>;
@@ -142,6 +150,8 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.sessions.read': codexSessionsReadSchema,
   'codex.session.continue': codexSessionContinueSchema,
   'codex.session.authorize': codexSessionAuthorizeSchema,
+  'codex.projects.list': codexProjectsListSchema,
+  'codex.conversation.read': codexConversationReadSchema,
   'connection.read': emptyPayloadSchema,
   'connection.save': connectionSaveSchema,
   'connection.test': emptyPayloadSchema,
@@ -276,6 +286,50 @@ export interface CodexSessionDetailView {
     readonly status: string;
     readonly startedAt: string | null;
     readonly messages: readonly CodexSessionMessageView[];
+  }[];
+}
+
+/** A project the provider groups working directories under. */
+export interface CodexProjectView {
+  readonly projectId: string;
+  readonly name: string;
+  readonly roots: readonly string[];
+  readonly position: number;
+}
+
+/** The kind of a detail entry inside a conversation. */
+export type CodexDetailKind =
+  | 'user'
+  | 'agent'
+  | 'reasoning'
+  | 'command'
+  | 'file-change'
+  | 'mcp'
+  | 'web-search'
+  | 'image'
+  | 'image-generation'
+  | 'compaction'
+  | 'other';
+
+/** One entry inside a conversation. */
+export interface CodexDetailItemView {
+  readonly kind: CodexDetailKind;
+  readonly id: string;
+  readonly title: string;
+  readonly body: string;
+  readonly meta: string | null;
+}
+
+/** A conversation with every detail entry. */
+export interface CodexConversationView {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly turns: readonly {
+    readonly turnId: string;
+    readonly status: string;
+    readonly startedAt: string | null;
+    readonly details: readonly CodexDetailItemView[];
   }[];
 }
 

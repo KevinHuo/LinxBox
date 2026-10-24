@@ -192,9 +192,9 @@ h3 { margin-bottom: 8px; font-size: 19px; }
 .task-status { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .status-running { background: var(--acid); box-shadow: 0 0 10px rgba(189,251,75,.5); }
 .status-completed { background: var(--cyan); }
-.status-stopped { background: var(--orange); }
+.status-stopped, .status-interrupted { background: var(--orange); }
 .task-detail-status { display: inline-block; margin: 12px 0 25px; padding: 5px 8px; border: 1px solid currentColor; font: 700 10px var(--font-mono); }
-.status-text-running { color: var(--acid); }.status-text-completed { color: var(--cyan); }.status-text-stopped { color: var(--orange); }
+.status-text-running { color: var(--acid); }.status-text-completed { color: var(--cyan); }.status-text-stopped, .status-text-interrupted { color: var(--orange); }
 .task-detail h3 { font: 600 32px/1.1 var(--font-display); }
 .task-detail > p:not(.eyebrow) { color: var(--muted); }
 .conversation-preview { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--line); }

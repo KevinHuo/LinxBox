@@ -258,3 +258,39 @@ describe('GatewayClient reconnection', () => {
     client.close();
   });
 });
+
+describe('GatewayClient listener lifecycle', () => {
+  it('stops delivering events after unsubscribe', () => {
+    const { client, socket } = createClient();
+    const seen: string[] = [];
+    const unsubscribe = client.on((event) => {
+      if (event.type === 'frame') {
+        seen.push('frame');
+      }
+    });
+    client.connect();
+    socket.open();
+    socket.receive(dispatchFrame);
+    unsubscribe();
+    socket.receive(dispatchFrame);
+
+    expect(seen).toHaveLength(1);
+    client.close();
+  });
+
+  it('reports a socket error', () => {
+    const { client, socket } = createClient();
+    const errors: string[] = [];
+    client.on((event) => {
+      if (event.type === 'rejected') {
+        errors.push(event.error.message);
+      }
+    });
+    client.connect();
+    socket.open();
+    socket.fire('error', new Error('boom'));
+
+    expect(errors).toContain('Gateway 连接异常');
+    client.close();
+  });
+});
