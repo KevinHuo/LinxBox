@@ -11,7 +11,7 @@
 | [边界契约索引](./contracts/README.md) | MCP、Device Presentation、Gateway/Desktop、领域状态与结果契约；单一事实源表 |
 | [模块规范](./modules.md) | 七个模块的职责、依赖方向、状态所有权与交付门禁 |
 | [代码与 Desktop UI 结构](./code-structure.md) | 技术基线、目录树、分层规则和 Desktop UI DOM/组件树 |
-| [灵矽 AI 行为规范](./ai-specification.md) | 灵矽 Agent、Gateway、Desktop 和 Codex 的行为与输出约束 |
+| [灵矽 Agent 行为契约](./agent-behavior.md) | 灵矽 Agent、Gateway、Desktop 和 Codex 的行为边界、任务上下文与输出约束 |
 | [决策记录](./adr/) | 已接受的架构决策（ADR-0001 ~ 0005） |
 
 **二、执行规范**（给执行者与 AI 看）

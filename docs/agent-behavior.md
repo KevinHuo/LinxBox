@@ -1,4 +1,4 @@
-# AI 设计规范
+# 灵矽 Agent 行为契约
 
 > Status: active  
 > Version: 1.0  
