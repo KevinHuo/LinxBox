@@ -9,5 +9,7 @@ export * from './tasks/task-state.js';
 export * from './policy/authorization.js';
 export * from './result-projector/projection.js';
 export * from './project-registry/registry.js';
-export * from './gateway-client/envelope.js';
+export * from './gateway-client/frames.js';
+export * from './gateway-client/client.js';
+export * from './gateway-client/dispatcher.js';
 export * from './local-store/schema.js';

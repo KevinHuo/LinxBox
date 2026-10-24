@@ -122,6 +122,7 @@ describe('normalizeMessage', () => {
   it('ignores items that carry no readable text', () => {
     expect(normalizeMessage({ type: 'commandExecution', text: 'ls' })).toBeNull();
     expect(normalizeMessage({ type: 'userMessage', content: [] })).toBeNull();
+    expect(normalizeMessage({ type: 'userMessage', content: [{ type: 'image' }] })).toBeNull();
     expect(normalizeMessage({ type: 'agentMessage' })).toBeNull();
     expect(normalizeMessage(null)).toBeNull();
   });
@@ -142,8 +143,10 @@ describe('normalizeTurn', () => {
   });
 
   it('handles a turn without items', () => {
-    const turn = normalizeTurn({ id: 'tn_2' });
+    const turn = normalizeTurn({ startedAt: Number.POSITIVE_INFINITY });
+    expect(turn.turnId).toBe('');
     expect(turn.status).toBe('unknown');
+    expect(turn.startedAt).toBeNull();
     expect(turn.messages).toEqual([]);
   });
 });
@@ -210,9 +213,10 @@ describe('normalizeProject', () => {
   });
 
   it('falls back to a placeholder name and no roots', () => {
-    const project = normalizeProject({ id: 'p1' });
+    const project = normalizeProject({ id: 'p1', roots: [{}], position: Number.NaN });
     expect(project?.name).toBe('(未命名项目)');
     expect(project?.roots).toEqual([]);
+    expect(project?.position).toBe(0);
   });
 });
 
@@ -241,6 +245,11 @@ describe('findProjectForPath', () => {
 
   it('matches a directory inside the project', () => {
     expect(findProjectForPath(projects, '/Users/demo/app/src')?.projectId).toBe('p1');
+  });
+
+  it('matches inside a project root that already ends with a slash', () => {
+    const withSlash = [{ projectId: 'p1', name: 'app', roots: ['/Users/demo/app/'], position: 0 }];
+    expect(findProjectForPath(withSlash, '/Users/demo/app/src')?.projectId).toBe('p1');
   });
 
   it('does not match a sibling with a shared prefix', () => {
@@ -341,6 +350,14 @@ describe('normalizeDetailItem', () => {
     expect(detail.kind).toBe('other');
     expect(detail.title).toBe('brandNew');
     expect(detail.body).toContain('extra');
+  });
+
+  it('keeps an empty unknown item without inventing provider data', () => {
+    const detail = normalizeDetailItem(null);
+    expect(detail).toEqual({ kind: 'other', id: '', title: 'unknown', body: '{}', meta: null });
+    expect(normalizeDetailItem({ type: 'reasoning', summary: [null] }).body).toBe(
+      '(没有可读的推理文本)',
+    );
   });
 
   it('truncates an oversized body', () => {

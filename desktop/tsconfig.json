@@ -22,5 +22,5 @@
     "resolveJsonModule": true
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist", "release", "renderer-prototype"]
+  "exclude": ["node_modules", "dist", "release"]
 }

@@ -35,7 +35,9 @@ describe('daemon 公开接口', () => {
 
   it('导出入站帧校验与本地 schema 能力', () => {
     expect(typeof daemon.parseInboundFrame).toBe('function');
-    expect(typeof daemon.isProtocolVersionCompatible).toBe('function');
+    expect(typeof daemon.buildHelloFrame).toBe('function');
+    expect(typeof daemon.GatewayClient).toBe('function');
+    expect(typeof daemon.TaskDispatcher).toBe('function');
     expect(typeof daemon.migrationsNeeded).toBe('function');
     expect(daemon.SCHEMA_VERSION).toBeGreaterThan(0);
   });

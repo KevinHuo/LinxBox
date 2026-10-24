@@ -8,22 +8,22 @@ macOS 本地客户端：Electron UI、Main/Daemon 进程边界、本地项目授
 
 - 开发 Issue：[Task #9 实现 LinxBox Desktop 本地客户端与 Companion Daemon](https://github.com/KevinHuo/LinxBox/issues/9)
 - 执行 Spec：`SPEC-0003`（`Proposed`），状态未 `Accepted`
-- 出站 Gateway 客户端（Slice 3）、Codex app-server adapter（Slice 4）、SQLite 持久化（Slice 2）**尚未实现**
-- 本目录当前只提供：安全壳、IPC 边界、契约草稿切片与领域纯函数层
+- 出站 Gateway client、Codex app-server adapter 和 Electron UI 已有本地实现与自动化测试
+- Electron main 尚未正式接线 Gateway client；SQLite schema 已定义但尚未执行真实持久化
 
-因此本目录里**没有**任何真实链路证据：没有连过真实 Gateway，没有驱动过真实 Codex app-server，没有创建过业务数据库。README 里写"能跑"指的是界面与本地逻辑能跑，不代表任务链路已打通。
+当前真实驱动过本机 Codex app-server，并通过 mock Gateway 验证 WSS 链路；没有连过真实云端
+Gateway，也没有创建业务数据库。这些本地结果不能描述为生产链路已经验收。
 
 ## 目录结构
 
 ```text
-src/desktop/
+desktop/
 ├── contracts/        契约草稿切片（SPEC-0001 占位，待迁出）
-├── daemon/           领域纯函数层：delivery / 状态机 / policy / projector / registry / envelope / schema
+├── daemon/           Gateway/Codex adapter 与领域层：delivery / policy / projector / registry / schema
 ├── main/             Electron 主进程：安全策略、IPC allowlist、本地状态
 ├── preload/          预加载桥接：固定方法集，无通用 invoke
 ├── renderer/         渲染层：展示模型 + 一次性用户意图
-├── shared/           IPC 契约与脱敏日志
-└── renderer-prototype/  早期静态原型（展示层已迁入 renderer/，待 Spec Accepted 后删除）
+└── shared/           IPC 契约与脱敏日志
 ```
 
 ## 环境要求
@@ -35,7 +35,7 @@ src/desktop/
 ## 命令
 
 ```bash
-cd src/desktop
+cd desktop
 
 pnpm install        # 安装依赖
 pnpm check          # 格式检查 + lint + 类型检查 + 测试与覆盖率
@@ -220,7 +220,6 @@ turn。
 - `connection.test` 会如实返回"出站 Gateway 客户端尚未实现"，不会伪造握手成功
 - 本地状态保存在内存，进程退出即丢失；数据库路径在诊断页显示为"尚未创建"
 - 项目路径显示时折叠家目录并只保留末两段
-- `renderer-prototype/` 与 `renderer/` 的展示层存在重复，等 Spec Accepted 后逐文件复核迁移并删除原型
 
 ## 已验证与未验证
 
@@ -233,6 +232,6 @@ turn。
 
 未验证：
 
-- 真实 Gateway 连接、真实 Codex app-server、真实 SQLite 持久化、真实 macOS 端到端任务链路
+- 真实云端 Gateway 连接、真实 SQLite 持久化、真实 macOS 全链路任务验收
 - 安装包签名与 notarize
 - 其他 macOS 架构与系统版本

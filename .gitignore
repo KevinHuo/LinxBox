@@ -22,7 +22,7 @@
 .coverage.*
 coverage.xml
 
-# Nested package outputs (src/desktop)
+# Nested package outputs (desktop)
 dist/
 dist-preload/
 release/

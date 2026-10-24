@@ -10,7 +10,9 @@ describe('conversation refresh controller', () => {
   it('refreshes immediately and continues while a conversation is selected', async () => {
     vi.useFakeTimers();
     const applied: string[] = [];
-    const read = vi.fn(async (threadId: string) => `${threadId}:${read.mock.calls.length}`);
+    const read = vi.fn((threadId: string) =>
+      Promise.resolve(`${threadId}:${read.mock.calls.length}`),
+    );
     const controller = createConversationRefreshController({
       getSelectedThreadId: () => 'th_1',
       read,

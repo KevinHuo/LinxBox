@@ -4,16 +4,7 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: [
-      'dist/**',
-      'dist-preload/**',
-      'release/**',
-      'coverage/**',
-      'node_modules/**',
-      // Local-only renderer prototype: plain browser JavaScript, not part of the
-      // TypeScript application. Kept as information-architecture evidence only.
-      'renderer-prototype/**',
-    ],
+    ignores: ['dist/**', 'dist-preload/**', 'release/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

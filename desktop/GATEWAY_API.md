@@ -426,8 +426,8 @@ Desktop -> Gateway  task.completed | task.failed | task.interrupted
 6. `task.approval_required` / `task.cancelled` 尚无实际生产路径。
 7. `TaskResult` 投影尚未接入真实 Codex 任务，task event 的 `result` 当前为 `null`。
 8. `presentation.upsert` / `presentation.revoke` / `command.receipt` 只有类型占位。
-9. 当前仓库存在两套入站 validator；实际 `GatewayClient` 使用 `gateway-client/frames.ts`，不是
-   `gateway-client/envelope.ts`。两者支持的消息范围和严格程度不同，后续应收敛成一个事实源。
+9. 当前运行时只保留 `gateway-client/frames.ts` 作为入站 parser；类型契约仍声明
+   `project.upsert` / `project.revoke`，但 parser 尚未实现，后续共享 schema 需要收敛这处差异。
 
 ## 9. Codex 数据对 Issue #4 展示的覆盖
 
@@ -522,7 +522,6 @@ Codex 当前数据足以实现 Issue #4 中以下真实展示：
 - 类型契约：[`contracts/gateway-desktop.ts`](contracts/gateway-desktop.ts)
 - 当前 WSS client 与实际入站 parser：[`daemon/gateway-client/client.ts`](daemon/gateway-client/client.ts)、
   [`daemon/gateway-client/frames.ts`](daemon/gateway-client/frames.ts)
-- 另一套严格 validator：[`daemon/gateway-client/envelope.ts`](daemon/gateway-client/envelope.ts)
 - task dispatch 与 Codex 事件映射：[`daemon/gateway-client/dispatcher.ts`](daemon/gateway-client/dispatcher.ts)
 - task result：[`contracts/task-result.ts`](contracts/task-result.ts)
 - mock Gateway：[`scripts/mock-gateway.mjs`](scripts/mock-gateway.mjs)

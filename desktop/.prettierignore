@@ -4,4 +4,3 @@ release
 coverage
 node_modules
 pnpm-lock.yaml
-renderer-prototype

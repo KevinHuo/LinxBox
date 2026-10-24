@@ -4,13 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: [
-      'node_modules/**',
-      'dist/**',
-      'dist-preload/**',
-      'release/**',
-      'renderer-prototype/**',
-    ],
+    exclude: ['node_modules/**', 'dist/**', 'dist-preload/**', 'release/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
