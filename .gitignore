@@ -1,0 +1,38 @@
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+/config.local.*
+/secrets/
+/credentials/
+
+# Runtime state and private data
+/logs/
+/runtime/
+/data/
+*.log
+
+# Build and coverage output
+/build/
+/dist/
+/coverage/
+/htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Dependency and tool caches; refine after stack selection
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS and editor local files
+.DS_Store
+.idea/
+*.swp
+*.swo
