@@ -36,3 +36,6 @@ __pycache__/
 .idea/
 *.swp
 *.swo
+
+# Local integration files
+.local/

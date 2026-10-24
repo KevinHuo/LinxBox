@@ -1,0 +1,158 @@
+{
+  "font": "Noto Sans CJK SC Regular and Bold",
+  "license": "SIL Open Font License 1.1",
+  "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+  "sources": {
+    "Regular": {
+      "file": "NotoSansCJKsc-Regular.otf",
+      "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "weight_class": 400,
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+      "license_file": "OFL.txt",
+      "license_sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "license_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/LICENSE"
+    },
+    "Bold": {
+      "file": "NotoSansCJKsc-Bold.otf",
+      "sha256": "b5f0d1a190a7f9b43c310a8850630af12553df32c4c050543f9059732d9b4c0a",
+      "weight_class": 700,
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
+      "license_file": "OFL.txt",
+      "license_sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "license_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/LICENSE"
+    }
+  },
+  "variants": {
+    "linx_font_12": {
+      "size": 12,
+      "weight": "Regular",
+      "weight_class": 400,
+      "codepoint_count": 519,
+      "bitmap_bytes": 33993,
+      "line_height": 16,
+      "base_line": 4,
+      "glyph_ascent": 12,
+      "glyph_descent": 4,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_14": {
+      "size": 14,
+      "weight": "Regular",
+      "weight_class": 400,
+      "codepoint_count": 519,
+      "bitmap_bytes": 45455,
+      "line_height": 18,
+      "base_line": 4,
+      "glyph_ascent": 13,
+      "glyph_descent": 4,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_16": {
+      "size": 16,
+      "weight": "Regular",
+      "weight_class": 400,
+      "codepoint_count": 519,
+      "bitmap_bytes": 58673,
+      "line_height": 20,
+      "base_line": 5,
+      "glyph_ascent": 15,
+      "glyph_descent": 5,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_20": {
+      "size": 20,
+      "weight": "Regular",
+      "weight_class": 400,
+      "codepoint_count": 519,
+      "bitmap_bytes": 89993,
+      "line_height": 24,
+      "base_line": 6,
+      "glyph_ascent": 18,
+      "glyph_descent": 6,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_16_bold": {
+      "size": 16,
+      "weight": "Bold",
+      "weight_class": 700,
+      "codepoint_count": 519,
+      "bitmap_bytes": 60409,
+      "line_height": 20,
+      "base_line": 5,
+      "glyph_ascent": 15,
+      "glyph_descent": 5,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_20_bold": {
+      "size": 20,
+      "weight": "Bold",
+      "weight_class": 700,
+      "codepoint_count": 519,
+      "bitmap_bytes": 92349,
+      "line_height": 25,
+      "base_line": 6,
+      "glyph_ascent": 19,
+      "glyph_descent": 6,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_24_bold": {
+      "size": 24,
+      "weight": "Bold",
+      "weight_class": 700,
+      "codepoint_count": 519,
+      "bitmap_bytes": 130965,
+      "line_height": 29,
+      "base_line": 7,
+      "glyph_ascent": 22,
+      "glyph_descent": 7,
+      "inventory": "codepoints.txt",
+      "inventory_sha256": "36ed374851e0d6b206f3eeb8bbfd5ccf6390f570d426eabcd4939f55d6d86fab"
+    },
+    "linx_font_28_bold": {
+      "size": 28,
+      "weight": "Bold",
+      "weight_class": 700,
+      "codepoint_count": 95,
+      "bitmap_bytes": 15884,
+      "line_height": 34,
+      "base_line": 8,
+      "glyph_ascent": 26,
+      "glyph_descent": 8,
+      "inventory": "codepoints-ascii.txt",
+      "inventory_sha256": "5c369f42403f0b249aace086b4cef937f3feec7e30c55ac8a61484eab06ae3ee"
+    }
+  },
+  "rasterizer": "Pillow 11.3.0",
+  "fonttools": "4.60.1",
+  "codepoint_count": 519,
+  "format": "LVGL plain 4bpp, high nibble first, byte-aligned glyphs",
+  "bitmap_bytes": {
+    "12": 33993,
+    "14": 45455,
+    "16": 58673,
+    "20": 89993,
+    "16_bold": 60409,
+    "20_bold": 92349,
+    "24_bold": 130965,
+    "28_bold": 15884
+  },
+  "line_heights": {
+    "12": 16,
+    "14": 18,
+    "16": 20,
+    "20": 24,
+    "16_bold": 20,
+    "20_bold": 25,
+    "24_bold": 29,
+    "28_bold": 34
+  },
+  "image_format": "RGB565 little endian",
+  "image_bytes": 546336,
+  "image_source": "Original LinX UI illustrations drawn by this generator"
+}
