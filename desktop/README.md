@@ -56,6 +56,19 @@ pnpm test           # Vitest
 pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statements 均 >= 90%）
 ```
 
+## 测试覆盖率
+
+当前 Desktop 覆盖率由 `pnpm coverage` 生成，统计范围为 `desktop/` 内纳入 Vitest 配置的自有可测代码；不代表固件、Gateway 或真实端到端链路覆盖率。
+
+| 指标       | 覆盖率 |
+| ---------- | -----: |
+| Statements | 97.54% |
+| Branches   | 90.04% |
+| Functions  | 97.81% |
+| Lines      | 97.58% |
+
+最近验证：2026-10-24，24 个测试文件通过、1 个跳过；458 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 
 ```bash
