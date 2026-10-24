@@ -1,0 +1,7 @@
+dist
+dist-preload
+release
+coverage
+node_modules
+pnpm-lock.yaml
+renderer-prototype

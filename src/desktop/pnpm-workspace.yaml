@@ -1,0 +1,13 @@
+# pnpm 11 reads build-script allowlists from this file, not from package.json.
+#
+# electron downloads its prebuilt binary in a postinstall script, so it must be
+# explicitly allowed. esbuild links its platform binary in a postinstall script
+# for the same reason.
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+
+# electron-winstaller is a Windows packaging helper. The Desktop ships a macOS
+# target only, so its install script is intentionally not executed.
+ignoredBuiltDependencies:
+  - electron-winstaller
