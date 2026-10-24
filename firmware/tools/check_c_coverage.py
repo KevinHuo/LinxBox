@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""校验全部自有 C 应用源码的行、分支和函数覆盖率。"""
+"""校验 main/ 与 hardware/ 全部自有 C 源码的行、分支和函数覆盖率。"""
 
 import argparse
 import json
@@ -12,7 +12,11 @@ METRICS = ("lines", "branches", "functions")
 
 
 def evaluate(payload, source):
-    expected = {path.resolve(): path.relative_to(source).as_posix() for path in source.rglob("*.c")}
+    expected = {
+        path.resolve(): path.relative_to(source).as_posix()
+        for directory in (source / "main", source / "hardware")
+        for path in directory.rglob("*.c")
+    }
     if not expected:
         raise ValueError("没有发现自有 C 应用源码")
     if (not isinstance(payload, dict) or payload.get("type") != "llvm.coverage.json.export"
@@ -67,7 +71,7 @@ def main(argv=None):
     parser.add_argument("--summary", type=Path, help="保存固定口径的覆盖率摘要")
     arguments = parser.parse_args(argv)
     try:
-        result = evaluate(json.loads(arguments.report.read_text()), ROOT / "main")
+        result = evaluate(json.loads(arguments.report.read_text()), ROOT)
         if arguments.summary:
             arguments.summary.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
     except (OSError, ValueError) as error:

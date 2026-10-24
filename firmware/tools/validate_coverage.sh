@@ -19,6 +19,11 @@ for tool in "${coverage_cc}" "${coverage_cxx}" "${llvm_cov}" "${llvm_profdata}" 
 done
 cd "${repo_root}"
 UPSTREAM_DIR="$(python3 tools/prepare_upstream.py --print-path)"
+cjson_dir="${IDF_PATH:-}/components/json/cJSON"
+if [[ ! -f "${cjson_dir}/cJSON.c" ]]; then
+    echo "缺少 ESP-IDF 自带 cJSON，请先激活 ESP-IDF 5.5.3。" >&2
+    exit 1
+fi
 if [[ ! -f managed_components/lvgl__lvgl/CMakeLists.txt ]]; then
     echo "缺少已锁定的 LVGL 组件，请先执行 ./tools/validate.sh --firmware。" >&2
     exit 1
@@ -51,25 +56,45 @@ compile_test() {
     binaries+=("${run_dir}/${name}")
 }
 compile_test test_linx_input tests/test_linx_input.c main/linx_input.c
+compile_test test_linx_wifi tests/test_linx_wifi.c main/linx_wifi.c
 compile_test test_linx_demo tests/test_linx_demo.c main/linx_demo.c main/linx_content.c
 compile_test test_linx_navigation tests/test_linx_navigation.c main/linx_navigation.c
 compile_test test_linx_reader tests/test_linx_reader.c main/linx_reader.c main/linx_navigation.c main/linx_content.c
-for test in test_linx_input test_linx_demo test_linx_navigation test_linx_reader; do
+for test in test_linx_input test_linx_wifi test_linx_demo test_linx_navigation test_linx_reader; do
     "${run_dir}/${test}"
 done
-compile_test test_main_runtime -Itests/device_stubs -I"${UPSTREAM_DIR}/main" \
-    tests/test_main_runtime.c main/main.c main/linx_input.c
-scenarios="$("${run_dir}/test_main_runtime" --list)"
-while IFS= read -r scenario; do
-    "${run_dir}/test_main_runtime" "${scenario}"
-done <<< "${scenarios}"
+for variant in offline lingxi; do
+    runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main" -Ihardware/folotoy/ai-passport)
+    if [[ "${variant}" == "lingxi" ]]; then
+        runtime_flags+=(-DCONFIG_LINX_LINGXI_ENABLE=1)
+    fi
+    compile_test "test_main_runtime_${variant}" "${runtime_flags[@]}" \
+        tests/test_main_runtime.c main/main.c main/linx_input.c
+    scenarios="$("${run_dir}/test_main_runtime_${variant}" --list)"
+    while IFS= read -r scenario; do
+        "${run_dir}/test_main_runtime_${variant}" "${scenario}"
+    done <<< "${scenarios}"
+done
+# 第三方 JSON 库不进入自有代码统计；两组语音测试仍调用其真实实现。
+"${coverage_cc}" -std=c11 -O0 -g -c "${cjson_dir}/cJSON.c" -o "${run_dir}/cJSON.o"
+compile_test test_linx_lingxi_protocol -I"${cjson_dir}" \
+    tests/test_linx_lingxi_protocol.c main/linx_lingxi_protocol.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_lingxi_protocol"
+compile_test test_linx_lingxi_device -Itests/lingxi_stubs \
+    -Ihardware/folotoy/ai-passport -I"${cjson_dir}" \
+    tests/test_linx_lingxi_device.c main/linx_lingxi_protocol.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_lingxi_device"
+compile_test test_linx_wifi_portal -Itests/lingxi_stubs -Itests/device_stubs \
+    -Ihardware/folotoy/ai-passport -I"${cjson_dir}" \
+    tests/test_linx_wifi_portal.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_wifi_portal"
 
 "${llvm_profdata}" merge -sparse "${run_dir}"/profiles/*.profraw -o "${run_dir}/combined.profdata"
 coverage_args=("${binaries[0]}")
 for binary in "${binaries[@]:1}"; do
     coverage_args+=(-object "${binary}")
 done
-source_list="$(python3 -c 'from pathlib import Path; print("\n".join(str(path.resolve()) for path in sorted(Path("main").rglob("*.c"))))')"
+source_list="$(python3 -c 'from pathlib import Path; print("\n".join(str(path.resolve()) for folder in ("main", "hardware") for path in sorted(Path(folder).rglob("*.c"))))')"
 source_files=()
 while IFS= read -r source; do
     source_files+=("${source}")

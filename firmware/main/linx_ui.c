@@ -81,6 +81,16 @@ static struct {
     location_t reply_origin;
     size_t reply_depth;
     linx_reply_context_t reply;
+    linx_voice_handler_t voice_handler;
+    void *voice_user;
+    uint32_t voice_generation;
+    linx_voice_state_t voice_state;
+    linx_voice_error_t voice_error;
+    char activation_code[7];
+    location_t wifi_origin;
+    linx_ui_wifi_mode_t wifi_mode;
+    char wifi_ap_ssid[LINX_WIFI_SSID_CAPACITY];
+    char wifi_ap_password[9];
     read_position_t positions[LINX_TASK_COUNT][LINX_HISTORY_CAPACITY * 2U];
     linx_image_ref_t remembered_image[LINX_TASK_COUNT];
     linx_reader_layout_t pages;
@@ -96,6 +106,7 @@ static struct {
     uint32_t seen_revision;
     const char *notice;
 } ui;
+static uint32_t voice_sequence;
 
 static void render(void);
 
@@ -250,7 +261,8 @@ static void brand(void)
 {
     text("Lin", 20, 12, 34, 25, &linx_font_20_bold, COLOR_INK);
     x_mark(57, 18, 13, 3);
-    text("演示", 141, 18, 25, 16, &linx_font_12, COLOR_MUTED);
+    text(ui.at.page == LINX_UI_WIFI ? "设备" : ui.voice_handler && ui.at.page == LINX_UI_VOICE ? "灵矽" : "演示",
+         141, 18, 25, 16, &linx_font_12, COLOR_MUTED);
     shape(174, 21, 15, 9, COLOR_MUTED, 1, 1);
     shape(176, 23, 9, 5, COLOR_MUTED, 0, 0);
     shape(189, 24, 2, 3, COLOR_MUTED, 0, 0);
@@ -445,8 +457,42 @@ static void open_images(uint32_t filter)
     rebuild_images();
 }
 
+static bool voice_request(linx_voice_command_t command)
+{
+    const linx_voice_request_t request = {.command=command, .generation=ui.voice_generation, .context=ui.reply};
+    return ui.voice_handler && ui.voice_handler(&request, ui.voice_user);
+}
+
+static void cancel_live_voice(void)
+{
+    if (ui.voice_generation != 0U) {
+        voice_request(LINX_VOICE_CANCEL);
+        ui.voice_generation = 0U;
+    }
+}
+
+static void start_voice(void)
+{
+    ui.at.page = LINX_UI_VOICE;
+    ui.at.selected = 0U;
+    ui.voice_ms = ui.now_ms;
+    ui.last_wave_ms = ui.now_ms;
+    if (ui.voice_handler) {
+        if (++voice_sequence == 0U) ++voice_sequence;
+        ui.voice_generation = voice_sequence;
+        ui.voice_state = LINX_VOICE_CONNECTING;
+        ui.voice_error = LINX_VOICE_OK;
+        memset(ui.activation_code, 0, sizeof(ui.activation_code));
+        if (!voice_request(LINX_VOICE_START)) {
+            ui.voice_state = LINX_VOICE_ERROR;
+            ui.voice_error = LINX_VOICE_NO_MEMORY;
+        }
+    }
+}
+
 static void cancel_reply(void)
 {
+    cancel_live_voice();
     ui.at = ui.reply_origin;
     ui.depth = ui.reply_depth;
     memset(&ui.reply, 0, sizeof(ui.reply));
@@ -456,7 +502,7 @@ static void cancel_reply(void)
 static void begin_reply(uint32_t source_turn, uint32_t image_id)
 {
     linx_reply_gate_t gate = linx_demo_reply_gate(&ui.demo, ui.at.task);
-    if (gate == LINX_REPLY_PENDING || gate == LINX_REPLY_FAILED) {
+    if (!ui.voice_handler && (gate == LINX_REPLY_PENDING || gate == LINX_REPLY_FAILED)) {
         const linx_task_t *current = task();
         if (current) {
             ui.at.page = LINX_UI_RECEIPT;
@@ -465,17 +511,14 @@ static void begin_reply(uint32_t source_turn, uint32_t image_id)
         }
         return;
     }
-    if (gate != LINX_REPLY_ALLOWED ||
+    if ((!ui.voice_handler && gate != LINX_REPLY_ALLOWED) ||
         !linx_demo_reply_context(&ui.demo, ui.at.task, source_turn, image_id, &ui.reply)) {
         ui.notice = "这轮已更新，请返回任务";
         return;
     }
     ui.reply_origin = ui.at;
     ui.reply_depth = ui.depth;
-    ui.at.page = LINX_UI_VOICE;
-    ui.at.selected = 0U;
-    ui.voice_ms = ui.now_ms;
-    ui.last_wave_ms = ui.now_ms;
+    start_voice();
     ui.notice = NULL;
 }
 
@@ -689,11 +732,54 @@ static void reply_target(char *out, size_t capacity)
     else snprintf(out, capacity, "原任务 · 第%u轮", (unsigned)(turn ? turn->number : 0U));
 }
 
+static const char *voice_status(void)
+{
+    switch (ui.voice_state) {
+    case LINX_VOICE_CONNECTING: return "正在连接灵矽";
+    case LINX_VOICE_BINDING: return "请在灵矽平台绑定设备";
+    case LINX_VOICE_LISTENING: return "麦克风已开启，请说话";
+    case LINX_VOICE_WAITING: return "已结束说话，等待灵矽回复";
+    case LINX_VOICE_SPEAKING: return "正在播放灵矽语音回复";
+    case LINX_VOICE_ERROR: return "连接失败，按OK重试";
+    case LINX_VOICE_CLOSED: return "会话已关闭，按OK重试";
+    default: return "正在连接灵矽";
+    }
+}
+
+static const char *voice_error(void)
+{
+    switch (ui.voice_error) {
+    case LINX_VOICE_NOT_CONFIGURED: return "请先设置Wi-Fi";
+    case LINX_VOICE_WIFI_FAILED: return "Wi-Fi连接失败";
+    case LINX_VOICE_TIME_FAILED: return "网络时间同步失败";
+    case LINX_VOICE_NETWORK_FAILED: return "灵矽连接已断开";
+    case LINX_VOICE_PROTOCOL_FAILED: return "语音协议不兼容";
+    case LINX_VOICE_AUDIO_FAILED: return "音频设备无法使用";
+    case LINX_VOICE_NO_MEMORY: return "内存不足，请重试";
+    case LINX_VOICE_TIMEOUT: return "灵矽回复超时";
+    default: return "请检查网络后重试";
+    }
+}
+
 static void render_voice(void)
 {
     const linx_task_t *target = linx_demo_task(&ui.demo, ui.reply.task_id);
-    header("正在聆听", target ? target->title : "原任务");
-    text("模拟输入，不采集声音", 34, 106, 180, 18, &linx_font_12, COLOR_MUTED);
+    const bool live = ui.voice_handler != NULL;
+    header(live ? "灵矽对话" : "正在聆听", target ? target->title : "原任务");
+    text(live ? voice_status() : "模拟输入，不采集声音",
+         live ? 16 : 34, 106, live ? 208 : 180, 18, &linx_font_12, COLOR_MUTED);
+    if (live && ui.voice_state == LINX_VOICE_BINDING) {
+        text("设备激活码", 64, 148, 130, 24, &linx_font_16, COLOR_INK);
+        text(ui.activation_code, 40, 183, 160, 36, &linx_font_28_bold, COLOR_ACCENT_TEXT);
+        footer("OK绑定后重试  ↓返回\n长按OK 返回");
+        return;
+    }
+    if (live && (ui.voice_state == LINX_VOICE_ERROR || ui.voice_state == LINX_VOICE_CLOSED)) {
+        text(voice_error(), 28, 151, 184, 64, &linx_font_16, COLOR_ACCENT_TEXT);
+        footer(ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "OK手机配网  ↓返回\n长按OK 返回" :
+               "OK重试  ↓返回\n长按OK 返回");
+        return;
+    }
     unsigned phase = (unsigned)((ui.now_ms - ui.voice_ms) / 125U);
     for (size_t i = 0U; i < 6U; i++) {
         int height = 10 + (int)((phase * 7U + i * 13U) % 34U);
@@ -703,12 +789,15 @@ static void render_voice(void)
     x_mark(100, 155, 40, 7);
     char elapsed[24];
     unsigned seconds = (unsigned)((ui.now_ms - ui.voice_ms) / 1000U);
-    snprintf(elapsed, sizeof(elapsed), "00:%02u", seconds);
+    snprintf(elapsed, sizeof(elapsed), "%02u:%02u", seconds / 60U, seconds % 60U);
     ui.voice_counter = text(elapsed, 79, 210, 90, 36, &linx_font_28_bold, COLOR_INK);
     char target_context[96];
     reply_target(target_context, sizeof(target_context));
     text(target_context, 28, 252, 184, 18, &linx_font_12, COLOR_MUTED);
-    footer("OK结束录音  ↓取消\n长按OK 取消");
+    footer(!live ? "OK结束录音  ↓取消\n长按OK 取消" :
+           ui.voice_state == LINX_VOICE_SPEAKING ? "OK打断重录  ↓返回\n长按OK 返回" :
+           ui.voice_state == LINX_VOICE_LISTENING ? "OK结束说话  ↓返回\n长按OK 返回" :
+           "↓返回\n长按OK 返回");
 }
 
 static void update_voice_wave(void)
@@ -722,7 +811,7 @@ static void update_voice_wave(void)
     }
     if (ui.voice_counter) {
         unsigned seconds = (unsigned)((ui.now_ms - ui.voice_ms) / 1000U);
-        lv_label_set_text_fmt(ui.voice_counter, "00:%02u", seconds);
+        lv_label_set_text_fmt(ui.voice_counter, "%02u:%02u", seconds / 60U, seconds % 60U);
     }
 }
 
@@ -769,12 +858,133 @@ static void render_receipt(void)
     } else footer("OK返回任务概览\n长按OK 返回概览");
 }
 
+static void wifi_clear(void)
+{
+    volatile char *password = ui.wifi_ap_password;
+    for (size_t i = 0U; i < sizeof(ui.wifi_ap_password); ++i) password[i] = '\0';
+    memset(ui.wifi_ap_ssid, 0, sizeof(ui.wifi_ap_ssid));
+}
+
+static void wifi_setup(void)
+{
+    wifi_clear();
+    if (++voice_sequence == 0U) ++voice_sequence;
+    ui.voice_generation = voice_sequence;
+    ui.wifi_mode = LINX_UI_WIFI_SCANNING;
+    ui.voice_error = LINX_VOICE_OK;
+    linx_voice_request_t request = {.command = LINX_VOICE_WIFI_SETUP, .generation = voice_sequence};
+    if (!ui.voice_handler || !ui.voice_handler(&request, ui.voice_user)) {
+        ui.wifi_mode = LINX_UI_WIFI_ERROR;
+        ui.voice_error = LINX_VOICE_NO_MEMORY;
+    }
+}
+
+static void open_wifi(void)
+{
+    ui.wifi_origin = ui.at;
+    cancel_live_voice();
+    ui.at.page = LINX_UI_WIFI;
+    ui.notice = NULL;
+    wifi_setup();
+}
+
+static void close_wifi(void)
+{
+    cancel_live_voice();
+    wifi_clear();
+    ui.at = ui.wifi_origin;
+    ui.notice = NULL;
+    if (ui.at.page == LINX_UI_VOICE) {
+        ui.voice_state = LINX_VOICE_ERROR;
+        ui.voice_error = LINX_VOICE_NOT_CONFIGURED;
+    }
+}
+
+static void wifi_ok(void)
+{
+    if (ui.wifi_mode == LINX_UI_WIFI_ERROR) wifi_setup();
+    else if (ui.wifi_mode == LINX_UI_WIFI_CONNECTED) close_wifi();
+}
+
+static bool wifi_event(const linx_voice_event_t *event)
+{
+    switch (event->state) {
+    case LINX_VOICE_WIFI_SCANNING: ui.wifi_mode = LINX_UI_WIFI_SCANNING; break;
+    case LINX_VOICE_WIFI_PORTAL:
+        if (!event->wifi_ap_ssid[0] || !memchr(event->wifi_ap_ssid, '\0', sizeof(event->wifi_ap_ssid)) ||
+            event->wifi_ap_password[8] != '\0') return false;
+        for (size_t i = 0U; event->wifi_ap_ssid[i]; ++i) {
+            unsigned char character = (unsigned char)event->wifi_ap_ssid[i];
+            if (character < 32U || character > 126U) return false;
+        }
+        for (size_t i = 0U; i < 8U; ++i)
+            if (event->wifi_ap_password[i] < '0' || event->wifi_ap_password[i] > '9') return false;
+        memcpy(ui.wifi_ap_ssid, event->wifi_ap_ssid, sizeof(ui.wifi_ap_ssid));
+        memcpy(ui.wifi_ap_password, event->wifi_ap_password, sizeof(ui.wifi_ap_password));
+        ui.voice_error = event->error;
+        ui.wifi_mode = LINX_UI_WIFI_PHONE;
+        break;
+    case LINX_VOICE_WIFI_CONNECTING: ui.wifi_mode = LINX_UI_WIFI_CONNECTING; break;
+    case LINX_VOICE_WIFI_SAVED:
+        wifi_clear();
+        if (ui.wifi_origin.page == LINX_UI_VOICE) {
+            ui.at = ui.wifi_origin;
+            ui.voice_generation = 0U;
+            start_voice();
+        } else ui.wifi_mode = LINX_UI_WIFI_CONNECTED;
+        break;
+    case LINX_VOICE_ERROR:
+        wifi_clear();
+        ui.voice_error = event->error;
+        ui.wifi_mode = LINX_UI_WIFI_ERROR;
+        break;
+    default: return false;
+    }
+    ui.notice = NULL;
+    render();
+    return true;
+}
+
+static void render_wifi(void)
+{
+    header("手机配网", "用手机键盘输入Wi-Fi密码");
+    if (ui.wifi_mode == LINX_UI_WIFI_PHONE || ui.wifi_mode == LINX_UI_WIFI_CONNECTING) {
+        text("1  手机连接热点", 16, 106, 208, 20, &linx_font_14, COLOR_MUTED);
+        lv_obj_t *name = text(ui.wifi_ap_ssid, 16, 132, 208, 25, &linx_font_20_bold, COLOR_INK);
+        if (name) lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        char password[40];
+        snprintf(password, sizeof(password), "热点密码：%s", ui.wifi_ap_password);
+        text(password, 16, 160, 208, 23, &linx_font_16, COLOR_INK);
+        text("2  浏览器打开", 16, 195, 208, 20, &linx_font_14, COLOR_MUTED);
+        text("http://192.168.4.1", 16, 219, 208, 22, &linx_font_16, COLOR_ACCENT_TEXT);
+        const char *status = ui.wifi_mode == LINX_UI_WIFI_CONNECTING ? "正在连接，请稍候" :
+            ui.voice_error != LINX_VOICE_OK ? "连接失败，请在手机上重试" : "选Wi-Fi后连接并保存";
+        text(status, 16, 250, 208, 18, &linx_font_12, COLOR_MUTED);
+        volatile char *secret = password;
+        for (size_t i = 0U; i < sizeof(password); ++i) secret[i] = '\0';
+    } else {
+        const char *status = ui.wifi_mode == LINX_UI_WIFI_SCANNING ? "正在准备手机配网" :
+            ui.wifi_mode == LINX_UI_WIFI_CONNECTED ? "已连接并保存" :
+            ui.voice_error == LINX_VOICE_TIMEOUT ? "配网已超时，请重试" : voice_error();
+        text(status, 28, 151, 184, 64, &linx_font_16, COLOR_INK);
+    }
+    footer(ui.wifi_mode == LINX_UI_WIFI_ERROR ? "OK重新配网\n长按OK 返回" :
+           ui.wifi_mode == LINX_UI_WIFI_CONNECTED ? "OK返回设置\n长按OK 返回" :
+           "5分钟内完成配网\n长按OK 取消");
+}
+
 static void render_settings(void)
 {
-    header("演示选项", "固定剧情 · 无网络连接");
+    header(ui.voice_handler ? "设备设置" : "演示选项",
+           ui.voice_handler ? "网络与演示选项" : "固定剧情 · 无网络连接");
     const char *options[] = {"恢复初始场景", ui.demo.online ? "模拟电脑：在线" : "模拟电脑：离线",
                               ui.demo.fail_next_send ? "下次发送失败：开" : "下次发送失败：关", "关于 LinX 演示"};
-    for (size_t i = 0U; i < 4U; i++) menu_row(i, ui.at.selected, 110 + (int)i * 37, 33, options[i], true);
+    if (ui.voice_handler) {
+        menu_row(0U, ui.at.selected, 108, 28, "Wi-Fi网络", true);
+        for (size_t i = 0U; i < 4U; ++i) menu_row(i + 1U, ui.at.selected, 139 + (int)i * 31, 28, options[i], true);
+    } else {
+        for (size_t i = 0U; i < 4U; i++) menu_row(i, ui.at.selected, 110 + (int)i * 37, 33, options[i], true);
+    }
     footer("↑↓选择  OK切换\n长按OK 返回任务");
 }
 
@@ -790,7 +1000,10 @@ static void render_reset(void)
 static void render_about(void)
 {
     header("关于 LinX", "随身 Agent 对话终端");
-    text("暖白交互演示\n\n任务、对话、图片、\n电脑状态与电量均为\n内置模拟内容。\n\n不会采集声音或联网。", 16, 102, 208, 168, &linx_font_16, COLOR_INK);
+    const char *detail = ui.voice_handler
+        ? "灵矽语音已开启\n\n进入语音页后联网，\n采集声音并上传灵矽，\n播放智能体语音回复。\n\n任务、图片及电量\n仍为内置模拟内容。"
+        : "暖白交互演示\n\n任务、对话、图片、\n电脑状态与电量均为\n内置模拟内容。\n\n不会采集声音或联网。";
+    text(detail, 16, 102, 208, 168, &linx_font_16, COLOR_INK);
     footer("OK返回演示选项\n长按OK 返回");
 }
 
@@ -818,6 +1031,7 @@ static void render(void)
         case LINX_UI_SETTINGS: render_settings(); break;
         case LINX_UI_RESET: render_reset(); break;
         case LINX_UI_ABOUT: render_about(); break;
+        case LINX_UI_WIFI: render_wifi(); break;
     }
     lv_obj_invalidate(ui.decor);
     ui.seen_revision = ui.demo.revision;
@@ -861,8 +1075,42 @@ void linx_ui_init(lv_obj_t *screen, uint64_t now_ms)
 
 void linx_ui_deinit(void)
 {
+    cancel_live_voice();
+    wifi_clear();
     if (ui.root) lv_obj_delete(ui.root);
     memset(&ui, 0, sizeof(ui));
+}
+
+void linx_ui_set_voice_handler(linx_voice_handler_t handler, void *user)
+{
+    if (ui.at.page == LINX_UI_WIFI) close_wifi();
+    if (ui.at.page == LINX_UI_VOICE || ui.at.page == LINX_UI_CONFIRM) cancel_reply();
+    ui.voice_handler = handler;
+    ui.voice_user = user;
+    render();
+}
+
+bool linx_ui_voice_event(const linx_voice_event_t *event)
+{
+    if (!event || !ui.voice_handler || ui.voice_generation == 0U ||
+        event->generation != ui.voice_generation || (unsigned)event->error > LINX_VOICE_TIMEOUT) return false;
+    if (ui.at.page == LINX_UI_WIFI) return wifi_event(event);
+    if (ui.at.page != LINX_UI_VOICE || (unsigned)event->state > LINX_VOICE_CLOSED) return false;
+    if (event->state == LINX_VOICE_BINDING) {
+        if (event->activation_code[6] != '\0') return false;
+        for (size_t i = 0U; i < 6U; ++i) {
+            if (event->activation_code[i] < '0' || event->activation_code[i] > '9') return false;
+        }
+    }
+    if (event->state == LINX_VOICE_LISTENING && ui.voice_state != LINX_VOICE_LISTENING) {
+        ui.voice_ms = ui.now_ms;
+        ui.last_wave_ms = ui.now_ms;
+    }
+    ui.voice_state = event->state;
+    ui.voice_error = event->error;
+    memcpy(ui.activation_code, event->activation_code, sizeof(ui.activation_code));
+    render();
+    return true;
 }
 
 static void handle_back(void)
@@ -870,6 +1118,7 @@ static void handle_back(void)
     switch (ui.at.page) {
         case LINX_UI_BOOT: ui.at.page = LINX_UI_TASKS; break;
         case LINX_UI_TASKS: push(LINX_UI_SETTINGS); break;
+        case LINX_UI_WIFI: close_wifi(); break;
         case LINX_UI_VOICE:
         case LINX_UI_CONFIRM: cancel_reply(); break;
         case LINX_UI_RECEIPT: to_overview(); break;
@@ -924,7 +1173,8 @@ static void handle_direction(int direction)
                 ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 2U);
             break;
         }
-        case LINX_UI_SETTINGS: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 4U); break;
+        case LINX_UI_SETTINGS: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, ui.voice_handler ? 5U : 4U); break;
+        case LINX_UI_WIFI: break;
         case LINX_UI_RESET: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 2U); break;
         case LINX_UI_VOICE: if (direction > 0) cancel_reply(); break;
         default: break;
@@ -987,8 +1237,20 @@ static void handle_ok(void)
             break;
         }
         case LINX_UI_VOICE:
-            ui.at.page = LINX_UI_CONFIRM;
-            ui.at.selected = 0U;
+            if (ui.voice_handler) {
+                if (ui.voice_state == LINX_VOICE_LISTENING) {
+                    if (voice_request(LINX_VOICE_FINISH)) ui.voice_state = LINX_VOICE_WAITING;
+                    else {
+                        ui.voice_state = LINX_VOICE_ERROR;
+                        ui.voice_error = LINX_VOICE_NO_MEMORY;
+                    }
+                } else if (ui.voice_state == LINX_VOICE_ERROR && ui.voice_error == LINX_VOICE_NOT_CONFIGURED) open_wifi();
+                else if (ui.voice_state == LINX_VOICE_ERROR || ui.voice_state == LINX_VOICE_CLOSED ||
+                           ui.voice_state == LINX_VOICE_BINDING || ui.voice_state == LINX_VOICE_SPEAKING) start_voice();
+            } else {
+                ui.at.page = LINX_UI_CONFIRM;
+                ui.at.selected = 0U;
+            }
             break;
         case LINX_UI_CONFIRM:
             if (ui.at.selected == 0U) {
@@ -1001,9 +1263,7 @@ static void handle_ok(void)
                     ui.notice = NULL;
                 } else ui.notice = "已有指令，请保留并返回";
             } else if (ui.at.selected == 1U) {
-                ui.at.page = LINX_UI_VOICE;
-                ui.voice_ms = ui.now_ms;
-                ui.last_wave_ms = ui.now_ms;
+                start_voice();
             } else cancel_reply();
             break;
         case LINX_UI_RECEIPT: {
@@ -1018,12 +1278,19 @@ static void handle_ok(void)
             } else to_overview();
             break;
         }
-        case LINX_UI_SETTINGS:
-            if (ui.at.selected == 0U) push(LINX_UI_RESET);
-            else if (ui.at.selected == 1U) linx_demo_set_online(&ui.demo, !ui.demo.online, ui.now_ms);
-            else if (ui.at.selected == 2U) linx_demo_fail_next_send(&ui.demo, !ui.demo.fail_next_send);
+        case LINX_UI_WIFI: wifi_ok(); break;
+        case LINX_UI_SETTINGS: {
+            size_t selected = ui.at.selected;
+            if (ui.voice_handler) {
+                if (selected == 0U) { open_wifi(); break; }
+                --selected;
+            }
+            if (selected == 0U) push(LINX_UI_RESET);
+            else if (selected == 1U) linx_demo_set_online(&ui.demo, !ui.demo.online, ui.now_ms);
+            else if (selected == 2U) linx_demo_fail_next_send(&ui.demo, !ui.demo.fail_next_send);
             else push(LINX_UI_ABOUT);
             break;
+        }
         case LINX_UI_RESET:
             if (ui.at.selected == 1U) {
                 linx_demo_reset(&ui.demo, ui.now_ms);
@@ -1061,11 +1328,12 @@ void linx_ui_tick(uint64_t now_ms)
         refresh = true;
     }
     if (ui.at.page == LINX_UI_VOICE) {
-        if (now_ms - ui.voice_ms >= 8000U) {
+        if (!ui.voice_handler && now_ms - ui.voice_ms >= 8000U) {
             ui.at.page = LINX_UI_CONFIRM;
             ui.at.selected = 0U;
             refresh = true;
-        } else if (now_ms - ui.last_wave_ms >= 125U) {
+        } else if (now_ms - ui.last_wave_ms >= 125U &&
+                   (!ui.voice_handler || ui.voice_state == LINX_VOICE_LISTENING || ui.voice_state == LINX_VOICE_SPEAKING)) {
             ui.last_wave_ms = now_ms;
             if (!refresh) update_voice_wave();
         }
@@ -1096,6 +1364,10 @@ linx_ui_debug_t linx_ui_debug(void)
         .image_view = ui.at.image_view,
         .render_overflow = ui.render_overflow,
         .labels_used = ui.labels_used,
+        .voice_generation = ui.voice_generation,
+        .voice_state = ui.voice_state,
+        .voice_error = ui.voice_error,
+        .wifi_mode = ui.wifi_mode,
     };
     if (ui.at.page == LINX_UI_IMAGES || ui.at.page == LINX_UI_IMAGE_MENU || ui.at.page == LINX_UI_IMAGE_DETAIL) {
         const linx_image_ref_t *image = current_image();

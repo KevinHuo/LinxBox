@@ -7,11 +7,11 @@
     "documentation": "https://github.com/FoloToy/ai-passport/blob/006c2279852e352a8433b2c21e5e09be2ca36f77/docs/README.zh_CN.md"
   },
   "application": {
-    "name": "LinX 离线界面演示",
+    "name": "LinX 界面与灵矽语音应用",
     "version": "linx-demo-0.2.0",
     "documentation": "main/README.md",
     "intercom_implemented": false,
-    "description": "当前应用为 LinX 0.2 离线界面演示，任务、回答、图片和语音输入使用模拟数据，尚未实现设备间对讲。"
+    "description": "LinX 0.2 保留任务、正文、图片和电量的离线演示；设备支持临时热点与手机网页选择 Wi-Fi、输入密码及试连后保存，默认在语音页直接连接灵矽智能体，流式上传声音并播放回复，关闭 CONFIG_LINX_LINGXI_ENABLE 可保留模拟语音。尚未实现真实 Codex 任务绑定、任务回执、任意中文字幕或设备间对讲。"
   },
   "maintenance_root": "firmware/",
   "documentation_language": "简体中文",
@@ -26,13 +26,28 @@
     "bsp_source": "固定上游依赖的 components/bsp/"
   },
   "local_modifications": [
-    "main/ 中的 LinX 0.2 离线应用、导航、阅读与输入交互",
+    "main/ 中的 LinX 0.2 应用、离线任务界面、导航、阅读、输入交互、手机配网指引及 Wi-Fi 密码格式检查与灵矽有界协议",
     "assets/fonts/ 与 assets/images/ 中的源字体、许可、清单和生成资源，以及对应生成检查工具",
-    "tests/ 中的四组 LinX 逻辑测试、tests/linx_host/ 真实 LVGL 主机测试及依赖接入回归",
-    "hardware/folotoy/ai-passport/ 中的品牌型号接入说明与 board.cmake 配置；不复制上游 BSP",
+    "tests/ 中的 LinX 逻辑、灵矽协议及设备运行测试、tests/linx_host/ 真实 LVGL 主机测试及依赖接入回归；main/ 与 hardware/ 自有 C 源码纳入行、分支、函数各 90% 的覆盖率门槛",
+    "hardware/folotoy/ai-passport/ 中的品牌型号接入说明、board.cmake 配置和 linx_lingxi_device 网络与录放音实现；不复制上游 BSP",
     "本地构建入口、默认配置、分区、组件锁、依赖准备器和检查器，以及中文应用说明"
   ],
-  "provenance_note": "固件基于固定版本的 FoloToy/ai-passport，上游驱动、工具与说明不在活跃源码中复制维护；78/xiaozhi-esp32 仅在此前对讲方案讨论中作为参考，并非本工程上游。当前尚未实现设备间对讲。",
+  "provenance_note": "硬件基础仍为固定版本的 FoloToy/ai-passport；语音协议的 hello/listen/abort 和 Hello 默认参数规则从固定版本的 78/xiaozhi-esp32 移植到现有 C 模块，保留 MIT 版权及许可。灵矽设备接入和硬件运行由本项目维护；不复制整套小智固件或切换硬件驱动，当前尚未实现设备间对讲。",
+  "application_dependencies": [
+    {
+      "component": "espressif/esp_audio_codec",
+      "version": "2.6.2",
+      "purpose": "本次授权新增的唯一运行依赖，仅使用 Opus 解码，输出 16 kHz、16 bit、单声道 PCM",
+      "documentation": "https://components.espressif.com/components/espressif/esp_audio_codec/versions/2.6.2/readme",
+      "repository_commit": "f9110cbb471b4017b0faf9bd48fcac84c61ecb6d",
+      "license": "LicenseRef-Espressif-Modified-MIT，仅用于 Espressif 产品；保留组件随包许可"
+    },
+    {
+      "component": "lvgl/lvgl",
+      "version": "9.5.0",
+      "purpose": "保持现有图形库版本，不随语音依赖解析升级"
+    }
+  ],
   "dependency": {
     "mode": "固定 Git 提交，只读加载",
     "prepare_command": "python3 tools/prepare_upstream.py --print-path",
@@ -45,5 +60,40 @@
     "reuse": "上游原始测试、镜像校验与调试归档工具直接从校验过的缓存使用",
     "availability": "首次获取通常需要网络；完整且校验通过的缓存可离线复用；可用 --source 从包含相同提交的本机 Git 仓库初始化",
     "upgrade": "明确更改固定提交并审查差异，执行完整固件门禁、真实 LVGL 主机验证与截图比较；不得直接修改缓存或跟随浮动分支"
+  },
+  "protocol_source": {
+    "repository": "https://github.com/78/xiaozhi-esp32.git",
+    "baseline_commit": "39d23aee5b8682f77bbdf9cdc66799456b5ad408",
+    "license": "MIT",
+    "license_file": "LICENSE",
+    "source_files": [
+      {
+        "path": "main/protocols/protocol.cc",
+        "blob_sha": "ac591b57a1da9935a4e8dcb2d26aeb8740e3ae3f",
+        "functions": [
+          "SendStartListening",
+          "SendStopListening",
+          "SendAbortSpeaking"
+        ]
+      },
+      {
+        "path": "main/protocols/websocket_protocol.cc",
+        "blob_sha": "a5658691935e0d62a1193107543c00de370ba338",
+        "functions": [
+          "GetHelloMessage",
+          "ParseServerHello",
+          "OpenAudioChannel"
+        ]
+      },
+      {
+        "path": "main/protocols/protocol.h",
+        "blob_sha": "cfa0dd2fa01bf878efade1d328224c0bd019e5b0",
+        "purpose": "默认下行采样率24000及帧时长60ms的依据"
+      }
+    ],
+    "local_file": "main/linx_lingxi_protocol.c",
+    "integration": "将 hello/listen/abort 消息构造及可选 Hello 参数规则移植为 C/cJSON 接口；鉴权头与协议 v1 原始二进制音频流程按小智源码核对。保留容量、字段与内存失败检查，不直接编译其 C++ Application/Board/Settings 框架。",
+    "differences": "灵矽官方支持PCM，因此本设备保留16kHz单声道20ms PCM上行以节省编码资源，下行支持16/24kHz Opus或16kHz PCM。仅manual模式，正常回复播完自动开始下一轮；不声明未实现的MCP/AEC/动态字形能力。",
+    "documentation": "https://github.com/78/xiaozhi-esp32/blob/39d23aee5b8682f77bbdf9cdc66799456b5ad408/docs/websocket.md"
   }
 }

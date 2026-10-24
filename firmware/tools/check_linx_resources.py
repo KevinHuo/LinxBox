@@ -89,6 +89,6 @@ image_source = (ROOT / "assets/images/linx_image_data.c").read_text()
 assert image_source.count(".magic=LV_IMAGE_HEADER_MAGIC") == 9
 app = (ROOT / "main/main.c").read_text()
 for forbidden in ("bsp_audio_init(", "bsp_battery_init(", "esp_wifi_init(", "nimble_port_init("):
-    assert forbidden not in app, f"Offline startup includes {forbidden}"
+    assert forbidden not in app, f"UI entrypoint directly initializes slow hardware: {forbidden}"
 print(f"LinX resources: PASS ({len(points)} glyphs × 7 CJK variants; 95 ASCII × 28px bold; "
-      "exact metrics/cmaps/source hashes; 9 RGB565 views; offline startup)")
+      "exact metrics/cmaps/source hashes; 9 RGB565 views; deferred radio/audio startup)")

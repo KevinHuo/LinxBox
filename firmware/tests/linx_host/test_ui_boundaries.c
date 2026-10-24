@@ -250,6 +250,146 @@ static void test_renderers_handle_exhausted_pools(void)
     assert(lv_mem_test() == LV_RESULT_OK);
 }
 
+static linx_voice_request_t boundary_voice_requests[8];
+static size_t boundary_voice_count;
+
+static bool boundary_voice_handler(const linx_voice_request_t *request, void *user)
+{
+    assert(user == &boundary_voice_count && request != NULL);
+    assert(boundary_voice_count < sizeof(boundary_voice_requests) / sizeof(boundary_voice_requests[0]));
+    boundary_voice_requests[boundary_voice_count++] = *request;
+    return true;
+}
+
+static void test_voice_sequence_and_private_guards(void)
+{
+    linx_ui_init(lv_screen_active(), 0U);
+    linx_ui_tick(800U);
+    assert(!voice_request(LINX_VOICE_START));
+    boundary_voice_count = 0U;
+    linx_ui_set_voice_handler(boundary_voice_handler, &boundary_voice_count);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && linx_ui_debug().selected == 1U);
+
+    /* 只把编号计数器放到实际溢出边界；任务、上下文和页面均由真实按键建立。 */
+    voice_sequence = UINT32_MAX - 1U;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(boundary_voice_count == 1U && ui.voice_generation == UINT32_MAX);
+    assert(boundary_voice_requests[0].command == LINX_VOICE_START);
+    linx_reply_context_t original = boundary_voice_requests[0].context;
+    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
+    assert(boundary_voice_count == 2U && boundary_voice_requests[1].command == LINX_VOICE_CANCEL);
+    assert(boundary_voice_requests[1].generation == UINT32_MAX);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(boundary_voice_count == 3U && boundary_voice_requests[2].command == LINX_VOICE_START);
+    assert(ui.voice_generation == 1U && boundary_voice_requests[2].generation == 1U);
+    assert(memcmp(&original, &boundary_voice_requests[2].context, sizeof(original)) == 0);
+    linx_voice_event_t stale = { .generation = UINT32_MAX, .state = LINX_VOICE_LISTENING };
+    assert(!linx_ui_voice_event(&stale));
+
+    /* 无法从公开事件进入的非法枚举仍有稳定默认文案。 */
+    ui.voice_state = (linx_voice_state_t)-1;
+    assert(strcmp(voice_status(), "正在连接灵矽") == 0);
+    ui.voice_state = LINX_VOICE_CONNECTING;
+    cancel_live_voice();
+    assert(boundary_voice_count == 4U && ui.voice_generation == 0U);
+    linx_voice_event_t zero = { .generation = 0U, .state = LINX_VOICE_LISTENING };
+    assert(!linx_ui_voice_event(&zero));
+    cancel_live_voice();
+    assert(boundary_voice_count == 4U);
+    linx_ui_set_voice_handler(NULL, NULL);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && lv_mem_test() == LV_RESULT_OK);
+}
+
+static void assert_phone_credentials_erased(void)
+{
+    for (size_t i = 0U; i < sizeof(ui.wifi_ap_password); ++i) assert(ui.wifi_ap_password[i] == '\0');
+    for (size_t i = 0U; i < sizeof(ui.wifi_ap_ssid); ++i) assert(ui.wifi_ap_ssid[i] == '\0');
+}
+
+static void boundary_enter_phone_portal(void)
+{
+    linx_ui_init(lv_screen_active(), 0U);
+    linx_ui_tick(800U);
+    boundary_voice_count = 0U;
+    linx_ui_set_voice_handler(boundary_voice_handler, &boundary_voice_count);
+    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_WIFI && ui.wifi_mode == LINX_UI_WIFI_SCANNING);
+    linx_voice_event_t portal = { .generation = ui.voice_generation, .state = LINX_VOICE_WIFI_PORTAL,
+                                 .wifi_ap_ssid = "LinxBox-Setup", .wifi_ap_password = "01234567" };
+    assert(linx_ui_voice_event(&portal));
+    assert(ui.wifi_mode == LINX_UI_WIFI_PHONE && strcmp(ui.wifi_ap_password, "01234567") == 0);
+}
+
+static void test_phone_secret_and_render_boundaries(void)
+{
+    /* 致命错误与重开、退出、保存、替换后端和清理均擦除整个凭据缓冲。 */
+    boundary_enter_phone_portal();
+    linx_voice_event_t failure = { .generation = ui.voice_generation, .state = LINX_VOICE_ERROR,
+                                  .error = LINX_VOICE_NETWORK_FAILED };
+    assert(linx_ui_voice_event(&failure));
+    assert_phone_credentials_erased();
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.wifi_mode == LINX_UI_WIFI_SCANNING);
+    assert_phone_credentials_erased();
+    boundary_enter_phone_portal();
+    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
+    assert(ui.at.page == LINX_UI_SETTINGS);
+    assert_phone_credentials_erased();
+    boundary_enter_phone_portal();
+    linx_voice_event_t saved = { .generation = ui.voice_generation, .state = LINX_VOICE_WIFI_SAVED };
+    assert(linx_ui_voice_event(&saved));
+    assert(ui.wifi_mode == LINX_UI_WIFI_CONNECTED);
+    assert_phone_credentials_erased();
+    boundary_enter_phone_portal();
+    linx_ui_set_voice_handler(NULL, NULL);
+    assert(ui.at.page == LINX_UI_SETTINGS);
+    assert_phone_credentials_erased();
+    boundary_enter_phone_portal();
+    linx_ui_deinit();
+    assert_phone_credentials_erased();
+
+    /* 语音页进入配网并成功，旧热点凭据不能随原上下文恢复而残留。 */
+    linx_ui_init(lv_screen_active(), 0U);
+    linx_ui_tick(800U);
+    boundary_voice_count = 0U;
+    linx_ui_set_voice_handler(boundary_voice_handler, &boundary_voice_count);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_voice_event_t unconfigured = { .generation = ui.voice_generation, .state = LINX_VOICE_ERROR,
+                                       .error = LINX_VOICE_NOT_CONFIGURED };
+    assert(linx_ui_voice_event(&unconfigured));
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_voice_event_t portal = { .generation = ui.voice_generation, .state = LINX_VOICE_WIFI_PORTAL,
+                                 .wifi_ap_ssid = "LinxBox-Setup", .wifi_ap_password = "01234567" };
+    assert(linx_ui_voice_event(&portal));
+    saved.generation = ui.voice_generation;
+    assert(linx_ui_voice_event(&saved));
+    assert(ui.at.page == LINX_UI_VOICE && ui.voice_state == LINX_VOICE_CONNECTING);
+    assert_phone_credentials_erased();
+
+    /* 真实热点页面绘制器在池满时保留已有对象，SSID 省略分支不解引用空指针。 */
+    boundary_enter_phone_portal();
+    fill_labels();
+    render_wifi();
+    check_full_labels();
+    linx_ui_deinit();
+    linx_ui_init(lv_screen_active(), 0U);
+    voice_sequence = UINT32_MAX;
+    wifi_setup();
+    assert(ui.voice_generation == 1U && ui.wifi_mode == LINX_UI_WIFI_ERROR &&
+           ui.voice_error == LINX_VOICE_NO_MEMORY);
+    assert_phone_credentials_erased();
+    puts("手机配网私有边界：凭据全量擦除、语音恢复、绘制容量及无后端/编号回绕通过");
+}
+
 int main(void)
 {
     assert(LV_MEM_SIZE == 40U * 1024U);
@@ -267,6 +407,8 @@ int main(void)
     test_footer_truncation();
     test_stack_capacity();
     test_renderers_handle_exhausted_pools();
+    test_voice_sequence_and_private_guards();
+    test_phone_secret_and_render_boundaries();
     linx_ui_deinit();
     render();
     assert(ui.root == NULL && lv_mem_test() == LV_RESULT_OK);

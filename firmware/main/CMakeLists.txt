@@ -1,3 +1,10 @@
+set(LINX_VOICE_SOURCES "")
+if(CONFIG_LINX_LINGXI_ENABLE)
+    list(APPEND LINX_VOICE_SOURCES
+         "../hardware/folotoy/ai-passport/linx_lingxi_device.c"
+         "../hardware/folotoy/ai-passport/linx_wifi_portal.c")
+endif()
+
 idf_component_register(
     SRCS "main.c"
          "linx_input.c"
@@ -6,6 +13,9 @@ idf_component_register(
          "linx_navigation.c"
          "linx_reader.c"
          "linx_ui.c"
+         "linx_wifi.c"
+         "linx_lingxi_protocol.c"
+         ${LINX_VOICE_SOURCES}
          "../assets/fonts/linx_font_12.c"
          "../assets/fonts/linx_font_14.c"
          "../assets/fonts/linx_font_16.c"
@@ -15,6 +25,7 @@ idf_component_register(
          "../assets/fonts/linx_font_24_bold.c"
          "../assets/fonts/linx_font_28_bold.c"
          "../assets/images/linx_image_data.c"
-    INCLUDE_DIRS "." "${AI_PASSPORT_DIR}/main"
-    REQUIRES bsp esp_timer
+    INCLUDE_DIRS "." "../hardware/folotoy/ai-passport" "${AI_PASSPORT_DIR}/main"
+    REQUIRES bsp esp_timer json esp_wifi esp_netif esp_event nvs_flash lwip
+             esp_http_client esp_http_server tcp_transport esp-tls esp_app_format esp_audio_codec
 )

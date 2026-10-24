@@ -940,6 +940,8 @@ static void test_reset_and_other_screens(void)
     select_item(3U);
     key(LINX_UI_KEY_OK);
     capture("28-about");
+    assert(visible_text_contains(lv_screen_active(), "不会采集声音或联网。"));
+    assert(!visible_text_contains(lv_screen_active(), "采集声音并上传灵矽"));
     to_tasks();
     puts("Reset: old scene command/timing invalidated; cancellation default, settings, about PASS");
 }
@@ -1363,6 +1365,518 @@ static void test_background_history_eviction(void)
     puts("后台历史淘汰：图片/菜单/局部降级，旧正文页码回落且禁止失效回复，历史失效选项回退通过");
 }
 
+/* 真实 LVGL 页面配合只记录请求的后端，不访问网络或真实音频。 */
+typedef struct {
+    linx_voice_request_t requests[64];
+    size_t count;
+    bool reject;
+} live_voice_mock_t;
+
+static bool live_voice_request(const linx_voice_request_t *request, void *user)
+{
+    live_voice_mock_t *mock = user;
+    assert(mock != NULL && request != NULL && request->generation != 0U);
+    assert(mock->count < sizeof(mock->requests) / sizeof(mock->requests[0]));
+    mock->requests[mock->count++] = *request;
+    return !mock->reject;
+}
+
+static void live_reset(live_voice_mock_t *mock)
+{
+    linx_ui_init(lv_screen_active(), s_now);
+    advance(800U);
+    memset(mock, 0, sizeof(*mock));
+    linx_ui_set_voice_handler(live_voice_request, mock);
+    settle();
+    enter_task(LINX_TASK_DESIGN);
+}
+
+static void assert_live_context(const linx_reply_context_t *expected,
+                                const linx_reply_context_t *actual)
+{
+    assert(actual->scene_id == expected->scene_id && actual->task_id == expected->task_id &&
+           actual->source_turn_id == expected->source_turn_id && actual->image_id == expected->image_id);
+}
+
+static void assert_no_live_demo_send(void)
+{
+    assert(linx_ui_page() == LINX_UI_VOICE);
+    assert(linx_ui_debug().command_id == 0U);
+    for (size_t i = 0U; i < LINX_TASK_COUNT; ++i) {
+        const linx_task_t *target = &linx_ui_demo()->tasks[i];
+        assert(target->pending.id == 0U && target->turn_count == 1U);
+    }
+}
+
+static void live_event(linx_voice_state_t state, linx_voice_error_t error, const char *code)
+{
+    linx_voice_event_t event = { .generation = linx_ui_debug().voice_generation,
+                                 .state = state, .error = error };
+    if (code) {
+        assert(strlen(code) == 6U);
+        memcpy(event.activation_code, code, sizeof(event.activation_code));
+    }
+    assert(linx_ui_voice_event(&event));
+    assert(linx_ui_debug().voice_state == state && linx_ui_debug().voice_error == error);
+    settle();
+    assert_no_live_demo_send();
+}
+
+static void assert_rejected_voice_event(const linx_voice_event_t *event)
+{
+    linx_ui_debug_t before = linx_ui_debug();
+    const linx_demo_t model = *linx_ui_demo();
+    assert(!linx_ui_voice_event(event));
+    linx_ui_debug_t after = linx_ui_debug();
+    assert(after.page == before.page && after.task_id == before.task_id &&
+           after.turn_id == before.turn_id && after.image_id == before.image_id &&
+           after.voice_generation == before.voice_generation && after.voice_state == before.voice_state &&
+           after.voice_error == before.voice_error && after.wifi_mode == before.wifi_mode &&
+           after.selected == before.selected);
+    assert(memcmp(&model, linx_ui_demo(), sizeof(model)) == 0);
+    settle();
+}
+
+static void test_live_voice_conversation(void)
+{
+    live_voice_mock_t mock;
+    live_reset(&mock);
+    uint32_t turn = linx_demo_latest_turn(linx_ui_demo(), LINX_TASK_DESIGN)->id;
+    start_voice_from_overview();
+    assert(mock.count == 1U && mock.requests[0].command == LINX_VOICE_START);
+    const linx_reply_context_t context = {linx_ui_demo()->scene_id, LINX_TASK_DESIGN, turn, 0U};
+    assert_live_context(&context, &mock.requests[0].context);
+    uint32_t first = mock.requests[0].generation;
+    assert(first == linx_ui_debug().voice_generation);
+    assert(visible_text_contains(lv_screen_active(), "正在连接灵矽"));
+    capture("40-live-connecting");
+    key(LINX_UI_KEY_OK);
+    key(LINX_UI_KEY_UP);
+    assert(mock.count == 1U);
+    advance(8100U);
+    assert_no_live_demo_send();
+    live_event(LINX_VOICE_BINDING, LINX_VOICE_OK, "012345");
+    assert(visible_text_contains(lv_screen_active(), "012345"));
+    capture("41-live-binding");
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 2U && mock.requests[1].command == LINX_VOICE_START &&
+           mock.requests[1].generation != first);
+    assert_live_context(&context, &mock.requests[1].context);
+    linx_voice_event_t stale = { .generation = first, .state = LINX_VOICE_LISTENING };
+    assert_rejected_voice_event(&stale);
+    live_event(LINX_VOICE_CONNECTING, LINX_VOICE_OK, NULL);
+    live_event(LINX_VOICE_LISTENING, LINX_VOICE_OK, NULL);
+    capture("42-live-listening");
+    assert(visible_text_contains(lv_screen_active(), "00:00"));
+    advance(8125U);
+    assert(visible_text_contains(lv_screen_active(), "00:08"));
+    assert_no_live_demo_send();
+    live_event(LINX_VOICE_LISTENING, LINX_VOICE_OK, NULL);
+    assert(visible_text_contains(lv_screen_active(), "00:08"));
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 3U && mock.requests[2].command == LINX_VOICE_FINISH &&
+           mock.requests[2].generation == mock.requests[1].generation);
+    assert_live_context(&context, &mock.requests[2].context);
+    assert(linx_ui_debug().voice_state == LINX_VOICE_WAITING);
+    assert_no_live_demo_send();
+    capture("43-live-waiting");
+    key(LINX_UI_KEY_OK);
+    advance(10000U);
+    assert(mock.count == 3U);
+    assert_no_live_demo_send();
+    live_event(LINX_VOICE_WAITING, LINX_VOICE_OK, NULL);
+    live_event(LINX_VOICE_SPEAKING, LINX_VOICE_OK, NULL);
+    capture("44-live-speaking");
+    advance(250U);
+    uint32_t speaking = linx_ui_debug().voice_generation;
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 4U && mock.requests[3].command == LINX_VOICE_START &&
+           mock.requests[3].generation != speaking);
+    assert_live_context(&context, &mock.requests[3].context);
+    stale.generation = speaking;
+    stale.state = LINX_VOICE_CLOSED;
+    assert_rejected_voice_event(&stale);
+    live_event(LINX_VOICE_ERROR, LINX_VOICE_NETWORK_FAILED, NULL);
+    capture("45-live-error");
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 5U && mock.requests[4].command == LINX_VOICE_START);
+    live_event(LINX_VOICE_CLOSED, LINX_VOICE_OK, NULL);
+    capture("46-live-closed");
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 6U && mock.requests[5].command == LINX_VOICE_START);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && linx_ui_debug().selected == 1U);
+    assert(mock.count == 7U && mock.requests[6].command == LINX_VOICE_CANCEL &&
+           mock.requests[6].generation == mock.requests[5].generation);
+    assert_live_context(&context, &mock.requests[6].context);
+    stale.generation = mock.requests[5].generation;
+    assert_rejected_voice_event(&stale);
+    linx_ui_set_voice_handler(NULL, NULL);
+    puts("灵矽语音会话：绑定、结束等待、播放打断、重试与取消使用真实页面；无模拟确认、回执或发送通过");
+}
+
+static void test_live_voice_validation_and_failures(void)
+{
+    live_voice_mock_t mock;
+    live_reset(&mock);
+    linx_voice_event_t event = { .generation = 1U, .state = LINX_VOICE_LISTENING };
+    assert_rejected_voice_event(NULL);
+    assert_rejected_voice_event(&event);
+    mock.reject = true;
+    start_voice_from_overview();
+    assert(mock.count == 1U && linx_ui_debug().voice_state == LINX_VOICE_ERROR &&
+           linx_ui_debug().voice_error == LINX_VOICE_NO_MEMORY);
+    assert(visible_text_contains(lv_screen_active(), "内存不足，请重试"));
+    assert_no_live_demo_send();
+    mock.reject = false;
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 2U && linx_ui_debug().voice_state == LINX_VOICE_CONNECTING);
+    event.generation = linx_ui_debug().voice_generation;
+    event.state = (linx_voice_state_t)-1;
+    assert_rejected_voice_event(&event);
+    event.state = (linx_voice_state_t)(LINX_VOICE_WIFI_PORTAL + 1);
+    assert_rejected_voice_event(&event);
+    event.state = LINX_VOICE_LISTENING;
+    event.error = (linx_voice_error_t)-1;
+    assert_rejected_voice_event(&event);
+    event.error = (linx_voice_error_t)(LINX_VOICE_TIMEOUT + 1);
+    assert_rejected_voice_event(&event);
+    event.error = LINX_VOICE_OK;
+    event.generation = 0U;
+    assert_rejected_voice_event(&event);
+    event.generation = linx_ui_debug().voice_generation;
+    event.state = LINX_VOICE_BINDING;
+    memcpy(event.activation_code, "123456x", sizeof(event.activation_code));
+    assert_rejected_voice_event(&event);
+    event.activation_code[6] = '\0';
+    for (size_t i = 0U; i < 6U; ++i) {
+        event.activation_code[i] = i % 2U ? ':' : '/';
+        assert_rejected_voice_event(&event);
+        event.activation_code[i] = (char)('1' + i);
+    }
+    static const char *const messages[] = {
+        "请检查网络后重试", "请先设置Wi-Fi", "Wi-Fi连接失败", "网络时间同步失败",
+        "灵矽连接已断开", "语音协议不兼容", "音频设备无法使用", "内存不足，请重试", "灵矽回复超时"
+    };
+    for (size_t i = 0U; i <= LINX_VOICE_TIMEOUT; ++i) {
+        live_event(LINX_VOICE_ERROR, (linx_voice_error_t)i, NULL);
+        assert(visible_text_contains(lv_screen_active(), messages[i]));
+        if (i == LINX_VOICE_NOT_CONFIGURED) continue; /* 此错误由专门的配网用例验证。 */
+        uint32_t failed = linx_ui_debug().voice_generation;
+        size_t count = mock.count;
+        key(LINX_UI_KEY_OK);
+        assert(mock.count == count + 1U && mock.requests[count].command == LINX_VOICE_START &&
+               linx_ui_debug().voice_generation != failed);
+    }
+    live_event(LINX_VOICE_LISTENING, LINX_VOICE_OK, NULL);
+    mock.reject = true;
+    size_t count = mock.count;
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == count + 1U && mock.requests[count].command == LINX_VOICE_FINISH);
+    assert(linx_ui_debug().voice_state == LINX_VOICE_ERROR &&
+           linx_ui_debug().voice_error == LINX_VOICE_NO_MEMORY);
+    assert_no_live_demo_send();
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && mock.requests[mock.count - 1U].command == LINX_VOICE_CANCEL);
+    assert(linx_ui_debug().voice_generation == 0U);
+    linx_ui_set_voice_handler(NULL, NULL);
+    event.state = LINX_VOICE_LISTENING;
+    assert_rejected_voice_event(&event);
+    puts("灵矽事件输入：空值、越界状态、错误、失效编号及非法激活码均拒绝；全部错误文案和后端拒绝重试通过");
+}
+
+static void test_live_voice_context_and_lifecycle(void)
+{
+    live_voice_mock_t mock;
+    live_reset(&mock);
+    overview_action(3U);
+    assert(linx_ui_page() == LINX_UI_IMAGES);
+    linx_ui_debug_t image = linx_ui_debug();
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_IMAGE_MENU);
+    linx_ui_debug_t origin = linx_ui_debug();
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_VOICE && mock.count == 1U);
+    assert(mock.requests[0].context.task_id == image.task_id &&
+           mock.requests[0].context.source_turn_id == image.turn_id &&
+           mock.requests[0].context.image_id == image.image_id);
+    key(LINX_UI_KEY_OK_LONG);
+    assert(mock.count == 2U && mock.requests[1].command == LINX_VOICE_CANCEL);
+    assert(linx_ui_page() == origin.page && linx_ui_debug().selected == origin.selected &&
+           linx_ui_debug().turn_id == origin.turn_id && linx_ui_debug().image_id == origin.image_id);
+    key(LINX_UI_KEY_OK);
+    assert(mock.count == 3U);
+    live_voice_mock_t replacement = {0};
+    linx_ui_set_voice_handler(live_voice_request, &replacement);
+    settle();
+    assert(linx_ui_page() == LINX_UI_IMAGE_MENU && mock.count == 4U &&
+           mock.requests[3].command == LINX_VOICE_CANCEL && replacement.count == 0U);
+    key(LINX_UI_KEY_OK);
+    assert(replacement.count == 1U && replacement.requests[0].command == LINX_VOICE_START);
+    uint32_t generation = replacement.requests[0].generation;
+    linx_ui_deinit();
+    assert(replacement.count == 2U && replacement.requests[1].command == LINX_VOICE_CANCEL &&
+           replacement.requests[1].generation == generation);
+    linx_ui_deinit();
+    assert(replacement.count == 2U);
+    linx_ui_init(lv_screen_active(), s_now);
+    advance(800U);
+    linx_voice_event_t late = { .generation = generation, .state = LINX_VOICE_SPEAKING };
+    assert_rejected_voice_event(&late);
+
+    /* 切换离线确认页的后端只放弃草稿，不将它提交或触发开始。 */
+    enter_task(LINX_TASK_DESIGN);
+    start_voice_from_overview();
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_CONFIRM);
+    linx_ui_set_voice_handler(live_voice_request, &replacement);
+    settle();
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && replacement.count == 2U);
+    assert(linx_demo_task(linx_ui_demo(), LINX_TASK_DESIGN)->pending.id == 0U);
+    linx_ui_set_voice_handler(NULL, NULL);
+    puts("灵矽生命周期：图片上下文、原位返回、替换后端和重复清理均正确取消；确认页切换放弃草稿通过");
+}
+
+static void assert_wifi_mode(linx_ui_wifi_mode_t mode)
+{
+    assert(linx_ui_page() == LINX_UI_WIFI && linx_ui_debug().wifi_mode == mode);
+    assert(linx_ui_debug().command_id == 0U);
+}
+
+static void phone_result(linx_voice_state_t state, linx_voice_error_t error,
+                         const char *ssid, const char *password)
+{
+    linx_voice_event_t event = { .generation = linx_ui_debug().voice_generation,
+                                .state = state, .error = error };
+    if (ssid) {
+        assert(strlen(ssid) < sizeof(event.wifi_ap_ssid));
+        memcpy(event.wifi_ap_ssid, ssid, strlen(ssid) + 1U);
+    }
+    if (password) {
+        assert(strlen(password) == 8U);
+        memcpy(event.wifi_ap_password, password, sizeof(event.wifi_ap_password));
+    }
+    assert(linx_ui_voice_event(&event));
+    settle();
+}
+
+static void phone_from_settings(live_voice_mock_t *mock)
+{
+    live_reset(mock);
+    to_tasks();
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_SETTINGS && linx_ui_debug().selected == 0U);
+    assert(visible_text_contains(lv_screen_active(), "设备设置"));
+    key(LINX_UI_KEY_OK);
+    assert_wifi_mode(LINX_UI_WIFI_SCANNING);
+    assert(mock->count == 1U && mock->requests[0].command == LINX_VOICE_WIFI_SETUP);
+}
+
+static void assert_phone_keys_idle(live_voice_mock_t *mock)
+{
+    size_t count = mock->count;
+    linx_ui_debug_t before = linx_ui_debug();
+    key(LINX_UI_KEY_UP);
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == before.page && linx_ui_debug().wifi_mode == before.wifi_mode &&
+           linx_ui_debug().voice_generation == before.voice_generation && mock->count == count);
+}
+
+static void test_phone_wifi_pages_and_retry(void)
+{
+    live_voice_mock_t mock;
+    phone_from_settings(&mock);
+    capture("50-wifi-phone-preparing");
+    assert_phone_keys_idle(&mock);
+    phone_result(LINX_VOICE_WIFI_SCANNING, LINX_VOICE_OK, NULL, NULL);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, "LinxBox-Setup-1234", "01234567");
+    assert_wifi_mode(LINX_UI_WIFI_PHONE);
+    assert(visible_text_contains(lv_screen_active(), "LinxBox-Setup-1234"));
+    assert(visible_text_contains(lv_screen_active(), "01234567"));
+    assert(visible_text_contains(lv_screen_active(), "192.168.4.1"));
+    capture("51-wifi-phone-portal");
+    assert_phone_keys_idle(&mock);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_WIFI_FAILED, "LinxBox-Setup-1234", "01234567");
+    assert_wifi_mode(LINX_UI_WIFI_PHONE);
+    assert(visible_text_contains(lv_screen_active(), "重试"));
+    capture("52-wifi-phone-retry");
+    assert_phone_keys_idle(&mock);
+    phone_result(LINX_VOICE_WIFI_CONNECTING, LINX_VOICE_OK, NULL, NULL);
+    assert_wifi_mode(LINX_UI_WIFI_CONNECTING);
+    assert(visible_text_contains(lv_screen_active(), "LinxBox-Setup-1234"));
+    assert(visible_text_contains(lv_screen_active(), "01234567"));
+    capture("53-wifi-phone-connecting");
+    assert_phone_keys_idle(&mock);
+    phone_result(LINX_VOICE_ERROR, LINX_VOICE_TIMEOUT, NULL, NULL);
+    assert_wifi_mode(LINX_UI_WIFI_ERROR);
+    assert(!visible_text_contains(lv_screen_active(), "01234567"));
+    capture("54-wifi-phone-error");
+    uint32_t failed = linx_ui_debug().voice_generation;
+    key(LINX_UI_KEY_OK);
+    assert_wifi_mode(LINX_UI_WIFI_SCANNING);
+    assert(mock.count == 2U && mock.requests[1].command == LINX_VOICE_WIFI_SETUP &&
+           mock.requests[1].generation != failed);
+    assert(!visible_text_contains(lv_screen_active(), "01234567"));
+    linx_voice_event_t old = {.generation=failed, .state=LINX_VOICE_WIFI_SAVED};
+    assert_rejected_voice_event(&old);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, "LinxBox-Setup-5678", "76543210");
+    phone_result(LINX_VOICE_WIFI_CONNECTING, LINX_VOICE_OK, NULL, NULL);
+    phone_result(LINX_VOICE_WIFI_SAVED, LINX_VOICE_OK, NULL, NULL);
+    assert_wifi_mode(LINX_UI_WIFI_CONNECTED);
+    assert(!visible_text_contains(lv_screen_active(), "76543210"));
+    capture("55-wifi-phone-connected");
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_SETTINGS && mock.requests[mock.count - 1U].command == LINX_VOICE_CANCEL);
+    /* 新网络项后的原设置仍按原语义执行。 */
+    select_item(1U); key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_RESET);
+    key(LINX_UI_KEY_OK_LONG);
+    select_item(2U); key(LINX_UI_KEY_OK);
+    assert(!linx_ui_demo()->online);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_demo()->online);
+    select_item(3U); key(LINX_UI_KEY_OK);
+    assert(linx_ui_demo()->fail_next_send);
+    select_item(4U); key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_ABOUT);
+    assert(visible_text_contains(lv_screen_active(), "进入语音页后联网"));
+    assert(visible_text_contains(lv_screen_active(), "采集声音并上传灵矽"));
+    assert(visible_text_contains(lv_screen_active(), "播放智能体语音回复"));
+    assert(!visible_text_contains(lv_screen_active(), "不会采集声音或联网。"));
+    size_t requests_before_about = mock.count;
+    capture("56-live-about");
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_SETTINGS && linx_ui_debug().selected == 4U &&
+           mock.count == requests_before_about);
+    linx_ui_set_voice_handler(NULL, NULL);
+    puts("手机配网页面：准备、热点说明、手机重试、连接保留热点信息、致命错误重开与成功返回通过");
+}
+
+static void test_phone_wifi_event_validation(void)
+{
+    live_voice_mock_t mock;
+    phone_from_settings(&mock);
+    linx_voice_event_t event = { .generation = linx_ui_debug().voice_generation,
+                                .state = LINX_VOICE_LISTENING };
+    assert_rejected_voice_event(&event);
+    event.state = (linx_voice_state_t)-1;
+    assert_rejected_voice_event(&event);
+    event.state = (linx_voice_state_t)(LINX_VOICE_WIFI_PORTAL + 1);
+    assert_rejected_voice_event(&event);
+    event.state = LINX_VOICE_WIFI_PORTAL;
+    memcpy(event.wifi_ap_password, "01234567", sizeof(event.wifi_ap_password));
+    assert_rejected_voice_event(&event); /* SSID 不能为空。 */
+    memset(event.wifi_ap_ssid, 'x', sizeof(event.wifi_ap_ssid));
+    assert_rejected_voice_event(&event); /* SSID 必须终止。 */
+    memcpy(event.wifi_ap_ssid, "LinxBox", sizeof("LinxBox"));
+    const unsigned char forbidden[] = {0x1fU, 0x7fU, 0x80U, 0xffU};
+    for (size_t i = 0U; i < sizeof(forbidden); ++i) {
+        event.wifi_ap_ssid[3] = (char)forbidden[i];
+        assert_rejected_voice_event(&event);
+    }
+    event.wifi_ap_ssid[3] = 'x';
+    event.wifi_ap_password[8] = '9';
+    assert_rejected_voice_event(&event);
+    event.wifi_ap_password[8] = '\0';
+    for (size_t i = 0U; i < 8U; ++i) {
+        event.wifi_ap_password[i] = i % 2U ? ':' : '/';
+        assert_rejected_voice_event(&event);
+        event.wifi_ap_password[i] = (char)('0' + i);
+    }
+    event.wifi_ap_password[7] = '\0';
+    assert_rejected_voice_event(&event);
+    event.wifi_ap_password[7] = '7';
+    memset(event.wifi_ap_ssid, 'x', sizeof(event.wifi_ap_ssid) - 1U);
+    event.wifi_ap_ssid[sizeof(event.wifi_ap_ssid) - 1U] = '\0';
+    assert(linx_ui_voice_event(&event)); /* 最长 32 字节可打印 SSID。 */
+    settle();
+    assert_wifi_mode(LINX_UI_WIFI_PHONE);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, " ~", "99999999");
+    assert_wifi_mode(LINX_UI_WIFI_PHONE);
+    assert(visible_text_contains(lv_screen_active(), "99999999"));
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_SETTINGS && mock.requests[mock.count - 1U].command == LINX_VOICE_CANCEL);
+    assert_rejected_voice_event(&event);
+    linx_ui_set_voice_handler(NULL, NULL);
+    puts("手机配网事件：状态范围、过期代号、空/未终止/不可打印SSID、八位数字热点密码边界均验证通过");
+}
+
+static void test_phone_wifi_lifecycle_and_voice_resume(void)
+{
+    live_voice_mock_t mock;
+    for (size_t mode = 0U; mode < 5U; ++mode) {
+        phone_from_settings(&mock);
+        if (mode > 0U) phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, "LinxBox-Setup", "12345678");
+        if (mode == 2U) phone_result(LINX_VOICE_WIFI_CONNECTING, LINX_VOICE_OK, NULL, NULL);
+        if (mode == 3U) phone_result(LINX_VOICE_ERROR, LINX_VOICE_NETWORK_FAILED, NULL, NULL);
+        if (mode == 4U) phone_result(LINX_VOICE_WIFI_SAVED, LINX_VOICE_OK, NULL, NULL);
+        uint32_t generation = linx_ui_debug().voice_generation;
+        size_t count = mock.count;
+        key(LINX_UI_KEY_OK_LONG);
+        assert(linx_ui_page() == LINX_UI_SETTINGS && mock.count == count + 1U &&
+               mock.requests[count].command == LINX_VOICE_CANCEL && mock.requests[count].generation == generation);
+        assert(!visible_text_contains(lv_screen_active(), "12345678"));
+        linx_ui_set_voice_handler(NULL, NULL);
+    }
+    phone_from_settings(&mock);
+    mock.reject = true;
+    phone_result(LINX_VOICE_ERROR, LINX_VOICE_WIFI_FAILED, NULL, NULL);
+    key(LINX_UI_KEY_OK);
+    assert_wifi_mode(LINX_UI_WIFI_ERROR);
+    assert(linx_ui_debug().voice_error == LINX_VOICE_NO_MEMORY);
+    mock.reject = false;
+    key(LINX_UI_KEY_OK);
+    assert_wifi_mode(LINX_UI_WIFI_SCANNING);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, "LinxBox-Setup", "12345678");
+    size_t count = mock.count;
+    live_voice_mock_t replacement = {0};
+    linx_ui_set_voice_handler(live_voice_request, &replacement);
+    settle();
+    assert(linx_ui_page() == LINX_UI_SETTINGS && mock.count == count + 1U &&
+           mock.requests[count].command == LINX_VOICE_CANCEL && replacement.count == 0U);
+    assert(!visible_text_contains(lv_screen_active(), "12345678"));
+    key(LINX_UI_KEY_OK);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, "LinxBox-Setup", "12345678");
+    count = replacement.count;
+    linx_ui_deinit();
+    assert(replacement.count == count + 1U && replacement.requests[count].command == LINX_VOICE_CANCEL);
+    linx_ui_init(lv_screen_active(), s_now);
+    advance(800U);
+
+    live_reset(&mock);
+    start_voice_from_overview();
+    linx_reply_context_t context = mock.requests[0].context;
+    live_event(LINX_VOICE_ERROR, LINX_VOICE_NOT_CONFIGURED, NULL);
+    uint32_t voice_generation = linx_ui_debug().voice_generation;
+    key(LINX_UI_KEY_OK);
+    assert_wifi_mode(LINX_UI_WIFI_SCANNING);
+    assert(mock.count == 3U && mock.requests[1].command == LINX_VOICE_CANCEL &&
+           mock.requests[1].generation == voice_generation && mock.requests[2].command == LINX_VOICE_WIFI_SETUP);
+    linx_voice_event_t late = {.generation=voice_generation, .state=LINX_VOICE_LISTENING};
+    assert_rejected_voice_event(&late);
+    phone_result(LINX_VOICE_WIFI_PORTAL, LINX_VOICE_OK, "LinxBox-Setup", "12345678");
+    phone_result(LINX_VOICE_WIFI_CONNECTING, LINX_VOICE_OK, NULL, NULL);
+    uint32_t setup_generation = linx_ui_debug().voice_generation;
+    phone_result(LINX_VOICE_WIFI_SAVED, LINX_VOICE_OK, NULL, NULL);
+    assert_no_live_demo_send();
+    assert(linx_ui_debug().voice_state == LINX_VOICE_CONNECTING);
+    assert(mock.requests[mock.count - 1U].command == LINX_VOICE_START &&
+           mock.requests[mock.count - 1U].generation != setup_generation);
+    assert_live_context(&context, &mock.requests[mock.count - 1U].context);
+    assert(!visible_text_contains(lv_screen_active(), "12345678"));
+    late.generation = setup_generation; late.state = LINX_VOICE_WIFI_SAVED;
+    assert_rejected_voice_event(&late);
+    live_event(LINX_VOICE_ERROR, LINX_VOICE_NOT_CONFIGURED, NULL);
+    key(LINX_UI_KEY_OK);
+    key(LINX_UI_KEY_OK_LONG);
+    assert_no_live_demo_send();
+    assert(linx_ui_debug().voice_error == LINX_VOICE_NOT_CONFIGURED && linx_ui_debug().voice_generation == 0U);
+    key(LINX_UI_KEY_OK_LONG);
+    linx_ui_set_voice_handler(NULL, NULL);
+    puts("手机配网生命周期：各模式取消、后端拒绝/替换、清理、原语音上下文恢复及迟到结果拒绝通过");
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2 || argc == 3);
@@ -1409,6 +1923,12 @@ int main(int argc, char **argv)
     test_incomplete_history_user();
     test_background_completion_during_voice();
     test_background_history_eviction();
+    test_live_voice_conversation();
+    test_live_voice_validation_and_failures();
+    test_live_voice_context_and_lifecycle();
+    test_phone_wifi_pages_and_retry();
+    test_phone_wifi_event_validation();
+    test_phone_wifi_lifecycle_and_voice_resume();
     linx_ui_deinit();
     lv_display_delete(s_display);
     lv_deinit();

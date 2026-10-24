@@ -1,0 +1,6 @@
+#ifndef SDKCONFIG_H
+#define SDKCONFIG_H
+#ifndef CONFIG_LINX_LINGXI_ENABLE
+#define CONFIG_LINX_LINGXI_ENABLE 0
+#endif
+#endif

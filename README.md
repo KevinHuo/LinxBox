@@ -2,7 +2,7 @@
 
 LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任务，经 Cloud MCP Gateway 路由到 macOS 客户端，再由本机已授权的 Code Agent 执行。
 
-当前仓库已提供 FoloToy AI Passport 上的 LinX 0.2 离线演示及主机侧验证；任务、回复和语音转写使用模拟数据，真机验收仍待完成。Gateway、macOS 客户端和端到端联网固件尚未形成可发布的完整实现。具体协议、状态机、数据结构和恢复策略必须由相关模块负责人通过独立 Issue、设计评审和 PR 确认；讨论稿不代表已经实现或验收通过。
+当前仓库提供 FoloToy AI Passport 上的 LinX 0.2 界面、手机网页 Wi-Fi 配网及灵矽语音对话。任务和回复仍为离线演示数据；真实语音页上传麦克风声音并播放智能体回复，已完成短流程真机联调，长期稳定性和完整异常场景仍待验收。Gateway、macOS 客户端和远程编码链路尚未形成可发布的完整实现。具体协议、状态机、数据结构和恢复策略必须由相关模块负责人通过独立 Issue、设计评审和 PR 确认；讨论稿不代表已经实现或验收通过。
 
 ## 当前分工
 
@@ -32,7 +32,7 @@ LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任�
 
 固件与云端、电脑端在同一 Git 仓库管理。固件使用 **[FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)** 作为固定上游依赖，锁定提交 [`006c2279852e352a8433b2c21e5e09be2ca36f77`](https://github.com/FoloToy/ai-passport/commit/006c2279852e352a8433b2c21e5e09be2ca36f77)，采用 MIT 许可证；驱动、原有测试和构建校验工具从主仓库 `.local/dependencies/ai-passport/<提交号>/` 缓存读取，不重复复制维护。
 
-当前硬件为 **FoloToy AI Passport**，ESP32-C3、8 MB Flash、无 PSRAM，使用 ESP-IDF 5.5.3。`firmware/hardware/folotoy/ai-passport/` 保留品牌型号的接入声明；`firmware/main/` 维护 **LinX 0.2 离线界面演示**，包含导航、阅读、字体图片及自有测试，尚未实现设备间对讲。此前讨论的小智固件只作方案参考。来源与边界见[固件说明](firmware/README.md#上游来源与本地定制)。
+当前硬件为 **FoloToy AI Passport**，ESP32-C3、8 MB Flash、无 PSRAM，使用 ESP-IDF 5.5.3。`firmware/hardware/folotoy/ai-passport/` 维护品牌型号接入与网络、音频运行；`firmware/main/` 维护 LinX 界面、导航、阅读及有界语音协议。语音协议部分参考固定版本的小智源码，保留来源及许可；关闭真实语音开关可恢复离线演示，尚未实现设备间对讲。来源与边界见[固件说明](firmware/README.md#上游来源与本地定制)。
 
 本仓库维护的说明与工程规范统一使用中文；代码标识、命令、必要技术名称和许可证原文保持原样。上游资料通过固定版本的中文文档链接查阅，不在本仓库保存副本。
 
