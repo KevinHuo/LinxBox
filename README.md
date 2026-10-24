@@ -32,3 +32,10 @@ LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任�
 - [Issue 模板](.github/ISSUE_TEMPLATE/)及 [PR 模板](.github/pull_request_template.md)：协作入口。
 
 功能范围、技术方案和跨模块契约以对应 Issue 与独立 PR 的评审结果为准。
+
+## 代码
+
+| 路径 | 内容 | 状态 |
+| --- | --- | --- |
+| `src/desktop/` | macOS 桌面客户端：Electron UI、Main/Daemon 进程边界、本地项目授权、任务与结果视图 | Proposed 阶段，尚未接真实 Gateway 或 Codex app-server；安装、检查、测试、覆盖率与打包命令见 [src/desktop/README.md](src/desktop/README.md) |
+
