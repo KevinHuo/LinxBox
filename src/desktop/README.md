@@ -79,6 +79,9 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 
 ## 契约来源
 
+当前 Gateway ↔ Desktop 输入、输出、示例和实际接入范围见
+[Gateway / Desktop API（当前实现整理）](GATEWAY_API.md)。该文档只整理当前代码事实，不建立或修改共享契约。
+
 `contracts/` 是 SPEC-0001 的**本地占位切片**，内容转写自 SPEC-0003 起草的 MVP 契约基线（`feat/9-desktop-client` 分支上的 `docs/contracts/`）。
 
 - 状态是 `Proposed`，**不是权威契约**
