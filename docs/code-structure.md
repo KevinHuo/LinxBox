@@ -59,13 +59,18 @@ LinxBox/
 │   └── linx-codex/                     # 可选，不在控制主路径
 ├── docs/
 │   ├── contracts/
-│   └── adr/
+│   ├── modules/
+│   ├── adr/
+│   └── specs/
 └── tests/
-    ├── fixtures/device/                 # Issue #4 UI/状态机与联网契约 fixtures
+    ├── fixtures/
+    │   └── device/                      # Issue #4 UI/状态机与联网契约 fixtures
     ├── integration/
     ├── security/
     └── e2e/
 ```
+
+目录骨架已按本节创建，目录内当前为空（仅 `.gitkeep`），不含任何实现代码。`pnpm-workspace.yaml`、各包 `package.json`、`tsconfig.json`、lockfile 与 CI 属于工具链 bootstrap，由 [`SPEC-0001`](./specs/0001-contracts-schema-and-fixtures.md) 的 Slice 1 在选型锁定后补入；在此之前不创建，避免未锁定的依赖与版本进入仓库。
 
 ## 3. 分层规则
 
