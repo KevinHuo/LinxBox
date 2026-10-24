@@ -1,41 +1,52 @@
 # LinxBox
 
-通过协议连接电脑，以灵矽 AI 作为语音交互入口，通过 MCP 工具控制桌面应用，逐步支持 Claude Code 或其他 Code Agent 的编程开发。
+通过 AI Passport 和灵矽 AI 发起语音编码任务，由 Cloud MCP Gateway 将任务路由到用户的 LinxBox Desktop，Desktop 再通过 Codex app-server 在已授权的本地项目中执行。
 
 ## 首个 MVP
 
-使用 AI Passport 和灵矽 AI 远程控制 macOS 上的 ChatGPT 客户端，支持发送问题、在当前会话连续追问和新建对话。用户在电脑端查看回答。
+使用 AI Passport 和灵矽 AI 创建、查询、续接和停止本地编码任务。硬件端可浏览任务、摘要、分页回复、最近历史和受限图片，确认下一轮输入并查看分阶段回执；Desktop 负责项目授权以及完整 diff、验证和本地细节审阅。
 
-交互链路：**AI Passport → 灵矽 AI → MCP 工具 → 电脑端控制服务 → ChatGPT 客户端**。
+交互链路：**AI Passport/ESP32 → 灵矽 AI → Cloud MCP Gateway → LinxBox Desktop → Codex app-server → 本地项目**。
 
-运行范围为一台 AI Passport、一台 macOS 电脑和一个 ChatGPT 账号。电脑在线、控制服务运行，ChatGPT 客户端已登录且可操作；用户手动完成必要的系统权限授权，并在上一轮回答完成后发起下一轮提问。AI Passport 沿用当前硬件可用的语音方式，不依赖 AEC 或 realtime 模式。
+运行范围为预绑定的 AI Passport/ESP32、一台 macOS 电脑、一个 Desktop client token 和本机 Codex 认证。Desktop 只主动建立出站 WSS；Gateway 不访问本地文件系统，Codex 凭据、绝对路径、完整 diff 和原始日志默认不离开电脑。
 
-本阶段聚焦语音控制链路，结果回传、回答播报、任务状态查询和异常语音反馈留待后续完善。Code Agent 接入及编程任务执行属于后续迭代。
+本阶段聚焦六个 MCP 控制工具、独立的 Device Presentation 通道、Gateway/Desktop 可恢复投递、本地项目授权、Codex app-server 生命周期和真实端到端验收。产品账号、自助配对、完整远程 IDE、语音审批 push/发布/部署不在 MVP 内。
 
 ## 工程状态
 
-目前处于工程与开发规范初始化阶段，尚未提供可运行的电脑端服务。开发语言、连接方式和客户端控制方案将在关键链路验证后确定。
+目前已冻结产品范围、逻辑模块、pnpm/TypeScript/Electron/PostgreSQL/SQLite 技术基线、代码树、Desktop UI DOM/组件树、MCP 契约、Gateway/Desktop 协议、任务状态机和 Codex app-server 适配边界，但尚未提供可运行实现。具体框架、adapter 库、UI 渲染库和测试运行器由各 bootstrap Task/ADR 一次性选定并锁版。
 
 后续业务代码需同时提供可复现的安装、配置、格式检查、静态检查、构建、测试及覆盖率命令，并接入 CI。本阶段只有文档及协作模板，没有业务构建或测试命令，也未启用 CI 或合并保护。
 
-## 模块职责
+## 组成部分
 
-| 模块 | 职责 |
-| --- | --- |
-| 设备接入 | AI Passport 接入灵矽 AI；固件修改在对应固件仓库维护 |
-| MCP 接入 | 定义工具契约、校验参数并连接电脑端服务 |
-| 电脑端控制服务 | 接收请求、路由操作并维护当前会话 |
-| 客户端适配 | 操作 ChatGPT 客户端输入、发送问题和新建对话 |
+仓库内有三个可部署单元，另有不在本仓库的部分：
 
-代码目录在技术方案确定后建立；客户端操作细节与 MCP 工具契约分离。
+| 单元 / 部分 | 职责 | 位置 |
+| --- | --- | --- |
+| `gateway` Cloud MCP Gateway | 入口认证、Task/Outbox、Desktop WSS、设备投影、路由和审计 | `src/gateway` |
+| `desktop` Desktop UI/Daemon | 本地项目授权、去重、策略、任务所有权、UI 和恢复 | `src/desktop` |
+| `admin-cli` 运维 CLI | Desktop client、绑定与 token 运维 | `src/admin-cli` |
+| 设备端 AI Passport / ESP32 | 三键任务阅读、图片、输入确认、回执、恢复和真机验收 | 固件工程，见 [Issue #4](https://github.com/KevinHuo/LinxBox/issues/4) |
+| 灵矽 AI | 意图澄清、MCP 控制、Presentation Bridge 和设备路由 | 灵矽平台 |
+| 契约与领域 | MCP、Gateway/Desktop、状态机、结果 schema 和 fixtures | `docs/contracts/` |
+| 集成与质量 | 端到端验收、契约测试、CI 和使用文档 | `docs/process/` |
+
+详细模块边界见 [docs/modules.md](docs/modules.md)；各模块的主负责人、必要 Reviewer 与跨模块 Integration Owner 在对应开发 Issue 中指定。物理代码目录由首个 bootstrap Task 按已接受的目录树创建；客户端操作细节与 MCP 工具契约分离。
 
 ## 参与开发
 
 - [AGENTS.md](AGENTS.md)：Claude Code、Codex 等 Agent 的工作要求。
 - [CODING_STANDARDS.md](CODING_STANDARDS.md)：代码组织、输入与错误处理、测试及覆盖率要求。
 - [CONTRIBUTING.md](CONTRIBUTING.md)：Issue、分支、Commit、PR 和审查流程。
-- [Issue 模板](.github/ISSUE_TEMPLATE/)及 [PR 模板](.github/pull_request_template.md)：后续协作入口。
+- [Issue 模板](.github/ISSUE_TEMPLATE)及 [PR 模板](.github/pull_request_template.md)：后续协作入口。
 
-项目范围与验收标准以 [Proposal #1](https://github.com/KevinHuo/LinxBox/issues/1) 为准，初始化任务由 [Issue #2](https://github.com/KevinHuo/LinxBox/issues/2) 跟踪。初始化完成后，优先开展关键链路验证。
+## 需求与契约
 
-开发规范参考 [llcppg](https://github.com/goplus/llcppg) 与 [llgo](https://github.com/xgo-dev/llgo) 的工程实践，并按本项目范围调整。
+- 当前 MVP 的产品范围、架构与整体验收以 [最终技术架构](docs/architecture.md) 及其引用契约为准。[Proposal #1](https://github.com/KevinHuo/LinxBox/issues/1) 保留原始讨论，不作为当前实现契约，本次规范调整不修改其内容。
+- 每次业务实现或 Bug 修复以一个明确的 Task/Bug Issue 为交付契约；开发 Issue 必须关联对应 Proposal，列出适用的接口契约或 ADR，并写明范围、非目标和验收条件。
+- 开发前必须读取 [最终技术架构](docs/architecture.md)、[模块规范](docs/modules.md)、[契约索引](docs/contracts/README.md)和[质量门禁](docs/process/quality-gates.md)，不得重新发明已冻结的边界。
+- [AGENTS.md](AGENTS.md) 定义 AI 如何定位当前任务、读取契约及处理来源冲突。
+
+初始化任务由 [Issue #2](https://github.com/KevinHuo/LinxBox/issues/2) 跟踪。初始化完成后，优先开展关键链路验证。
+
