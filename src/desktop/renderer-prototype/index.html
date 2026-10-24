@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23090d0f'/%3E%3Cpath d='M14 14v36h27v-8H23V14zm23 0v19H27v8h19V14z' fill='%23bdfb4b'/%3E%3C/svg%3E" />
+    <title>LinxBox</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">跳到主要内容</a>
+    <div class="prototype-ribbon" role="note">LINXBOX LOCAL PROTOTYPE · MOCK DATA · NO REAL CONNECTION</div>
+
+    <div class="app-shell">
+      <aside class="rail" aria-label="主导航">
+        <div class="brand" aria-label="LinxBox">
+          <span class="brand-mark" aria-hidden="true">L</span>
+          <span><strong class="brand-word">LinxBox</strong><small>灵矽客户端</small></span>
+        </div>
+
+        <nav class="rail-nav">
+          <button class="nav-item is-active" type="button" data-view="overview" aria-current="page"><span class="nav-index">01</span><span>首页</span></button>
+          <button class="nav-item" type="button" data-view="lingxi"><span class="nav-index">02</span><span>MCP 连接</span></button>
+          <button class="nav-item" type="button" data-view="projects"><span class="nav-index">03</span><span>本地项目</span></button>
+          <button class="nav-item" type="button" data-view="tasks"><span class="nav-index">04</span><span>任务记录</span></button>
+        </nav>
+
+        <div class="rail-foot">
+          <span class="eyebrow">LINXBOX FOR MAC</span>
+          <strong>0.1.0 prototype</strong>
+          <span>这台 Mac · 本地模式</span>
+        </div>
+      </aside>
+
+      <main id="workspace" class="workspace" tabindex="-1">
+        <header class="topbar">
+          <div><p class="eyebrow" id="view-kicker">LINXBOX HOME</p><h1 id="view-title">你好，这里是 LinxBox</h1></div>
+          <div class="topbar-actions">
+            <div class="connection-pill" id="connection-pill" data-state="offline"><span class="status-light" aria-hidden="true"></span><span id="connection-label">MCP 未连接</span></div>
+            <button class="button button-quiet" type="button" data-open-view="lingxi">连接设置</button>
+          </div>
+        </header>
+
+        <section class="view is-active" data-view-panel="overview" aria-labelledby="view-title">
+          <div class="hero-grid">
+            <article class="mission-card reveal">
+              <p class="eyebrow">YOUR MAC, READY FOR LINGXI</p>
+              <h2>把灵矽 MCP 指令<br />交给 Codex Desktop。</h2>
+              <p class="hero-copy">LinxBox 常驻在这台 Mac：接收 MCP WebSocket 指令，驱动 Codex Desktop 写代码，再把任务状态和对话结果同步回灵矽。</p>
+              <div class="mission-actions">
+                <button class="button button-primary" type="button" data-open-view="lingxi">连接 MCP WebSocket</button>
+                <button class="button button-quiet" type="button" data-open-view="projects">管理本地项目</button>
+              </div>
+            </article>
+
+            <aside class="telemetry-card reveal delay-1" aria-label="本机客户端状态">
+              <div class="device-orbit"><span>L</span><i></i></div>
+              <p class="eyebrow">THIS DEVICE</p>
+              <h3>tongjie 的 Mac</h3>
+              <p>本机 LinxBox 客户端</p>
+              <dl class="telemetry-list">
+                <div><dt>MCP WebSocket</dt><dd id="hero-lingxi-status">等待连接</dd></div>
+                <div><dt>Codex Desktop</dt><dd class="status-good">已发现</dd></div>
+                <div><dt>已添加项目</dt><dd id="hero-project-count">2 个</dd></div>
+              </dl>
+            </aside>
+          </div>
+
+          <section class="connection-route reveal delay-2" aria-labelledby="route-title">
+            <div class="panel-heading"><div><p class="eyebrow">CONNECTION ROUTE</p><h2 id="route-title">从灵矽到本机</h2></div><span class="micro-label">LOCAL PREVIEW</span></div>
+            <div class="route-flow" id="route-flow">
+              <div class="route-node"><span>01</span><strong>AI Passport</strong><small>语音入口</small></div><i aria-hidden="true"></i>
+              <div class="route-node"><span>02</span><strong>灵矽 MCP</strong><small>指令与结果</small></div><i aria-hidden="true"></i>
+              <div class="route-node route-node-brand"><span>03</span><strong>LinxBox</strong><small>WebSocket 桥接</small></div><i aria-hidden="true"></i>
+              <div class="route-node"><span>04</span><strong>Codex Desktop</strong><small>写代码与对话</small></div>
+            </div>
+            <div class="route-legend"><span>→ MCP 指令 / 编码任务</span><span>← 任务状态 / 对话结果</span></div>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="panel activity-panel reveal delay-2" aria-labelledby="activity-title">
+              <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2 id="activity-title">最近动态</h2></div><button class="text-button" type="button" data-open-view="tasks">查看全部</button></div>
+              <ol class="activity-list" id="activity-list"></ol>
+            </section>
+            <section class="panel quick-panel reveal delay-3" aria-labelledby="quick-title">
+              <div class="panel-heading"><div><p class="eyebrow">QUICK START</p><h2 id="quick-title">开始使用</h2></div></div>
+              <button class="quick-action" type="button" data-open-view="lingxi"><span>01</span><div><strong>连接 MCP WebSocket</strong><small>填写 WSS 地址与访问令牌</small></div><b>→</b></button>
+              <button class="quick-action" type="button" data-open-view="projects"><span>02</span><div><strong>添加本地项目</strong><small>选择允许 LinxBox 使用的目录</small></div><b>→</b></button>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="lingxi" aria-labelledby="lingxi-heading">
+          <div class="section-intro"><div><p class="eyebrow">MCP WEBSOCKET</p><h2 id="lingxi-heading">连接 MCP WebSocket</h2></div><span class="page-number">02</span></div>
+          <p class="section-lede">LinxBox 通过持久 WebSocket 接收 MCP 指令，并把 Codex Desktop 的状态、进度和对话结果回传。原型只模拟连接。</p>
+          <div class="settings-layout">
+            <form class="panel connection-form" id="connection-form">
+              <label><span>MCP WebSocket 地址</span><input id="gateway-url" type="url" value="wss://mcp.lingxi.example/ws" autocomplete="off" /></label>
+              <label><span>访问令牌</span><div class="input-group"><input id="access-token" type="password" value="linxbox-demo-token" autocomplete="off" /><button class="text-button" id="toggle-token" type="button">显示</button></div></label>
+              <label><span>这台电脑的名称</span><input id="computer-name" type="text" value="tongjie 的 Mac" autocomplete="off" /></label>
+              <div class="form-actions"><button class="button button-primary" type="submit" id="connect-button">测试并连接</button><button class="button button-quiet" type="button" id="disconnect-button" disabled>断开</button></div>
+            </form>
+            <aside class="panel connection-preview" id="connection-preview" data-state="offline">
+              <p class="eyebrow">CONNECTION STATUS</p>
+              <div class="connection-symbol"><span></span><i></i><b></b></div>
+              <h3 id="preview-title">等待连接</h3>
+              <p id="preview-copy">输入 MCP WebSocket 信息，然后测试 LinxBox 是否可以建立双向连接。</p>
+              <dl><div><dt>传输</dt><dd>WebSocket</dd></div><div><dt>上游</dt><dd>灵矽 MCP</dd></div><div><dt>下游</dt><dd>Codex Desktop</dd></div><div><dt>电脑</dt><dd id="preview-computer">tongjie 的 Mac</dd></div><div><dt>网络</dt><dd id="preview-network">未发起</dd></div></dl>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="projects" aria-labelledby="projects-heading">
+          <div class="section-intro"><div><p class="eyebrow">LOCAL PROJECTS</p><h2 id="projects-heading">本地项目</h2></div><button class="button button-primary" id="add-project" type="button">添加项目</button></div>
+          <p class="section-lede">只有你添加并启用的项目会出现在 LinxBox 中。原型使用虚拟路径，不会打开文件系统。</p>
+          <div class="project-grid" id="project-grid"></div>
+        </section>
+
+        <section class="view" data-view-panel="tasks" aria-labelledby="tasks-heading">
+          <div class="section-intro"><div><p class="eyebrow">TASK HISTORY</p><h2 id="tasks-heading">任务记录</h2></div><button class="button button-quiet" id="filter-tasks" type="button">仅看进行中</button></div>
+          <p class="section-lede">查看 MCP 指令、Codex Desktop 执行状态和同步回灵矽的对话内容。这里展示的是本地 mock 记录。</p>
+          <div class="task-layout"><div class="panel task-list-large" id="task-list"></div><aside class="panel task-detail" id="task-detail"></aside></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./fixtures.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
