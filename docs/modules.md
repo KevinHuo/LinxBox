@@ -4,7 +4,7 @@
 > Version: 2.0  
 > Last updated: 2026-10-24
 
-本文件定义七个模块的职责、依赖方向、状态所有权与交付门禁。跨模块完整链路见[端到端串联](end-to-end.md)，字段级语义见[契约索引](contracts/README.md)，目录见[文档索引](README.md)，代码分层见[架构文档](architecture.md) §4.1。
+本文件定义七个模块的职责、依赖方向、状态所有权与交付门禁。跨模块完整链路见[架构文档](architecture.md) §1 与 §8，字段级语义见[契约索引](contracts/README.md)，目录见[文档索引](README.md)，代码分层见[架构文档](architecture.md) §4.1。
 
 | 模块 | 一句话职责 |
 | --- | --- |

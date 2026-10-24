@@ -26,7 +26,7 @@
 2. 用户未指定时，从当前 PR 的关联项和分支名中的 Issue 编号定位。
 3. 仍无法唯一确定时，先请用户指定或创建 Task/Bug Issue，不自行选择看似相关的任务。
 
-当前 MVP 的仓库内产品与技术契约是 [docs/architecture.md](docs/architecture.md)（含 §4.1 代码分层），完整链路以 [docs/end-to-end.md](docs/end-to-end.md) 为准，AI 行为以 [docs/agent-behavior.md](docs/agent-behavior.md) 为准，模块功能、边界契约和门禁分别以 [docs/modules.md](docs/modules.md)、[docs/contracts/README.md](docs/contracts/README.md) 和 [docs/process/quality-gates.md](docs/process/quality-gates.md) 为准；仓库目录见 [docs/README.md](docs/README.md)。GitHub Proposal/Issue 提供讨论和任务追踪；除非用户明确要求，不修改其正文。历史 Proposal 与已接受仓库契约不一致时，以仓库契约为实现依据，并在交付说明中指出差异，不擅自改 Issue。
+当前 MVP 的仓库内产品与技术契约是 [docs/architecture.md](docs/architecture.md)（含 §1 四条链路、§4.1 代码分层、§8 端到端时序），AI 行为以 [docs/agent-behavior.md](docs/agent-behavior.md) 为准，模块功能、边界契约和门禁分别以 [docs/modules.md](docs/modules.md)、[docs/contracts/README.md](docs/contracts/README.md) 和 [docs/process/quality-gates.md](docs/process/quality-gates.md) 为准；仓库目录见 [docs/README.md](docs/README.md)。GitHub Proposal/Issue 提供讨论和任务追踪；除非用户明确要求，不修改其正文。历史 Proposal 与已接受仓库契约不一致时，以仓库契约为实现依据，并在交付说明中指出差异，不擅自改 Issue。
 
 依据的优先级从高到低为：
 
