@@ -94,16 +94,16 @@ Gateway 当前联调时只应下发 `task.dispatch` 和 `task.cancel`。
 
 payload：
 
-| 字段                  | 类型           | 必填 | 约束/语义                                                 |
-| --------------------- | -------------- | ---- | --------------------------------------------------------- |
-| `task_id`             | string         | 是   | 非空任务 ID                                               |
-| `project_id`          | string         | 是   | 非空项目 ID；由 Desktop 映射本机路径                      |
-| `agent`               | string         | 是   | 非空；当前预期 `codex`，但运行时未限制枚举                |
-| `capabilities`        | string[]       | 是   | 元素只能是 `read`、`write`、`test`                        |
-| `prompt`              | string         | 是   | 可以为空字符串；当前直接传给 Codex                        |
-| `acceptance_criteria` | string[]       | 是   | 验收条件列表                                              |
-| `policy_version`      | string         | 是   | 非空策略版本                                              |
-| `continuation`        | object \| null | 是   | 新任务为 `null`；续接任务为 `{ "parent_task_id": "..." }` |
+| 字段                  | 类型           | 必填 | 约束/语义                                                                        |
+| --------------------- | -------------- | ---- | -------------------------------------------------------------------------------- |
+| `task_id`             | string         | 是   | 非空任务 ID                                                                      |
+| `project_id`          | string         | 是   | 非空项目 ID；由 Desktop 映射本机路径                                             |
+| `agent`               | string         | 是   | 非空；当前预期 `codex`，但运行时未限制枚举                                       |
+| `capabilities`        | string[]       | 是   | 元素只能是 `read`、`write`、`test`；当前只作审计信息透传，Desktop 不据此限制执行 |
+| `prompt`              | string         | 是   | 可以为空字符串；当前直接传给 Codex                                               |
+| `acceptance_criteria` | string[]       | 是   | 验收条件列表                                                                     |
+| `policy_version`      | string         | 是   | 非空策略版本；当前只作审计信息透传，不参与执行授权判断                           |
+| `continuation`        | object \| null | 是   | 新任务为 `null`；续接任务为 `{ "parent_task_id": "..." }`；当前实现未消费该字段  |
 
 完整示例：
 
@@ -136,6 +136,9 @@ payload：
 4. Codex 启动成功，产生 `task.started`，并返回 `accepted` ack。
 5. Codex 启动失败，产生 `task.failed`，并返回 `rejected` ack。
 6. 去重记录当前只在内存中，Desktop 重启后不会保留。
+7. `capabilities` 与 `policy_version` 当前不参与执行判断，只随包记录。Gateway 不能因为下发了
+   `["read"]` 就认为 Desktop 只读执行。
+8. `continuation` 当前未被消费，`dispatch` 一律新起 Codex 会话；追问不会落到指定会话。
 
 ### 4.3 `task.cancel`
 
@@ -226,12 +229,13 @@ payload：
     "desktop_version": "0.1.0",
     "protocol_versions": ["1.0"],
     "last_acked_sequence": 0,
-    "capabilities": ["project_registry", "codex_app_server", "task_cancel"]
+    "capabilities": ["project_registry", "codex_app_server"]
   }
 }
 ```
 
-`capabilities` 当前是构造 `GatewayClient` 时传入的自由字符串列表，不是固定枚举。
+`capabilities` 当前是构造 `GatewayClient` 时传入的自由字符串列表，不是固定枚举。示例中不含
+`task_cancel`：当前版本不提供执行中断，Desktop 不应对外宣称该能力。
 
 ### 5.3 `client.heartbeat`
 
@@ -428,6 +432,9 @@ Desktop -> Gateway  task.completed | task.failed | task.interrupted
 8. `presentation.upsert` / `presentation.revoke` / `command.receipt` 只有类型占位。
 9. 当前运行时只保留 `gateway-client/frames.ts` 作为入站 parser；类型契约仍声明
    `project.upsert` / `project.revoke`，但 parser 尚未实现，后续共享 schema 需要收敛这处差异。
+10. `continuation` 尚未接入执行路径：`dispatch` 一律新起 Codex 会话，追问不保证落到指定会话。
+11. `capabilities` 与 `policy_version` 当前只随包透传，不参与执行授权判断。
+12. `task.started` 尚未上报实际执行的 thread / turn ID；`TaskEventPayload` 当前也没有这两个字段。
 
 ## 9. Codex 数据对 Issue #4 展示的覆盖
 
