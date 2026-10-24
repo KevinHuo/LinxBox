@@ -224,11 +224,128 @@ static void pagination_preserves_utf8(void)
     assert(small[0] == '\0');
 }
 
+static void all_punctuation_and_unicode_ranges(void)
+{
+    static const char *const closing[] = {
+        ",", ".", "!", "?", ":", ";", ")", "]", "}", "、", "。", "，", "．", "！", "？",
+        "：", "；", "…", "’", "”", "〉", "》", "」", "』", "】", "〕", "〗", "〙", "〛", "）", "］", "｝"
+    };
+    static const char *const opening[] = {
+        "(", "[", "{", "‘", "“", "〈", "《", "「", "『", "【", "〔", "〖", "〘", "〚", "（", "［", "｛"
+    };
+    char source[128];
+    for (size_t i = 0U; i < sizeof(closing) / sizeof(closing[0]); i++) {
+        snprintf(source, sizeof(source), "甲乙丙%s丁戊己。", closing[i]);
+        punctuation_boundaries(source, 30, 1U);
+    }
+    for (size_t i = 0U; i < sizeof(opening) / sizeof(opening[0]); i++) {
+        snprintf(source, sizeof(source), "甲乙%s丙丁戊。", opening[i]);
+        punctuation_boundaries(source, 30, 1U);
+    }
+    /* 两字节拉丁字母、韩文、兼容汉字、四字节汉字和表情都不能被拆开。 */
+    display_pagination("éΩ甲한豈𠀀😀继续。", 64, 1U, NULL);
+    display_pagination("甲乙丙 \t。丁戊己。", 48, 1U, NULL);
+    display_pagination("甲乙（ \t丙丁戊。", 48, 1U, NULL);
+    const char *narrow = "甲。";
+    linx_text_line_t line;
+    assert(linx_wrap_span(narrow, 0U, strlen(narrow), 10, width, NULL, &line));
+    assert(line.end == strlen("甲") && line.next == line.end);
+}
+
+static void incomplete_list_markers_are_preserved(void)
+{
+    static const char *const sources[] = {
+        " ", "\t", "-", "*", "123", "123x", "1.", "2)", "2)text", "-text", "*text",
+        "\t123x text", "(plain text)", "abc\n\nlast."
+    };
+    for (size_t i = 0U; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        display_pagination(sources[i], 208, 2U, NULL);
+    }
+    linx_pagination_t pages;
+    char out[8];
+    assert(linx_paginate(&pages, "- \t", 208, 2U, width, NULL));
+    assert(linx_page_text(&pages, 0U, "- \t", 208, width, NULL, out, sizeof(out)));
+    assert(strcmp(out, "- \t") == 0);
+}
+
+static void pagination_limits_and_invalid_outputs(void)
+{
+    linx_pagination_t pages;
+    memset(&pages, 0xa5, sizeof(pages));
+    assert(!linx_paginate(NULL, "abc", 10, 1U, width, NULL));
+    assert(!linx_paginate(&pages, NULL, 10, 1U, width, NULL));
+    assert(!pages.complete && pages.count == 0U && pages.offsets[0] == 0U);
+    assert(!linx_paginate(&pages, "abc", 10, 1U, NULL, NULL));
+    assert(!linx_paginate(&pages, "abc", -1, 1U, width, NULL));
+    assert(!linx_paginate(&pages, "abc", 10, 0U, width, NULL));
+    char oversized[LINX_TEXT_LIMIT + 2U];
+    memset(oversized, 'a', sizeof(oversized) - 1U);
+    oversized[sizeof(oversized) - 1U] = '\0';
+    assert(!linx_paginate(&pages, oversized, 1000, 100U, width, NULL));
+    oversized[LINX_TEXT_LIMIT] = '\0';
+    assert(linx_paginate(&pages, oversized, 1000, 100U, width, NULL));
+    assert(pages.complete && pages.offsets[pages.count] == LINX_TEXT_LIMIT);
+
+    char source[(LINX_PAGE_LIMIT + 1U) * 2U + 1U];
+    for (size_t i = 0U; i < LINX_PAGE_LIMIT; i++) {
+        source[i * 2U] = 'a'; source[i * 2U + 1U] = '\n';
+    }
+    source[LINX_PAGE_LIMIT * 2U] = '\0';
+    assert(linx_paginate(&pages, source, 10, 1U, width, NULL));
+    assert(pages.count == LINX_PAGE_LIMIT && pages.complete);
+    source[LINX_PAGE_LIMIT * 2U] = 'a';
+    source[LINX_PAGE_LIMIT * 2U + 1U] = '\n';
+    source[LINX_PAGE_LIMIT * 2U + 2U] = '\0';
+    assert(!linx_paginate(&pages, source, 10, 1U, width, NULL));
+    assert(!pages.complete && pages.count == LINX_PAGE_LIMIT);
+
+    char out[16] = "unchanged";
+    assert(!linx_page_text(&pages, 0U, source, 10, width, NULL, out, sizeof(out)));
+    assert(out[0] == '\0');
+    assert(linx_paginate(&pages, "abcd", 10, 2U, width, NULL));
+    assert(linx_page_text(&pages, 0U, "abcd", 10, width, NULL, out, 6U));
+    assert(strcmp(out, "ab\ncd") == 0);
+    assert(!linx_page_text(&pages, 0U, "abcd", 10, width, NULL, out, 5U));
+    assert(out[0] == '\0');
+    assert(!linx_page_text(NULL, 0U, "abcd", 10, width, NULL, out, sizeof(out)));
+    assert(!linx_page_text(&pages, pages.count, "abcd", 10, width, NULL, out, sizeof(out)));
+    assert(!linx_page_text(&pages, 0U, NULL, 10, width, NULL, out, sizeof(out)));
+    assert(!linx_page_text(&pages, 0U, "abcd", 10, NULL, NULL, out, sizeof(out)));
+    assert(!linx_page_text(&pages, 0U, "abcd", 10, width, NULL, NULL, sizeof(out)));
+    out[0] = 'x';
+    assert(!linx_page_text(&pages, 0U, "abcd", 10, width, NULL, out, 0U));
+    assert(out[0] == 'x');
+}
+
+static void headings_and_menu_bounds(void)
+{
+    const char *source = "正文。\n- 列表\n\n* 列表\n\n1. 列表\n\n"
+                         "句号。\n\n冒号：\n\n感叹！\n\n问号？\n\n"
+                         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n\n结束。";
+    display_pagination(source, 208, 2U, NULL);
+    char headings[2048] = "";
+    for (size_t i = 0U; i < 100U; i++) strcat(headings, "a.\nb.\nTitle\n\n");
+    linx_pagination_t pages;
+    assert(!linx_paginate(&pages, headings, 100, 3U, width, NULL));
+    assert(!pages.complete && pages.count == LINX_PAGE_LIMIT);
+    bool enabled[] = {false, false, false};
+    assert(linx_menu_step(99U, 1, enabled, 0U) == 0U);
+    assert(linx_menu_step(99U, 0, enabled, 3U) == 2U);
+    assert(linx_menu_step(0U, 0, enabled, 3U) == 0U);
+    assert(linx_menu_step(2U, -1, enabled, 3U) == 2U);
+    assert(linx_menu_step(99U, -1, NULL, 3U) == 1U);
+    assert(linx_menu_step(0U, -1, NULL, 3U) == 0U);
+}
+
 int main(void)
 {
     cjk_lists_and_mixed_words();
     wrapping_bounded_spans();
     pagination_preserves_utf8();
+    all_punctuation_and_unicode_ranges();
+    incomplete_list_markers_are_preserved();
+    pagination_limits_and_invalid_outputs();
+    headings_and_menu_bounds();
     /* Each punctuation would land exactly at a wrap or a one-line page start
      * without the backtracking rule. Every original byte must survive. */
     punctuation_boundaries("甲乙丙。丁戊己，庚辛壬？癸甲乙！丙丁戊）己庚辛】壬癸甲”乙丙丁", 30, 1);

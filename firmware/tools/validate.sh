@@ -17,6 +17,7 @@ run_static_checks() (
     python3 tools/check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_prepare_upstream.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_c_coverage.py
 
     actionlint_bin="${ACTIONLINT_BIN:-}"
     if [[ -z "${actionlint_bin}" ]]; then
@@ -74,6 +75,15 @@ EOF
         tests/test_linx_reader.c main/linx_reader.c main/linx_navigation.c main/linx_content.c \
         -o "${test_dir}/test_linx_reader"
     "${test_dir}/test_linx_reader"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        -Itests/device_stubs -I"${UPSTREAM_DIR}/main" \
+        tests/test_main_runtime.c main/main.c main/linx_input.c \
+        -o "${test_dir}/test_main_runtime"
+    local scenarios
+    scenarios="$("${test_dir}/test_main_runtime" --list)"
+    while IFS= read -r scenario; do
+        "${test_dir}/test_main_runtime" "${scenario}"
+    done <<< "${scenarios}"
     python3 tools/check_linx_resources.py
     echo "LinX 主机测试：通过"
 )

@@ -269,6 +269,76 @@ static void bounds_and_failures(void)
     audit("一。\n二。\n三。\n四。\n五。\n六。\n七。\n八。\n九。\n十。\n一。\n二。\n三。", 208U, 1000U);
 }
 
+static void plain_markers_and_heading_boundaries(void)
+{
+    const char *source = "-\n*\n1.\n12)\n123\n123x\n-abc\n*abc\n- \t\n正文。";
+    linx_reader_layout_t layout = audit(source, 208U, 1000U);
+    linx_reader_page_t page;
+    assert(linx_reader_get_page(&layout, 0U, source, measure, NULL, &page));
+    assert(page.count == 10U);
+    for (size_t r = 0U; r < page.count; r++) {
+        assert(page.rows[r].kind == LINX_READER_BODY);
+        assert(page.rows[r].marker_length == 0U && page.rows[r].x == 0U);
+    }
+    source = " \t标题 \t\r\n\r\t \n正文。";
+    layout = audit(source, 208U, 200U);
+    assert(linx_reader_get_page(&layout, 0U, source, measure, NULL, &page));
+    assert(page.count == 2U && page.rows[0].kind == LINX_READER_HEADING);
+    assert(page.rows[1].kind == LINX_READER_BODY && page.rows[1].y == 30U);
+    source = "正文。\n看似标题\n \t\r\n";
+    layout = audit(source, 208U, 200U);
+    assert(linx_reader_get_page(&layout, 0U, source, measure, NULL, &page));
+    assert(page.count == 2U && page.rows[1].kind == LINX_READER_BODY);
+    audit("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n正文。", 208U, 200U);
+    audit("数字1\n正文。\n1正文\n尾句。", 208U, 200U);
+    /* 单数字有序标记同样保留原始标记及悬挂缩进。 */
+    audit("1. a", 208U, 200U);
+}
+
+static int32_t invalid_marker_measure(const char *text, size_t bytes,
+                                       linx_reader_kind_t kind, void *context)
+{
+    if (kind == LINX_READER_BODY && bytes == 3U && memcmp(text, "12)", 3U) == 0) return -1;
+    return measure(text, bytes, kind, context);
+}
+
+static int32_t larger_measure(const char *text, size_t bytes,
+                               linx_reader_kind_t kind, void *context)
+{
+    return measure(text, bytes, kind, context) * 2;
+}
+
+static void rejected_layouts_clear_output(void)
+{
+    linx_reader_layout_t layout;
+    assert(!linx_reader_paginate(&layout, "12) 字", 208U, 200U, invalid_marker_measure, NULL));
+    assert(!layout.complete);
+    assert(!linx_reader_paginate(&layout, "标题\n12) 字", 208U, 200U, invalid_marker_measure, NULL));
+    assert(!linx_reader_paginate(&layout, "标题\n正文。", 8U, 200U, measure, NULL));
+    char headings[256] = "";
+    for (size_t i = 0U; i < LINX_READER_ROWS; i++) strcat(headings, "标题\n");
+    strcat(headings, "正文。");
+    assert(!linx_reader_paginate(&layout, headings, 208U, 1000U, measure, NULL));
+    assert(!layout.complete);
+
+    linx_reader_page_t page;
+    const linx_reader_page_t empty = {0};
+    memset(&page, 0xa5, sizeof(page));
+    assert(!linx_reader_get_page(&layout, 0U, headings, measure, NULL, &page));
+    assert(memcmp(&page, &empty, sizeof(page)) == 0);
+    layout = audit("abcdef", 16U, 22U);
+    assert(layout.count == 3U);
+    memset(&page, 0xa5, sizeof(page));
+    assert(!linx_reader_get_page(&layout, 0U, "abcdef", larger_measure, NULL, &page));
+    assert(memcmp(&page, &empty, sizeof(page)) == 0);
+    assert(!linx_reader_get_page(&layout, 0U, NULL, measure, NULL, &page));
+    assert(!linx_reader_get_page(&layout, 0U, "abcdef", NULL, NULL, &page));
+    assert(memcmp(&page, &empty, sizeof(page)) == 0);
+    layout.count = 0U;
+    assert(!linx_reader_get_page(&layout, 0U, "abcdef", measure, NULL, &page));
+    assert(memcmp(&page, &empty, sizeof(page)) == 0);
+}
+
 int main(void)
 {
     actual_templates();
@@ -277,6 +347,8 @@ int main(void)
     mixed_and_numbered_lists();
     numbered_marker_width_regression();
     bounds_and_failures();
+    plain_markers_and_heading_boundaries();
+    rejected_layouts_clear_output();
     puts("LinX structured reader: PASS (templates, byte spans, headings, hanging lists, pixel bounds)");
     return 0;
 }

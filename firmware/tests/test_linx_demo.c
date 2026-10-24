@@ -247,7 +247,118 @@ static void test_content_boundaries(void)
         assert(strlen(linx_content_text_at(i)) < 4096U);
     }
     assert(linx_content_text_at(linx_content_text_count()) == NULL);
+    assert(strcmp(linx_content_initial_user(0U), "") == 0);
+    assert(strcmp(linx_content_initial_user(4U), "") == 0);
+    assert(strcmp(linx_content_transcript(0U, 0U), "") == 0);
+    assert(strcmp(linx_content_transcript(4U, LINX_IMAGE_RESULT), "") == 0);
+    assert(strcmp(linx_content_transcript(LINX_TASK_DESIGN, 0U),
+                  "保留暖白，把任务状态字放大。") == 0);
     printf("Long reply: %zu UTF-8 bytes; model: %zu bytes\n", strlen(design->body), sizeof(linx_demo_t));
+}
+
+static void test_invalid_requests_preserve_state(void)
+{
+    linx_demo_t demo;
+    linx_demo_init(&demo, 0U);
+    linx_demo_t before = demo;
+    linx_reply_context_t context = {demo.scene_id, LINX_TASK_DESIGN, 999U, 0U};
+    assert(linx_demo_task(NULL, LINX_TASK_LOGIN) == NULL);
+    assert(linx_demo_turn(NULL, LINX_TASK_LOGIN, 1U) == NULL);
+    assert(linx_demo_turn(&demo, 0U, 1U) == NULL);
+    assert(linx_demo_turn(&demo, LINX_TASK_DESIGN, 999U) == NULL);
+    assert(linx_demo_history(&demo, 4U, 0U) == NULL);
+    assert(linx_demo_latest_turn(NULL, LINX_TASK_LOGIN) == NULL);
+    assert(!linx_demo_has_unread(&demo, 4U));
+    assert(!linx_demo_has_unread(NULL, LINX_TASK_LOGIN));
+    assert(!linx_demo_reply_context(NULL, LINX_TASK_DESIGN, 0U, 0U, &context));
+    assert(!linx_demo_reply_context(&demo, LINX_TASK_DESIGN, 0U, 0U, NULL));
+    assert(!linx_demo_reply_context(&demo, 4U, 0U, 0U, &context));
+    assert(!linx_demo_reply_context(&demo, LINX_TASK_DESIGN, 999U, 0U, &context));
+    assert(context.source_turn_id == 999U);
+    assert(linx_demo_send(&demo, &context, 0U) == LINX_NO_ID);
+    assert(linx_demo_send(&demo, NULL, 0U) == LINX_NO_ID);
+    assert(linx_demo_send(NULL, &context, 0U) == LINX_NO_ID);
+    assert(!linx_demo_retry(&demo, 0U, 1U, 0U));
+    assert(!linx_demo_retry(&demo, LINX_TASK_DESIGN, 0U, 0U));
+    assert(!linx_demo_cancel_failed(&demo, 4U, 1U));
+    assert(!linx_demo_cancel_failed(&demo, LINX_TASK_DESIGN, 0U));
+    assert(!linx_demo_cancel_failed(&demo, LINX_TASK_DESIGN, 1U));
+    assert(linx_demo_command(&demo, 4U, 1U) == NULL);
+    assert(linx_demo_command(&demo, LINX_TASK_DESIGN, 0U) == NULL);
+    assert(linx_demo_command(&demo, LINX_TASK_DESIGN, 999U) == NULL);
+    assert(linx_demo_images(&demo, 0U, 0U, NULL, 0U) == 0U);
+    linx_demo_mark_read(&demo, 4U, 1U);
+    linx_demo_mark_read(&demo, LINX_TASK_DESIGN, 999U);
+    linx_demo_mark_read(&demo, LINX_TASK_LOGIN,
+                        linx_demo_latest_turn(&demo, LINX_TASK_LOGIN)->id);
+    linx_demo_enter_task(&demo, 4U, 0U);
+    assert(memcmp(&demo, &before, sizeof(demo)) == 0);
+
+    linx_demo_init(NULL, 0U);
+    linx_demo_reset(NULL, 0U);
+    linx_demo_tick(NULL, 0U);
+    linx_demo_enter_task(NULL, LINX_TASK_LOGIN, 0U);
+    linx_demo_set_online(NULL, false, 0U);
+    linx_demo_fail_next_send(NULL, true);
+    linx_demo_mark_read(NULL, LINX_TASK_LOGIN, 1U);
+    assert(!linx_demo_retry(NULL, LINX_TASK_LOGIN, 1U, 0U));
+    assert(!linx_demo_cancel_failed(NULL, LINX_TASK_LOGIN, 1U));
+}
+
+static void test_idempotent_controls_and_image_capacity(void)
+{
+    linx_demo_t demo;
+    linx_demo_init(&demo, 0U);
+    uint32_t revision = demo.revision;
+    linx_demo_set_online(&demo, true, 0U);
+    linx_demo_fail_next_send(&demo, false);
+    assert(demo.revision == revision);
+    linx_demo_fail_next_send(&demo, true);
+    revision = demo.revision;
+    linx_demo_fail_next_send(&demo, true);
+    assert(demo.revision == revision);
+    linx_demo_fail_next_send(&demo, false);
+    linx_demo_enter_task(&demo, LINX_TASK_LOGIN, 0U);
+    revision = demo.revision;
+    linx_demo_enter_task(&demo, LINX_TASK_LOGIN, 0U);
+    assert(demo.revision == revision);
+
+    uint32_t source = linx_demo_latest_turn(&demo, LINX_TASK_DESIGN)->id;
+    linx_demo_mark_read(&demo, LINX_TASK_DESIGN, source);
+    revision = demo.revision;
+    linx_demo_mark_read(&demo, LINX_TASK_DESIGN, source);
+    assert(demo.revision == revision);
+    linx_image_ref_t images[2] = {{99U, 98U, 97U}, {96U, 95U, 94U}};
+    assert(linx_demo_images(&demo, LINX_TASK_DESIGN, source, images, 0U) == LINX_IMAGE_COUNT);
+    assert(images[0].image_id == 99U && images[1].image_id == 96U);
+    assert(linx_demo_images(&demo, LINX_TASK_DESIGN, source, images, 1U) == LINX_IMAGE_COUNT);
+    assert(images[0].image_id == LINX_IMAGE_TASK_LIST && images[0].turn_id == source);
+    assert(images[1].image_id == 96U && images[1].turn_id == 95U);
+
+    uint32_t command = send_to(&demo, LINX_TASK_PAYMENT, 0U);
+    assert(!linx_demo_cancel_failed(&demo, LINX_TASK_PAYMENT, command));
+    assert(linx_demo_command(&demo, LINX_TASK_PAYMENT, command)->state == LINX_COMMAND_SENDING);
+    linx_demo_set_online(&demo, false, 0U);
+    assert(!linx_demo_cancel_failed(&demo, LINX_TASK_PAYMENT, command + 1U));
+    assert(linx_demo_command(&demo, LINX_TASK_PAYMENT, command)->state == LINX_COMMAND_FAILED);
+}
+
+static void test_public_status_text(void)
+{
+    static const char *const states[] = {
+        "尚未发送", "模拟发送中", "模拟电脑已收到", "已排队",
+        "模拟 Agent 已接收", "模拟 Agent 运行中", "本轮结束", "模拟发送失败"
+    };
+    for (size_t i = 0U; i < sizeof(states) / sizeof(states[0]); i++) {
+        assert(strcmp(linx_demo_command_status((linx_command_state_t)i), states[i]) == 0);
+    }
+    assert(strcmp(linx_demo_command_status((linx_command_state_t)99), "尚未发送") == 0);
+    assert(strcmp(linx_demo_task_status(NULL), "") == 0);
+    linx_demo_t demo;
+    linx_demo_init(&demo, 0U);
+    assert(strcmp(linx_demo_task_status(linx_demo_task(&demo, LINX_TASK_LOGIN)), "运行中") == 0);
+    assert(strcmp(linx_demo_task_status(linx_demo_task(&demo, LINX_TASK_PAYMENT)), "等你回复") == 0);
+    assert(strcmp(linx_demo_task_status(linx_demo_task(&demo, LINX_TASK_DESIGN)), "本轮结束") == 0);
 }
 
 int main(void)
@@ -260,6 +371,9 @@ int main(void)
     test_reset_and_history_cap();
     test_tick_partition_invariance();
     test_content_boundaries();
-    puts("LinX demo model tests: PASS (8 scenarios)");
+    test_invalid_requests_preserve_state();
+    test_idempotent_controls_and_image_capacity();
+    test_public_status_text();
+    puts("LinX demo model tests: PASS (11 scenarios)");
     return 0;
 }

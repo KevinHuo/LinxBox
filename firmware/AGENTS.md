@@ -30,9 +30,10 @@
 ./tools/validate.sh --firmware
 ./tools/validate.sh
 ./tools/validate_linx_host.sh
+./tools/validate_coverage.sh
 ```
 
-完整门禁要求 ESP-IDF 5.5.3 环境；真实 LVGL 主机测试还需要已解析的管理组件。不得跳过检查、放宽门槛或把编译成功当成业务／真机验收通过。最终说明改动文件、简化内容及剩余风险，并分别报告：
+完整门禁要求 ESP-IDF 5.5.3 环境；真实 LVGL 主机测试还需要已解析的管理组件。覆盖率另需同版本 Clang／LLVM、CMake 和 Ninja，包含`main/` 内全部自有 C 源码，整体及每个文件的行、分支、函数覆盖率均至少 90%。不得跳过检查、放宽门槛或把编译成功当成业务／真机验收通过。最终说明改动文件、简化内容及剩余风险，并分别报告：
 
 ```text
 构建：通过／失败／未运行

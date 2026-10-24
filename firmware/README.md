@@ -42,8 +42,11 @@ AI Passport 所需的硬件适配已由上游 `components/bsp/` 提供。本地 
 ./tools/validate.sh --firmware  # 构建、合并镜像校验与调试归档
 ./tools/validate.sh             # 完整门禁
 ./tools/validate_linx_host.sh   # 真实 LVGL 主机测试与截图
+./tools/validate_coverage.sh    # 自有 C 应用覆盖率，整体及每个文件至少 90%
 ```
 
 工具详情见 [tools/README.md](tools/README.md)。合并镜像为 `build/FoloToy-AI-Passport-full.bin`，调试归档位于 `build/firmware/`，截图位于 `build/linx-host/`。构建和主机截图不代表真机验收，以上命令均不烧录。
+
+覆盖率需要同版本的 Clang、LLVM 工具，以及 CMake、Ninja；先完成固件构建以解析锁定的 LVGL 组件。验证合并逻辑单测、真实 LVGL 场景和设备入口模拟测试，检查 `main/` 内全部 C 源码的行、分支及函数覆盖率，不遗漏未命中文件。报告保存在 `build/coverage/run.*/`，打开其中 `html/index.html` 查看未覆盖位置。CI 会执行同一门槛，并保存 `firmware-c-coverage` 报告供下载。
 
 `build/`、`managed_components/`、本地 `sdkconfig`、Python 缓存和上游缓存均可按配置重新生成，不属于保留的源码目录。重新获取尚未缓存的组件可能需要联网。升级上游必须明确修改锁定提交、审查差异，并运行完整门禁和截图比较；不要直接编辑缓存。

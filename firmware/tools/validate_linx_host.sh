@@ -16,3 +16,4 @@ mkdir -p "${build_dir}/screens"
 
 mkdir -p "${build_dir}/screens-missing-image"
 "${build_dir}/linx_host_missing_image" "${build_dir}/screens-missing-image" --missing-image
+"${build_dir}/linx_ui_boundaries"

@@ -30,13 +30,30 @@ jobs:
       - run: ./tools/validate.sh --static
 
   build:
-    name: ESP32-C3 firmware build
+    name: ESP32-C3 构建与 C 覆盖率
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Build and verify firmware from its project directory
+      - name: 构建固件并验证自有 C 应用覆盖率
         uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
         with:
           esp_idf_version: v5.5.3
           target: esp32c3
-          command: cd firmware && ./tools/validate.sh --firmware
+          command: |
+            set -e
+            cd firmware
+            ./tools/validate.sh --firmware
+            apt-get update
+            apt-get install -y --no-install-recommends clang-18 llvm-18 libclang-rt-18-dev
+            CLANG=/usr/bin/clang-18 CLANGXX=/usr/bin/clang++-18 LLVM_COV=/usr/bin/llvm-cov-18 LLVM_PROFDATA=/usr/bin/llvm-profdata-18 ./tools/validate_coverage.sh
+      - name: 保存覆盖率报告
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: firmware-c-coverage
+          retention-days: 14
+          path: |
+            firmware/build/coverage/run.*/html/
+            firmware/build/coverage/run.*/coverage.json
+            firmware/build/coverage/run.*/summary.json
+            firmware/build/coverage/run.*/report.txt

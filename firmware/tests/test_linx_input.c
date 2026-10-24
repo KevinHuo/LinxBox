@@ -6,6 +6,8 @@ int main(void)
 {
     linx_input_t input;
     linx_input_init(&input, 500);
+    assert(linx_input_event(&input, 3, LINX_INPUT_PRESS, 1) == LINX_INPUT_NONE);
+    assert(input.held_key == -1);
     assert(linx_input_event(&input, 2, LINX_INPUT_RELEASE, 10) == LINX_INPUT_NONE);
     assert(linx_input_event(&input, 2, LINX_INPUT_PRESS, 20) == LINX_INPUT_NONE);
     assert(linx_input_event(&input, 2, LINX_INPUT_RELEASE, 100) == LINX_INPUT_OK);
@@ -33,6 +35,16 @@ int main(void)
     assert(linx_input_event(&input, 2, LINX_INPUT_LONG, 8500) == LINX_INPUT_NONE);
     assert(linx_input_event(&input, 2, LINX_INPUT_PRESS, 9000) == LINX_INPUT_NONE);
     assert(linx_input_event(&input, 2, LINX_INPUT_RELEASE, 9060) == LINX_INPUT_OK);
+    /* 切页时刻本身的排队事件也失效，之后的短按仍可正常使用。 */
+    linx_input_barrier(&input, 10000);
+    assert(linx_input_event(&input, 2, LINX_INPUT_PRESS, 10000) == LINX_INPUT_NONE);
+    assert(input.held_key == -1);
+    assert(linx_input_event(&input, 2, LINX_INPUT_PRESS, 10001) == LINX_INPUT_NONE);
+    assert(linx_input_event(&input, 2, (linx_input_event_t)99, 10002) == LINX_INPUT_NONE);
+    assert(input.held_key == 2);
+    assert(linx_input_event(&input, 2, LINX_INPUT_RELEASE, 10500) == LINX_INPUT_OK);
+    assert(linx_input_event(&input, 2, LINX_INPUT_PRESS, 11000) == LINX_INPUT_NONE);
+    assert(linx_input_event(&input, 2, LINX_INPUT_RELEASE, 11500) == LINX_INPUT_BACK);
     puts("LinX input: PASS (short/long exclusivity, quick taps, key identity)");
     return 0;
 }

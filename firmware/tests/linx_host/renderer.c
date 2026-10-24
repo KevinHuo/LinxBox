@@ -994,6 +994,375 @@ static void test_repeat_memory(void)
     assert(linx_ui_page() == LINX_UI_TASKS);
 }
 
+static void test_lifecycle_and_boot_keys(void)
+{
+    lv_obj_t *screen = lv_screen_active();
+    linx_ui_deinit();
+    size_t children = lv_obj_get_child_count(screen);
+    linx_ui_deinit();
+    linx_ui_init(NULL, s_now);
+    linx_ui_tick(s_now);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(lv_obj_get_child_count(screen) == children);
+    assert(linx_ui_debug().labels_used == 0U && linx_ui_demo()->scene_id == 0U);
+
+    lv_obj_t *unrelated = lv_obj_create(screen);
+    for (size_t scenario = 0U; scenario < 2U; scenario++) {
+        linx_ui_init(screen, s_now);
+        assert(lv_obj_get_child_count(screen) == children + 2U);
+        assert(linx_ui_page() == LINX_UI_BOOT);
+        advance(799U);
+        assert(linx_ui_page() == LINX_UI_BOOT);
+        key(LINX_UI_KEY_UP);
+        key(LINX_UI_KEY_DOWN);
+        assert(linx_ui_page() == LINX_UI_BOOT);
+        key(scenario == 0U ? LINX_UI_KEY_OK : LINX_UI_KEY_OK_LONG);
+        assert(linx_ui_page() == LINX_UI_TASKS && linx_ui_debug().selected == 0U);
+        linx_ui_deinit();
+        assert(lv_obj_get_child_count(screen) == children + 1U);
+        assert(lv_obj_is_valid(unrelated));
+    }
+    lv_obj_delete(unrelated);
+    linx_ui_init(screen, s_now);
+    advance(800U);
+    assert(linx_ui_page() == LINX_UI_TASKS);
+    puts("生命周期：空初始化、重复清理保留调用者对象；启动等待及短按/长按进入任务通过");
+}
+
+static void test_menu_boundaries(void)
+{
+    reset_scene();
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 0U);
+    select_item(LINX_TASK_COUNT - 1U);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == LINX_TASK_COUNT - 1U);
+    enter_task(LINX_TASK_LOGIN);
+    assert(linx_ui_debug().selected == 1U);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 1U);
+    assert(visible_text_contains(lv_screen_active(), "阅读回复  暂无"));
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == 2U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_HISTORY && linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_UP);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_READER);
+    assert(visible_text_contains(lv_screen_active(), "你的指令"));
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().read_page == 0U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_HISTORY && linx_ui_debug().selected == 0U);
+
+    to_tasks();
+    key(LINX_UI_KEY_OK_LONG);
+    select_item(0U);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_OK);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_page() == LINX_UI_RESET && linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_SETTINGS);
+    select_item(3U);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == 3U);
+    key(LINX_UI_KEY_OK);
+    key(LINX_UI_KEY_UP);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_page() == LINX_UI_ABOUT);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_SETTINGS && linx_ui_debug().selected == 3U);
+    to_tasks();
+    puts("菜单边界：任务/概览/历史/用户正文/设置/恢复/关于；禁用选项不可选通过");
+}
+
+static void test_image_menu_and_filtered_navigation(void)
+{
+    reset_scene();
+    enter_task(LINX_TASK_DESIGN);
+    overview_action(2U);
+    select_item(1U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_IMAGES && linx_ui_debug().image_id == LINX_IMAGE_TASK_LIST);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().image_id == LINX_IMAGE_TASK_LIST);
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().image_id == LINX_IMAGE_VOICE);
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_HISTORY && linx_ui_debug().selected == 1U);
+    key(LINX_UI_KEY_OK_LONG);
+    overview_action(3U);
+    assert(linx_ui_debug().image_id == LINX_IMAGE_TASK_LIST);
+    key(LINX_UI_KEY_OK);
+    select_item(2U);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == 2U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_IMAGES && linx_ui_debug().image_id == LINX_IMAGE_TASK_LIST);
+    key(LINX_UI_KEY_OK);
+    select_item(0U);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_OK);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().image_view == 2U);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().image_view == 1U);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().image_view == 1U);
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_IMAGES && linx_ui_debug().image_id == LINX_IMAGE_TASK_LIST);
+    to_tasks();
+    puts("图片导航：过滤相册不覆盖任务相册记忆，菜单返回和局部首尾切换通过");
+}
+
+static void test_explicit_cancel_and_failed_receipt(void)
+{
+    reset_scene();
+    settings_toggle(2U);
+    enter_task(LINX_TASK_PAYMENT);
+    start_voice_from_overview();
+    linx_ui_debug_t target = linx_ui_debug();
+    key(LINX_UI_KEY_UP);
+    advance(1U);
+    assert(linx_ui_page() == LINX_UI_VOICE && linx_ui_debug().turn_id == target.turn_id);
+    key(LINX_UI_KEY_OK);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 0U);
+    select_item(2U);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == 2U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && linx_ui_debug().selected == 1U);
+    const linx_task_t *payment = linx_demo_task(linx_ui_demo(), LINX_TASK_PAYMENT);
+    assert(payment->turn_count == 1U && payment->pending.id == 0U);
+    assert(linx_ui_demo()->fail_next_send);
+    start_voice_from_overview();
+    key(LINX_UI_KEY_OK_LONG);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && payment->pending.id == 0U);
+    start_voice_from_overview();
+    uint32_t command = finish_and_send();
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_page() == LINX_UI_RECEIPT && linx_ui_debug().selected == 0U);
+    advance(500U);
+    assert(payment->pending.id == command && payment->pending.state == LINX_COMMAND_FAILED);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_debug().selected == 1U);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_DOWN);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && payment->pending.id == 0U);
+    assert(payment->turn_count == 1U && linx_demo_command(linx_ui_demo(), LINX_TASK_PAYMENT, command) == NULL);
+    assert(linx_demo_reply_gate(linx_ui_demo(), LINX_TASK_PAYMENT) == LINX_REPLY_ALLOWED);
+    start_voice_from_overview();
+    key(LINX_UI_KEY_DOWN);
+    assert(linx_ui_page() == LINX_UI_OVERVIEW && payment->pending.id == 0U);
+    to_tasks();
+    puts("取消流程：确认取消不发送，失败回执取消释放名额，回执方向键边界通过");
+}
+
+static void test_payment_numeric_reply(void)
+{
+    reset_scene();
+    enter_task(LINX_TASK_PAYMENT);
+    overview_action(0U);
+    uint32_t original_turn = linx_ui_debug().turn_id;
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_VOICE && linx_ui_debug().turn_id == original_turn);
+    uint32_t command = finish_and_send();
+    advance(5000U);
+    assert(linx_demo_command(linx_ui_demo(), LINX_TASK_PAYMENT, command)->state == LINX_COMMAND_FINISHED);
+    key(LINX_UI_KEY_OK);
+    overview_action(0U);
+    const linx_turn_t *turn = linx_demo_latest_turn(linx_ui_demo(), LINX_TASK_PAYMENT);
+    assert(turn->content_id == LINX_CONTENT_PAYMENT_FOLLOWUP && !turn->unread);
+    const char *source = linx_content_get(turn->content_id)->body;
+    linx_reader_layout_t layout = check_reader_layout(source);
+    size_t markers = 0U;
+    for (size_t p = 0U; p < layout.count; p++) {
+        assert(linx_ui_debug().read_page == p && linx_ui_debug().turn_id == turn->id);
+        check_visible_reader(&layout, p, source);
+        linx_reader_page_t page;
+        assert(linx_reader_get_page(&layout, p, source, reader_measure, NULL, &page));
+        for (size_t r = 0U; r < page.count; r++) {
+            const linx_reader_row_t *row = &page.rows[r];
+            if (row->first_list_line) {
+                assert(row->marker_length == 2U);
+                lv_obj_t *label = label_at(lv_screen_active(), 16, 74 + row->y + 2, row->x, 18);
+                assert(label && lv_obj_get_style_text_font(label, LV_PART_MAIN) == &linx_font_12);
+                assert(strlen(lv_label_get_text(label)) == row->marker_length);
+                assert(memcmp(lv_label_get_text(label), source + row->marker_start, row->marker_length) == 0);
+                markers++;
+            }
+        }
+        key(LINX_UI_KEY_DOWN);
+    }
+    assert(markers == 3U && linx_ui_debug().read_page == layout.count - 1U);
+    for (size_t p = layout.count - 1U; p > 0U; p--) key(LINX_UI_KEY_UP);
+    key(LINX_UI_KEY_UP);
+    assert(linx_ui_debug().read_page == 0U);
+    to_tasks();
+    puts("支付回复：正文发起回复绑定原轮次，三条数字列表实际字形/位置与首尾分页通过");
+}
+
+static void test_incomplete_history_user(void)
+{
+    reset_scene();
+    enter_task(LINX_TASK_DESIGN);
+    start_voice_from_overview();
+    uint32_t command = finish_and_send();
+    advance(1000U);
+    const linx_turn_t *running = linx_demo_latest_turn(linx_ui_demo(), LINX_TASK_DESIGN);
+    assert(!running->complete && running->command.id == command);
+    uint32_t turn_id = running->id;
+    key(LINX_UI_KEY_OK);
+    overview_action(2U);
+    assert(linx_ui_debug().selected == 0U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_READER && linx_ui_debug().turn_id == turn_id);
+    assert(visible_text_contains(lv_screen_active(), "你的指令"));
+    advance(4000U);
+    assert(linx_ui_page() == LINX_UI_READER && linx_ui_debug().turn_id == turn_id);
+    assert(visible_text_contains(lv_screen_active(), "你的指令"));
+    assert(linx_demo_has_unread(linx_ui_demo(), LINX_TASK_DESIGN));
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_HISTORY && linx_ui_debug().selected == 1U);
+    key(LINX_UI_KEY_UP);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_READER && linx_ui_debug().turn_id == turn_id);
+    assert(!linx_demo_turn(linx_ui_demo(), LINX_TASK_DESIGN, turn_id)->unread);
+    assert(linx_demo_history(linx_ui_demo(), LINX_TASK_DESIGN, 1U)->unread);
+    assert(linx_demo_has_unread(linx_ui_demo(), LINX_TASK_DESIGN));
+    to_tasks();
+    puts("运行中历史：可读已接收用户指令；完成后保持阅读目标，返回仍选原条目且回复未读通过");
+}
+
+static void test_background_completion_during_voice(void)
+{
+    reset_scene();
+    enter_task(LINX_TASK_LOGIN);
+    advance(1000U);
+    open_second_image(true);
+    key(LINX_UI_KEY_OK);
+    linx_ui_debug_t target = linx_ui_debug();
+    assert(target.page == LINX_UI_VOICE && target.image_id == LINX_IMAGE_RESULT);
+    advance(124U);
+    assert(visible_text_contains(lv_screen_active(), "00:00"));
+    advance(1U);
+    advance(6875U);
+    linx_ui_debug_t after = linx_ui_debug();
+    assert(after.page == LINX_UI_VOICE && after.task_id == target.task_id &&
+           after.turn_id == target.turn_id && after.image_id == target.image_id);
+    assert(visible_text_contains(lv_screen_active(), "00:07"));
+    assert(linx_demo_has_unread(linx_ui_demo(), LINX_TASK_LOGIN));
+    advance(999U);
+    assert(linx_ui_page() == LINX_UI_VOICE);
+    advance(1U);
+    assert(linx_ui_page() == LINX_UI_CONFIRM && linx_ui_debug().image_id == target.image_id);
+    select_item(2U);
+    key(LINX_UI_KEY_OK);
+    assert(linx_ui_page() == LINX_UI_IMAGE_DETAIL && linx_ui_debug().image_view == 1U);
+    assert(linx_demo_task(linx_ui_demo(), LINX_TASK_DESIGN)->pending.id == 0U);
+    to_tasks();
+    puts("录入期间后台完成：保留图片目标及七秒计时，八秒确认后取消不发送通过");
+}
+
+static void test_background_history_eviction(void)
+{
+    for (size_t scenario = 0U; scenario < 4U; scenario++) {
+        reset_scene();
+        for (size_t turn = 0U; turn < 6U; turn++) repeat_reply();
+        const linx_task_t *design = linx_demo_task(linx_ui_demo(), LINX_TASK_DESIGN);
+        assert(design->turn_count == LINX_HISTORY_CAPACITY - 1U);
+        uint32_t oldest = linx_demo_history(linx_ui_demo(), LINX_TASK_DESIGN, 6U)->id;
+        enter_task(LINX_TASK_DESIGN);
+        start_voice_from_overview();
+        uint32_t first = finish_and_send();
+        advance(1000U);
+        key(LINX_UI_KEY_OK);
+        start_voice_from_overview();
+        uint32_t queued = finish_and_send();
+        advance(1000U);
+        assert(design->turn_count == LINX_HISTORY_CAPACITY);
+        assert(linx_demo_command(linx_ui_demo(), LINX_TASK_DESIGN, queued)->state == LINX_COMMAND_QUEUED);
+        key(LINX_UI_KEY_OK);
+        if (scenario < 2U) {
+            overview_action(3U);
+            assert(linx_ui_debug().turn_id == oldest && linx_ui_debug().image_id == LINX_IMAGE_TASK_LIST);
+            if (scenario == 1U) key(LINX_UI_KEY_OK);
+        } else {
+            overview_action(2U);
+            /* 运行中的用户消息、六组已完成对话，随后是初始的三条记录。 */
+            select_item(scenario == 2U ? 13U : 15U);
+            if (scenario == 2U) {
+                key(LINX_UI_KEY_OK);
+                assert(linx_ui_page() == LINX_UI_READER && linx_ui_debug().turn_id == oldest);
+                size_t count = linx_ui_debug().read_page_count;
+                for (size_t page = 1U; page < count; page++) key(LINX_UI_KEY_DOWN);
+                assert(linx_ui_debug().read_page > 0U);
+            }
+        }
+        advance(3000U);
+        assert(linx_demo_command(linx_ui_demo(), LINX_TASK_DESIGN, first)->state == LINX_COMMAND_FINISHED);
+        assert(linx_demo_command(linx_ui_demo(), LINX_TASK_DESIGN, queued)->state == LINX_COMMAND_AGENT_ACCEPTED);
+        assert(linx_demo_turn(linx_ui_demo(), LINX_TASK_DESIGN, oldest) == NULL);
+        assert(linx_demo_images(linx_ui_demo(), LINX_TASK_DESIGN, 0U, NULL, 0U) == 0U);
+        if (scenario == 0U) {
+            assert(linx_ui_page() == LINX_UI_IMAGES && linx_ui_debug().image_id == 0U);
+            assert(visible_text_contains(lv_screen_active(), "图片暂不可用"));
+            key(LINX_UI_KEY_UP);
+            key(LINX_UI_KEY_DOWN);
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_IMAGES && linx_ui_debug().image_id == 0U);
+            key(LINX_UI_KEY_OK_LONG);
+            assert(linx_ui_page() == LINX_UI_OVERVIEW && linx_ui_debug().selected == 3U);
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_OVERVIEW);
+            key(LINX_UI_KEY_UP);
+            assert(linx_ui_debug().selected == 2U);
+        } else if (scenario == 1U) {
+            assert(linx_ui_page() == LINX_UI_IMAGE_MENU && linx_ui_debug().image_id == 0U);
+            assert(visible_text_contains(lv_screen_active(), "图片暂不可用"));
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_IMAGE_MENU);
+            select_item(0U);
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_IMAGE_DETAIL && linx_ui_debug().image_id == 0U);
+            assert(visible_text_contains(lv_screen_active(), "图片暂不可用"));
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_IMAGE_DETAIL);
+            key(LINX_UI_KEY_OK_LONG);
+            assert(linx_ui_page() == LINX_UI_IMAGES);
+        } else if (scenario == 2U) {
+            assert(linx_ui_page() == LINX_UI_READER && linx_ui_debug().turn_id == oldest);
+            assert(linx_ui_debug().read_page == 0U && linx_ui_debug().read_page_count == 1U);
+            assert(visible_text_contains(lv_screen_active(), "这轮记录已移出保留范围"));
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_READER && design->pending.id == 0U);
+            assert(design->turn_count == LINX_HISTORY_CAPACITY);
+        } else {
+            assert(linx_ui_page() == LINX_UI_HISTORY && linx_ui_debug().selected == 0U);
+            key(LINX_UI_KEY_OK);
+            assert(linx_ui_page() == LINX_UI_READER && visible_text_contains(lv_screen_active(), "你的指令"));
+            assert(linx_ui_debug().turn_id == linx_demo_latest_turn(linx_ui_demo(), LINX_TASK_DESIGN)->id);
+        }
+        to_tasks();
+    }
+    puts("后台历史淘汰：图片/菜单/局部降级，旧正文页码回落且禁止失效回复，历史失效选项回退通过");
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2 || argc == 3);
@@ -1032,6 +1401,14 @@ int main(int argc, char **argv)
     test_background_does_not_steal_focus();
     test_reset_and_other_screens();
     test_repeat_memory();
+    test_lifecycle_and_boot_keys();
+    test_menu_boundaries();
+    test_image_menu_and_filtered_navigation();
+    test_explicit_cancel_and_failed_receipt();
+    test_payment_numeric_reply();
+    test_incomplete_history_user();
+    test_background_completion_during_voice();
+    test_background_history_eviction();
     linx_ui_deinit();
     lv_display_delete(s_display);
     lv_deinit();
