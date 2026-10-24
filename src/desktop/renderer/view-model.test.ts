@@ -7,7 +7,9 @@ import {
   connectionStatus,
   diagnosticsRows,
   filterTasks,
+  flattenSessionMessages,
   formatRootPath,
+  formatSessionTime,
   getBridge,
   isActiveTask,
   projectLabel,
@@ -235,5 +237,54 @@ describe('isCodexTurnRunning', () => {
     expect(isCodexTurnRunning({ ...base, status: 'running' })).toBe(true);
     expect(isCodexTurnRunning({ ...base, status: 'completed' })).toBe(false);
     expect(isCodexTurnRunning({ ...base, status: 'idle' })).toBe(false);
+  });
+});
+
+describe('flattenSessionMessages', () => {
+  it('flattens every turn into one chronological list', () => {
+    const messages = flattenSessionMessages({
+      threadId: 'th_1',
+      title: '会话',
+      cwd: '/tmp/work',
+      turns: [
+        {
+          turnId: 'tn_1',
+          status: 'completed',
+          startedAt: null,
+          messages: [{ id: 'm1', role: 'user', text: '你好', phase: null }],
+        },
+        {
+          turnId: 'tn_2',
+          status: 'completed',
+          startedAt: null,
+          messages: [{ id: 'm2', role: 'assistant', text: '在的', phase: 'final_answer' }],
+        },
+      ],
+    });
+    expect(messages.map((message) => message.text)).toEqual(['你好', '在的']);
+  });
+
+  it('returns an empty list for a session without turns', () => {
+    const messages = flattenSessionMessages({
+      threadId: 'th_1',
+      title: '会话',
+      cwd: null,
+      turns: [],
+    });
+    expect(messages).toEqual([]);
+  });
+});
+
+describe('formatSessionTime', () => {
+  it('formats an ISO timestamp', () => {
+    expect(formatSessionTime('2026-10-24T09:26:34.000Z')).not.toBe('-');
+  });
+
+  it('keeps a value it cannot parse', () => {
+    expect(formatSessionTime('not-a-date')).toBe('not-a-date');
+  });
+
+  it('reports a missing timestamp', () => {
+    expect(formatSessionTime(null)).toBe('-');
   });
 });

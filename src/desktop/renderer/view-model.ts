@@ -60,6 +60,38 @@ export interface CodexProbeFacts {
   readonly error: string | null;
 }
 
+/** A session the local provider knows about. */
+export interface CodexSessionFacts {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly model: string | null;
+  readonly createdAt: string | null;
+  readonly updatedAt: string | null;
+  readonly status: string;
+}
+
+/** One message inside a session transcript. */
+export interface CodexSessionMessageFacts {
+  readonly id: string;
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+  readonly phase: string | null;
+}
+
+/** A session with its transcript. */
+export interface CodexSessionDetailFacts {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly turns: readonly {
+    readonly turnId: string;
+    readonly status: string;
+    readonly startedAt: string | null;
+    readonly messages: readonly CodexSessionMessageFacts[];
+  }[];
+}
+
 /** The state of the turn the Desktop is driving against the local provider. */
 export interface CodexTurnFacts {
   readonly threadId: string | null;
@@ -145,6 +177,36 @@ export function projectStateLabel(project: ProjectFacts): string {
   return project.enabled ? '可供灵矽使用' : '当前已停用';
 }
 
+/** Flatten a session transcript into a chronological message list. */
+export function flattenSessionMessages(
+  session: CodexSessionDetailFacts,
+): CodexSessionMessageFacts[] {
+  const messages: CodexSessionMessageFacts[] = [];
+  for (const turn of session.turns) {
+    for (const message of turn.messages) {
+      messages.push(message);
+    }
+  }
+  return messages;
+}
+
+/** Format a session timestamp for display; falls back to the raw value. */
+export function formatSessionTime(value: string | null): string {
+  if (value === null) {
+    return '-';
+  }
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+  return new Date(parsed).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /** Label for a Codex turn status. */
 export function codexStatusLabel(status: CodexTurnFacts['status']): string {
   switch (status) {
@@ -181,6 +243,8 @@ export function isCodexTurnRunning(turn: CodexTurnFacts): boolean {
 /** Bridge exposed by the preload script, when the renderer runs inside Electron. */
 export interface LinxboxBridge {
   probeCodex(): Promise<unknown>;
+  listCodexSessions(payload?: unknown): Promise<unknown>;
+  readCodexSession(payload: unknown): Promise<unknown>;
   startCodexTurn(payload: unknown): Promise<unknown>;
   readCodexTurn(payload?: unknown): Promise<unknown>;
   interruptCodexTurn(payload: unknown): Promise<unknown>;

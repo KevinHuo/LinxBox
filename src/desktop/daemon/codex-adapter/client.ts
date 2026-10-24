@@ -23,6 +23,12 @@ import {
   type InitializeResult,
 } from './protocol.js';
 import { mapNotification, type CodexDomainEvent } from './events.js';
+import {
+  normalizeSessionDetail,
+  normalizeSessionList,
+  type CodexSessionDetail,
+  type CodexSessionSummary,
+} from './history.js';
 import { appServerArgs } from './discovery.js';
 
 /** Observable state of the turn the Desktop is currently watching. */
@@ -214,6 +220,33 @@ export class CodexClient {
   async interruptTurn(threadId: string, turnId: string): Promise<void> {
     this.assertInitialized();
     await this.process.call(CODEX_METHODS.turnInterrupt, { threadId, turnId });
+  }
+
+  /**
+   * List the sessions the provider knows about.
+   *
+   * This is a local read of the provider's own thread store. It does not
+   * invoke a model, so it works even when the account has no quota left.
+   */
+  async listSessions(limit = 30): Promise<CodexSessionSummary[]> {
+    this.assertInitialized();
+    const raw = await this.process.call(CODEX_METHODS.threadList, { limit });
+    return normalizeSessionList(raw);
+  }
+
+  /**
+   * Read the transcript of one session.
+   *
+   * `includeTurns` asks the provider for the turn list in the same call, so
+   * the transcript and the metadata cannot drift apart.
+   */
+  async readSession(threadId: string): Promise<CodexSessionDetail | null> {
+    this.assertInitialized();
+    const raw = await this.process.call(CODEX_METHODS.threadRead, {
+      threadId,
+      includeTurns: true,
+    });
+    return normalizeSessionDetail(raw);
   }
 
   /**

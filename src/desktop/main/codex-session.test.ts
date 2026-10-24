@@ -142,3 +142,83 @@ describe('CodexSession interrupt', () => {
     session.close();
   });
 });
+
+describe('CodexSession session browsing', () => {
+  it('lists the sessions the provider knows about', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const listing = session.listSessions(5);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({
+      id: 2,
+      result: { data: [{ id: 'th_1', preview: '标题', cwd: '/tmp/work', model: 'gpt-x' }] },
+    });
+
+    const sessions = await listing;
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.title).toBe('标题');
+    session.close();
+  });
+
+  it('reads a session transcript', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const reading = session.readSession('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({
+      id: 2,
+      result: {
+        thread: {
+          id: 'th_1',
+          preview: '标题',
+          turns: [
+            {
+              id: 'tn_1',
+              status: 'completed',
+              items: [{ type: 'userMessage', content: [{ type: 'text', text: '你好' }] }],
+            },
+          ],
+        },
+      },
+    });
+
+    const detail = await reading;
+    expect(detail?.turns[0]?.messages[0]?.text).toBe('你好');
+    session.close();
+  });
+
+  it('returns null for a session that cannot be read', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const reading = session.readSession('th_missing');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: {} } });
+
+    await expect(reading).resolves.toBeNull();
+    session.close();
+  });
+});

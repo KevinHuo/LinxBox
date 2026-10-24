@@ -265,3 +265,86 @@ describe('CodexClient lifecycle', () => {
     client.close();
   });
 });
+
+describe('CodexClient session history', () => {
+  it('lists the sessions the provider knows about', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const listing = client.listSessions(10);
+    child.emitMessage({
+      id: 2,
+      result: {
+        data: [
+          {
+            id: 'th_1',
+            preview: '会话标题',
+            cwd: '/tmp/work',
+            model: 'gpt-x',
+            createdAt: 1792840394,
+            updatedAt: 1792840398,
+            status: { type: 'notLoaded' },
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const sessions = await listing;
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.title).toBe('会话标题');
+    expect(sessions[0]?.threadId).toBe('th_1');
+    client.close();
+  });
+
+  it('reads the transcript of one session', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const reading = client.readSession('th_1');
+    child.emitMessage({
+      id: 2,
+      result: {
+        thread: {
+          id: 'th_1',
+          preview: '会话标题',
+          turns: [
+            {
+              id: 'tn_1',
+              status: 'completed',
+              items: [
+                {
+                  type: 'userMessage',
+                  content: [{ type: 'text', text: '你好' }],
+                },
+                { type: 'agentMessage', phase: 'final_answer', text: '在的' },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const session = await reading;
+    expect(session?.threadId).toBe('th_1');
+    expect(session?.turns[0]?.messages).toHaveLength(2);
+    client.close();
+  });
+
+  it('returns null for a session that cannot be read', async () => {
+    const { client, child } = createClient();
+    const initializing = client.initialize();
+    child.emitMessage({ id: 1, result: initializeResult });
+    await initializing;
+
+    const reading = client.readSession('th_missing');
+    child.emitMessage({ id: 2, result: { thread: {} } });
+
+    await expect(reading).resolves.toBeNull();
+    client.close();
+  });
+});

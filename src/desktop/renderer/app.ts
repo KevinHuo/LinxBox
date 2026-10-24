@@ -18,7 +18,11 @@ import {
   selectTaskId,
   getBridge,
   type CodexProbeFacts,
+  type CodexSessionDetailFacts,
+  type CodexSessionFacts,
   type CodexTurnFacts,
+  flattenSessionMessages,
+  formatSessionTime,
   type ConnectionFacts,
   type DiagnosticsFacts,
   type LinxboxBridge,
@@ -53,6 +57,9 @@ const state = {
     startedAt: null,
     completedAt: null,
   } as CodexTurnFacts,
+  codexSessions: [] as CodexSessionFacts[],
+  codexSessionDetail: null as CodexSessionDetailFacts | null,
+  selectedThreadId: null as string | null,
   runningOnly: false,
   selectedTaskId: null as string | null,
 };
@@ -61,6 +68,7 @@ const labels: Record<string, readonly [string, string]> = {
   lingxi: ['MCP WEBSOCKET', '连接 MCP WebSocket'],
   projects: ['LOCAL PROJECTS', '本地项目'],
   tasks: ['TASK HISTORY', '任务记录'],
+  codex: ['LOCAL CODEX', 'Codex 会话'],
   diagnostics: ['SETTINGS & DIAGNOSTICS', '设置与诊断'],
 };
 
@@ -310,6 +318,56 @@ function renderCodexPanel(): void {
   }
 }
 
+function renderCodexSessions(): void {
+  const list = qs('#codex-session-list');
+  if (!list) {
+    return;
+  }
+  if (state.codexSessions.length === 0) {
+    list.innerHTML = '<p class="codex-empty">还没有读到会话。点右上角"刷新会话"。</p>';
+    return;
+  }
+  list.innerHTML = state.codexSessions
+    .map(
+      (session) => `
+      <button class="codex-session-item ${session.threadId === state.selectedThreadId ? 'is-selected' : ''}" type="button" data-thread-id="${escapeHtml(session.threadId)}">
+        <strong>${escapeHtml(session.title)}</strong>
+        <small>${escapeHtml(formatSessionTime(session.updatedAt))} · ${escapeHtml(session.model ?? '-')}</small>
+      </button>`,
+    )
+    .join('');
+}
+
+function renderCodexMessages(): void {
+  const box = qs('#codex-messages');
+  if (!box) {
+    return;
+  }
+  const detail = state.codexSessionDetail;
+  const meta = qs('#codex-transcript-meta');
+  if (meta) {
+    meta.textContent = detail ? `${detail.title} · ${detail.turns.length} 轮` : '未选择会话';
+  }
+  if (detail === null) {
+    box.innerHTML = '<p class="codex-empty">左侧选一个会话，这里显示真实的聊天记录。</p>';
+    return;
+  }
+  const messages = flattenSessionMessages(detail);
+  if (messages.length === 0) {
+    box.innerHTML = '<p class="codex-empty">这个会话还没有可读的消息。</p>';
+    return;
+  }
+  box.innerHTML = messages
+    .map(
+      (message) => `
+      <div class="codex-message is-${escapeHtml(message.role)}">
+        <span>${message.role === 'user' ? '你' : 'Codex'}${message.phase === 'commentary' ? ' · 过程' : ''}</span>
+        <p>${escapeHtml(message.text)}</p>
+      </div>`,
+    )
+    .join('');
+}
+
 function renderDiagnostics(): void {
   const rows = diagnosticsRows(state.diagnostics);
   const set = (id: string, value: string): void => {
@@ -335,6 +393,8 @@ function renderAll(): void {
   renderTasks();
   renderDiagnostics();
   renderCodexPanel();
+  renderCodexSessions();
+  renderCodexMessages();
 }
 
 let codexPollTimer: ReturnType<typeof setInterval> | undefined;
@@ -363,6 +423,47 @@ function startCodexPolling(): void {
   codexPollTimer = setInterval(() => {
     void pollCodexTurn();
   }, 1200);
+}
+
+async function listCodexSessions(): Promise<void> {
+  if (bridge === null) {
+    showToast('未接入桌面端桥接，仅本地预览');
+    return;
+  }
+  const result = (await bridge.listCodexSessions({})) as {
+    ok?: boolean;
+    message?: string;
+    data?: CodexSessionFacts[];
+  };
+  if (!result?.ok) {
+    showToast(result?.message ?? '读取会话列表失败');
+    return;
+  }
+  state.codexSessions = result.data ?? [];
+  renderCodexSessions();
+  const first = state.codexSessions[0];
+  if (first !== undefined && state.selectedThreadId === null) {
+    await readCodexSession(first.threadId);
+  }
+}
+
+async function readCodexSession(threadId: string): Promise<void> {
+  if (bridge === null) {
+    return;
+  }
+  const result = (await bridge.readCodexSession({ threadId })) as {
+    ok?: boolean;
+    message?: string;
+    data?: CodexSessionDetailFacts;
+  };
+  if (!result?.ok) {
+    showToast(result?.message ?? '读取会话内容失败');
+    return;
+  }
+  state.selectedThreadId = threadId;
+  state.codexSessionDetail = result.data ?? null;
+  renderCodexSessions();
+  renderCodexMessages();
 }
 
 async function probeCodex(): Promise<void> {
@@ -518,6 +619,22 @@ function wireEvents(): void {
 
   qs('#codex-probe')?.addEventListener('click', () => {
     void probeCodex();
+  });
+
+  qs('#codex-sessions-refresh')?.addEventListener('click', () => {
+    void listCodexSessions();
+  });
+
+  qs('#codex-session-list')?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const item = target?.closest('[data-thread-id]');
+    if (!(item instanceof HTMLElement)) {
+      return;
+    }
+    const threadId = item.dataset['threadId'];
+    if (threadId !== undefined) {
+      void readCodexSession(threadId);
+    }
   });
 
   qs('#codex-run')?.addEventListener('click', () => {

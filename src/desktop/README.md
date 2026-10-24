@@ -96,6 +96,7 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
 - **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
 - **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + mock Gateway 联调脚本
+- **本机会话浏览**：读 Codex 的会话列表与聊天记录（`thread/list` / `thread/read`），**本地读取、不调用模型，没有额度也能用**
 
 未实现（属于后续 Slice）：
 
@@ -117,15 +118,15 @@ app-server 没有自描述的 method list，但对一个不存在的方法发请
 
 本机 `codex-cli 0.164.0-alpha.11.1` 的观测结果：
 
-| 分类 | 方法数 | 代表方法 |
-| --- | --- | --- |
-| 会话与轮次 | 61 | `thread/start`、`thread/resume`、`turn/start`、`turn/interrupt`、`turn/steer`、`thread/turns/list`、`thread/items/list`、`thread/search` |
-| 扩展与插件 | 36 | `plugin/list`、`skills/list`、`mcpServerStatus/list`、`hooks/list` |
-| 文件与进程 | 23 | `fs/readFile`、`fs/readDirectory`、`process/spawn`、`command/exec` |
-| 账号与额度 | 21 | `account/read`、`account/rateLimits/read`、`account/usage/read`、`getAuthStatus` |
-| 模型与配置 | 18 | `model/list`、`config/read`、`permissionProfile/list` |
-| 项目与记忆 | 14 | `project/list`、`threadSection/list`、`memory/status` |
-| 其他 | 6 | `server/diagnostics`、`environment/info` 等 |
+| 分类       | 方法数 | 代表方法                                                                                                                                 |
+| ---------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 会话与轮次 | 61     | `thread/start`、`thread/resume`、`turn/start`、`turn/interrupt`、`turn/steer`、`thread/turns/list`、`thread/items/list`、`thread/search` |
+| 扩展与插件 | 36     | `plugin/list`、`skills/list`、`mcpServerStatus/list`、`hooks/list`                                                                       |
+| 文件与进程 | 23     | `fs/readFile`、`fs/readDirectory`、`process/spawn`、`command/exec`                                                                       |
+| 账号与额度 | 21     | `account/read`、`account/rateLimits/read`、`account/usage/read`、`getAuthStatus`                                                         |
+| 模型与配置 | 18     | `model/list`、`config/read`、`permissionProfile/list`                                                                                    |
+| 项目与记忆 | 14     | `project/list`、`threadSection/list`、`memory/status`                                                                                    |
+| 其他       | 6      | `server/diagnostics`、`environment/info` 等                                                                                              |
 
 通知侧观测到 14 种，包括 `thread/started`、`turn/started`、`item/started`、`item/completed`、
 `turn/completed`、`error`、`warning`、`account/updated`、`account/rateLimits/updated`、
@@ -134,6 +135,24 @@ app-server 没有自描述的 method list，但对一个不存在的方法发请
 
 `item/completed` 的 `item.type === 'agentMessage'` 时携带真实文本，`phase` 为 `commentary` 是
 过程解说，`final_answer`（或无 phase）是最终回答。
+
+### 读 Codex 的会话与聊天记录
+
+页面上「Codex 会话」那一页就是干这个的：左边列本机 Codex 已知���会话，右边显示选中的
+会话的真实聊天记录（用户消息与 Codex 回复，含 `commentary` 过程解说）。
+
+对应 app-server 方法：
+
+| 方法                | 用途                                    | 是否吃额度 |
+| ------------------- | --------------------------------------- | ---------- |
+| `thread/list`       | 会话列表（标题、cwd、模型、时间、状态） | 否         |
+| `thread/read`       | 单个会话的完整 transcript               | 否         |
+| `thread/turns/list` | 按轮次取历史（`itemsView: 'full'`）     | 否         |
+| `turn/start`        | 发起新一轮对话                          | 是         |
+
+前三个都是 provider 的本地存储读取，**账号没额度时照样能用**。只有 `turn/start` 需要模型。
+
+会话内容是用户自己的对话，只留在这台机器上，不进任何上行帧。
 
 ### 远端 WSS 命令如何驱动本地 Codex
 
@@ -183,15 +202,15 @@ turn。
 
 ### 本机接入的安全边界
 
-| 约束 | 实现 |
-| --- | --- |
-| 不读 Codex 私有数据库 | 适配器只走 stdio JSON-RPC，不碰 `~/.codex` 的任何文件 |
-| 不经 shell 启动 | 参数是数组，`shell: false` |
-| 环境白名单 | 子进程只继承 `PATH`/`HOME`/`TMPDIR`/`USER`/`LANG`/`TERM`/`CODEX_HOME`；token、cookie、`LINXBOX_*` 全部剔除 |
-| stderr 不外传 | 只进本地环形缓冲，不进任何上行帧 |
-| 帧大小有上限 | 单帧超过 16 MB 视为协议错误，不做无界缓冲 |
-| 服务端请求一律拒绝 | app-server 的审批请求（`item/*/requestApproval`）回 `-32601`，本客户端没有可信审批面 |
-| 终态不可证明就中断 | 只有 provider 明确 `completed` 才算 succeeded，其余（含未知状态）收敛为 `interrupted` |
+| 约束                  | 实现                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 不读 Codex 私有数据库 | 适配器只走 stdio JSON-RPC，不碰 `~/.codex` 的任何文件                                                      |
+| 不经 shell 启动       | 参数是数组，`shell: false`                                                                                 |
+| 环境白名单            | 子进程只继承 `PATH`/`HOME`/`TMPDIR`/`USER`/`LANG`/`TERM`/`CODEX_HOME`；token、cookie、`LINXBOX_*` 全部剔除 |
+| stderr 不外传         | 只进本地环形缓冲，不进任何上行帧                                                                           |
+| 帧大小有上限          | 单帧超过 16 MB 视为协议错误，不做无界缓冲                                                                  |
+| 服务端请求一律拒绝    | app-server 的审批请求（`item/*/requestApproval`）回 `-32601`，本客户端没有可信审批面                       |
+| 终态不可证明就中断    | 只有 provider 明确 `completed` 才算 succeeded，其余（含未知状态）收敛为 `interrupted`                      |
 
 ## 已知限制
 

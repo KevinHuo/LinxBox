@@ -163,6 +163,41 @@ function handleCodexTurnStatus(): unknown {
   return codexSession.status();
 }
 
+async function handleCodexSessionsList(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.sessions.list', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { limit } = parsed.data as { limit?: number };
+  try {
+    const sessions = await codexSession.listSessions(limit ?? 30);
+    return { ok: true, data: sessions };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '读取本机会话失败';
+    logger.error('读取 Codex 会话列表失败', { message });
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
+async function handleCodexSessionsRead(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.sessions.read', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { threadId } = parsed.data as { threadId: string };
+  try {
+    const session = await codexSession.readSession(threadId);
+    if (session === null) {
+      return { ok: false, code: 'NOT_FOUND', message: '会话不存在' };
+    }
+    return { ok: true, data: session };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '读取会话内容失败';
+    logger.error('读取 Codex 会话内容失败', { message });
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
 async function handleCodexTurnStart(payload: unknown): Promise<unknown> {
   const parsed = parseIpcRequest('codex.turn.start', payload);
   if (!parsed.ok) {
@@ -205,6 +240,8 @@ async function handleCodexTurnInterrupt(payload: unknown): Promise<unknown> {
 
 const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'codex.probe': () => handleCodexProbe(),
+  'codex.sessions.list': (payload) => handleCodexSessionsList(payload),
+  'codex.sessions.read': (payload) => handleCodexSessionsRead(payload),
   'codex.turn.start': (payload) => handleCodexTurnStart(payload),
   'codex.turn.status': () => handleCodexTurnStatus(),
   'codex.turn.interrupt': (payload) => handleCodexTurnInterrupt(payload),

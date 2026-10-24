@@ -12,7 +12,12 @@ import { CodexClient, type CodexTurnState } from '../daemon/codex-adapter/client
 import type { SpawnFn } from '../daemon/codex-adapter/process.js';
 import type { CodexDomainEvent } from '../daemon/codex-adapter/events.js';
 import { discoverCodexBinary, type CodexBinary } from '../daemon/codex-adapter/discovery.js';
-import type { CodexProbeView, CodexTurnView } from '../shared/ipc.js';
+import type {
+  CodexProbeView,
+  CodexSessionDetailView,
+  CodexSessionSummaryView,
+  CodexTurnView,
+} from '../shared/ipc.js';
 
 export interface CodexSessionOptions {
   /** Override the discovered binary. Used by tests. */
@@ -132,6 +137,51 @@ export class CodexSession {
     const threadId = await client.startThread(cwd);
     await client.startTurn(threadId, prompt, `linxbox-${Date.now().toString(36)}`);
     return this.status();
+  }
+
+  /**
+   * List the sessions the provider knows about.
+   *
+   * This is a local read of the provider's own thread store. It does not
+   * invoke a model, so it keeps working when the account has no quota.
+   */
+  async listSessions(limit = 30): Promise<CodexSessionSummaryView[]> {
+    const client = await this.connect();
+    const sessions = await client.listSessions(limit);
+    return sessions.map((session) => ({
+      threadId: session.threadId,
+      title: session.title,
+      cwd: session.cwd,
+      model: session.model,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      status: session.status,
+    }));
+  }
+
+  /** Read the transcript of one session. */
+  async readSession(threadId: string): Promise<CodexSessionDetailView | null> {
+    const client = await this.connect();
+    const session = await client.readSession(threadId);
+    if (session === null) {
+      return null;
+    }
+    return {
+      threadId: session.threadId,
+      title: session.title,
+      cwd: session.cwd,
+      turns: session.turns.map((turn) => ({
+        turnId: turn.turnId,
+        status: turn.status,
+        startedAt: turn.startedAt,
+        messages: turn.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          text: message.text,
+          phase: message.phase,
+        })),
+      })),
+    };
   }
 
   /** The observable state of the current turn. */

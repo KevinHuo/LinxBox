@@ -12,6 +12,8 @@ describe('preload bridge', () => {
     });
 
     await api.probeCodex();
+    await api.listCodexSessions();
+    await api.readCodexSession({ threadId: 'th_1' });
     await api.startCodexTurn({ prompt: 'hi', projectId: 'prj_1' });
     await api.readCodexTurn();
     await api.interruptCodexTurn({ turnId: 'turn_1' });
@@ -28,6 +30,8 @@ describe('preload bridge', () => {
 
     expect(calls.map((call) => call.channel)).toEqual([
       'linxbox.v1.codex.probe',
+      'linxbox.v1.codex.sessions.list',
+      'linxbox.v1.codex.sessions.read',
       'linxbox.v1.codex.turn.start',
       'linxbox.v1.codex.turn.status',
       'linxbox.v1.codex.turn.interrupt',
@@ -51,7 +55,9 @@ describe('preload bridge', () => {
         'cancelTask',
         'getTask',
         'interruptCodexTurn',
+        'listCodexSessions',
         'probeCodex',
+        'readCodexSession',
         'readCodexTurn',
         'grantProject',
         'listProjects',

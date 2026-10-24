@@ -101,6 +101,18 @@ const codexTurnInterruptSchema = z
   })
   .strict();
 
+const codexSessionsListSchema = z
+  .object({
+    limit: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
+const codexSessionsReadSchema = z
+  .object({
+    threadId: z.string().min(1).max(128),
+  })
+  .strict();
+
 export type ConnectionSaveInput = z.infer<typeof connectionSaveSchema>;
 export type ProjectGrantInput = z.infer<typeof projectGrantSchema>;
 export type ProjectRevokeInput = z.infer<typeof projectRevokeSchema>;
@@ -113,6 +125,8 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.turn.start': codexTurnStartSchema,
   'codex.turn.status': codexTurnStatusSchema,
   'codex.turn.interrupt': codexTurnInterruptSchema,
+  'codex.sessions.list': codexSessionsListSchema,
+  'codex.sessions.read': codexSessionsReadSchema,
   'connection.read': emptyPayloadSchema,
   'connection.save': connectionSaveSchema,
   'connection.test': emptyPayloadSchema,
@@ -211,6 +225,43 @@ export interface CodexProbeView {
   readonly authMode: string | null;
   readonly planType: string | null;
   readonly error: string | null;
+}
+
+/**
+ * A session the local provider knows about.
+ *
+ * This is a local read. The transcript is the user's own conversation and
+ * never leaves the machine.
+ */
+export interface CodexSessionSummaryView {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly model: string | null;
+  readonly createdAt: string | null;
+  readonly updatedAt: string | null;
+  readonly status: string;
+}
+
+/** One message inside a session transcript. */
+export interface CodexSessionMessageView {
+  readonly id: string;
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+  readonly phase: string | null;
+}
+
+/** A session with its transcript. */
+export interface CodexSessionDetailView {
+  readonly threadId: string;
+  readonly title: string;
+  readonly cwd: string | null;
+  readonly turns: readonly {
+    readonly turnId: string;
+    readonly status: string;
+    readonly startedAt: string | null;
+    readonly messages: readonly CodexSessionMessageView[];
+  }[];
 }
 
 /** The state of the turn the Desktop is currently driving. */
