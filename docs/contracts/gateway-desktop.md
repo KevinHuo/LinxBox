@@ -179,7 +179,7 @@ presentation.revoke
 command.receipt
 ```
 
-`presentation.upsert` 携带 `task_id/turn_id/revision/pages/image_manifests/retention_until`，其页面和图片必须已通过 Desktop `result-projector`，符合 [`device-presentation/v1`](./device-linx.md) 的内容限制。Gateway 按 device binding 投影，不接受 Device 或模型指定 client。
+`presentation.upsert` 携带 `task_id/turn_id/revision/pages/image_manifests/retention_until`，其页面和图片必须已通过 Desktop `result-projector`，符合 [`device-presentation/v1`](device-linx.md) 的内容限制。Gateway 按 device binding 投影，不接受 Device 或模型指定 client。
 
 `command.receipt` 只追加单调 receipt；`desktop_received` 证明 Desktop 已持久化 command，`turn_completed` 证明本轮终结，均不替代 Task terminal event。
 

@@ -15,7 +15,7 @@ Task 或 Bug Issue 是单次开发的交付契约。在开始业务实现或 Bug
 5. 可检查的验收条件和验证方式。
 6. 适用的 Execution Spec、具体个人 DRI、必要 Reviewer 和 Integration Owner；`Spec: N/A` 时说明理由。
 
-改变协议、状态权威、持久化、失败语义、运行时职责、安全边界或跨模块行为时，必须按 [质量门禁](docs/quality-gates.md)从[模板](docs/specs/template.md)创建 bounded Spec。`Proposed` 不授权实现；实现中发现开发 Issue 与已接受契约冲突时，先修改仓库契约、Spec 或 ADR，不通过代码静默改变行为，也不擅自修改 GitHub Issue。
+改变协议、状态权威、持久化、失败语义、运行时职责、安全边界或跨模块行为时，必须按 [质量门禁](docs/process/quality-gates.md)从[模板](docs/process/specs/template.md)创建 bounded Spec。`Proposed` 不授权实现；实现中发现开发 Issue 与已接受契约冲突时，先修改仓库契约、Spec 或 ADR，不通过代码静默改变行为，也不擅自修改 GitHub Issue。
 
 从最新默认分支创建工作分支，围绕任务开发、自查和提交 PR。文档修正等小改动可以直接提交 PR，写明任务和验收目标。
 
@@ -49,7 +49,7 @@ type 和 scope 小写，半角冒号后一个空格，描述具体。scope 优�
 
 ## Issue
 
-使用 [Issue 模板](.github/ISSUE_TEMPLATE/)创建条目。
+使用 [Issue 模板](.github/ISSUE_TEMPLATE)创建条目。
 
 | 类型 | 标题格式 | 必须说明 |
 | --- | --- | --- |

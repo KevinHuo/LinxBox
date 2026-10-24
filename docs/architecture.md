@@ -97,7 +97,7 @@ LinxBox 使用一个由产品方运营的公共 Gateway。灵矽 Agent 通过 MC
 
 ## 4. 组件职责
 
-模块内部功能、依赖方向和交付标准见[模块规范](./modules.md)；四条链路的完整闭环见[端到端串联](./end-to-end.md)；实施目录和 Desktop UI DOM/组件树见[代码与 Desktop UI 结构](./code-structure.md)。
+模块内部功能、依赖方向和交付标准见[模块规范](modules.md)；四条链路的完整闭环见[端到端串联](end-to-end.md)；实施目录和 Desktop UI DOM/组件树见[代码与 Desktop UI 结构](code-structure.md)。
 
 | 组件 | 核心责任 | 不负责 |
 | --- | --- | --- |
@@ -112,7 +112,7 @@ LinxBox 使用一个由产品方运营的公共 Gateway。灵矽 Agent 通过 MC
 
 Gateway MVP 采用模块化单体：MCP Transport、Identity/Binding、Task Service、Presentation、Policy、Broker、Outbox 和 Audit 同进程、按模块隔离。
 
-Device Presentation 的语义由 [`device-presentation/v1`](./contracts/device-linx.md) 定义。Issue #4 的离线演示是 Device UI 和状态机 fixture；真实联网、图片传输和 Agent 接入必须另有 integration/real-E2E 证据。
+Device Presentation 的语义由 [`device-presentation/v1`](contracts/device-linx.md) 定义。Issue #4 的离线演示是 Device UI 和状态机 fixture；真实联网、图片传输和 Agent 接入必须另有 integration/real-E2E 证据。
 
 ## 5. 身份与设备绑定
 
@@ -125,7 +125,7 @@ client_id    = cli_<UUID/ULID>       # 路由标识，不是秘密
 client_token = lcc_<256-bit-random>  # 认证秘密，只展示一次
 ```
 
-Gateway 只保存 `client_token_hash`，Desktop 只导入 `gateway_url + client_token` 并存入系统 Keychain/凭据库。Gateway 根据 token hash 反查 `client_id`；Desktop 不得自行选择或覆盖 client ID。连接方式见 [Gateway/Desktop WSS 契约](./contracts/gateway-desktop.md) §1。
+Gateway 只保存 `client_token_hash`，Desktop 只导入 `gateway_url + client_token` 并存入系统 Keychain/凭据库。Gateway 根据 token hash 反查 `client_id`；Desktop 不得自行选择或覆盖 client ID。连接方式见 [Gateway/Desktop WSS 契约](contracts/gateway-desktop.md) §1。
 
 ### 5.2 MVP 绑定
 
@@ -139,11 +139,11 @@ MVP 不实现产品账号登录、配对码或扫码。换机、解绑和 token 
 
 ## 6. 项目授权
 
-Desktop 选择目录后创建不透明 `project_id`，只向 Gateway 同步别名与能力，不上传绝对路径。每次执行前 Desktop 必须重新 `realpath`、检查 grant 和有效期、防止符号链接逃逸，并拒绝 MCP 参数或 prompt 中的任意 cwd/path 覆盖。字段见 [Gateway/Desktop WSS 契约](./contracts/gateway-desktop.md) §4。
+Desktop 选择目录后创建不透明 `project_id`，只向 Gateway 同步别名与能力，不上传绝对路径。每次执行前 Desktop 必须重新 `realpath`、检查 grant 和有效期、防止符号链接逃逸，并拒绝 MCP 参数或 prompt 中的任意 cwd/path 覆盖。字段见 [Gateway/Desktop WSS 契约](contracts/gateway-desktop.md) §4。
 
 ## 7. 公共 MCP 契约
 
-本节是工具语义摘要；字段、结果、进度、幂等和错误的规范定义见 [MCP 工具契约](./contracts/mcp.md)。
+本节是工具语义摘要；字段、结果、进度、幂等和错误的规范定义见 [MCP 工具契约](contracts/mcp.md)。
 
 | 工具 | 语义 |
 | --- | --- |
@@ -172,11 +172,11 @@ Desktop 选择目录后创建不透明 `project_id`，只向 Gateway 同步别�
 
 ## 8. 端到端时序
 
-创建任务的主路径时序见[端到端串联](./end-to-end.md) §2；四条链路的完整闭环与事实源划分也在该文档。
+创建任务的主路径时序见[端到端串联](end-to-end.md) §2；四条链路的完整闭环与事实源划分也在该文档。
 
 ## 9. Gateway ↔ Desktop WSS 协议
 
-本节是传输摘要；envelope、hello、project、dispatch、ACK、重放和事件字段以 [Gateway/Desktop WSS 契约](./contracts/gateway-desktop.md) 为准。
+本节是传输摘要；envelope、hello、project、dispatch、ACK、重放和事件字段以 [Gateway/Desktop WSS 契约](contracts/gateway-desktop.md) 为准。
 
 内部协议不是 MCP。消息族：
 
@@ -223,7 +223,7 @@ turn/completed | failed | interrupted
 
 可选 `hook-observer` 可以通过用户审阅并信任的 Codex Hooks 接收 Session、Prompt、Tool、Permission、Stop 和 Interrupt 等事件，用于现有 Codex 会话的有界只读通知。Hook 不是外部 turn 控制 API：不能创建或续接 LinxBox Task，不能批准动作，也不能把 `Stop` 直接映射为成功。`transcript_path` 和 JSONL 仅可作为兼容 fallback，不是稳定契约。
 
-LinxBox 管理任务以 app-server 事件为权威；Hook 和 app-server 重合时按本地 thread/turn ownership 去重。详细决策见 [ADR-0005](./adr/0005-hooks-observation-app-server-control.md)。
+LinxBox 管理任务以 app-server 事件为权威；Hook 和 app-server 重合时按本地 thread/turn ownership 去重。详细决策见 [ADR-0005](adr/0005-hooks-observation-app-server-control.md)。
 
 ### 10.3 本地 MCP/插件边界
 
@@ -245,7 +245,7 @@ MVP UI 至少包含：
 
 ## 11. 任务状态机
 
-状态转换、设备投影、风险等级和 `task-result-v1` 以 [领域状态与结果契约](./contracts/domain.md) 为准。
+状态转换、设备投影、风险等级和 `task-result-v1` 以 [领域状态与结果契约](contracts/domain.md) 为准。
 
 ## 12. MVP 数据模型
 
@@ -324,7 +324,7 @@ src/
 
 契约的权威表述在 `docs/contracts/`；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定。插件能力属于产品化阶段，MVP 不预建目录。
 
-MVP Profile：Gateway 模块化单体 + PostgreSQL；Electron Desktop 分离 UI/Main/Daemon + SQLite + Codex app-server；灵矽包含公共 MCP 和独立 Presentation Bridge；ESP32 实现三键任务阅读与确认状态机。完整的目录、分层和 UI 组件树见[代码与 Desktop UI 结构](./code-structure.md)，本节不另建一套实现规范。
+MVP Profile：Gateway 模块化单体 + PostgreSQL；Electron Desktop 分离 UI/Main/Daemon + SQLite + Codex app-server；灵矽包含公共 MCP 和独立 Presentation Bridge；ESP32 实现三键任务阅读与确认状态机。完整的目录、分层和 UI 组件树见[代码与 Desktop UI 结构](code-structure.md)，本节不另建一套实现规范。
 
 ## 17. 实施路线
 
@@ -347,7 +347,7 @@ MVP Profile：Gateway 模块化单体 + PostgreSQL；Electron Desktop 分离 UI/
 - 路径逃逸、prompt injection、密钥请求、R2/R3 全部拒绝；
 - 详细代码、绝对路径、凭据和内部推理不进入云端日志；
 - mock 不能替代真实灵矽、ESP32、WSS、app-server 和目标操作系统验收。
-- 合并门禁与功能启用门禁分开，证据分级遵守[质量门禁](./quality-gates.md)。
+- 合并门禁与功能启用门禁分开，证据分级遵守[质量门禁](process/quality-gates.md)。
 
 ## 19. 延后事项
 

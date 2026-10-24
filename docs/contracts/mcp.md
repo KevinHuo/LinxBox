@@ -94,7 +94,7 @@
 3. Task 和首个 Delivery 同事务持久化后，才发送首条 progress。
 4. `tools/call` 保持进行中，直到终态或 transport 超时；transport 断开不取消 Task。
 
-首条 progress 必须包含 `task_id`、`state=queued` 和单调 `progress` 序号。最终结果符合 [`task-result-v1`](./domain.md#7-task-result-v1)。
+首条 progress 必须包含 `task_id`、`state=queued` 和单调 `progress` 序号。最终结果符合 [`task-result-v1`](domain.md#7-task-result-v1)。
 
 ## 6. `get_task_status`
 

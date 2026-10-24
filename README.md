@@ -37,13 +37,13 @@
 - [AGENTS.md](AGENTS.md)：Claude Code、Codex 等 Agent 的工作要求。
 - [CODING_STANDARDS.md](CODING_STANDARDS.md)：代码组织、输入与错误处理、测试及覆盖率要求。
 - [CONTRIBUTING.md](CONTRIBUTING.md)：Issue、分支、Commit、PR 和审查流程。
-- [Issue 模板](.github/ISSUE_TEMPLATE/)及 [PR 模板](.github/pull_request_template.md)：后续协作入口。
+- [Issue 模板](.github/ISSUE_TEMPLATE)及 [PR 模板](.github/pull_request_template.md)：后续协作入口。
 
 ## 需求与契约
 
 - 当前 MVP 的产品范围、架构与整体验收以 [最终技术架构](docs/architecture.md) 及其引用契约为准。[Proposal #1](https://github.com/KevinHuo/LinxBox/issues/1) 保留原始讨论，不作为当前实现契约，本次规范调整不修改其内容。
 - 每次业务实现或 Bug 修复以一个明确的 Task/Bug Issue 为交付契约；开发 Issue 必须关联对应 Proposal，列出适用的接口契约或 ADR，并写明范围、非目标和验收条件。
-- 开发前必须读取 [模块规范](docs/modules.md)、[端到端串联](docs/end-to-end.md)、[代码与 Desktop UI 结构](docs/code-structure.md)、[契约索引](docs/contracts/README.md)和[质量门禁](docs/quality-gates.md)，不得重新发明已冻结的边界。
+- 开发前必须读取 [模块规范](docs/modules.md)、[端到端串联](docs/end-to-end.md)、[代码与 Desktop UI 结构](docs/code-structure.md)、[契约索引](docs/contracts/README.md)和[质量门禁](docs/process/quality-gates.md)，不得重新发明已冻结的边界。
 - [AGENTS.md](AGENTS.md) 定义 AI 如何定位当前任务、读取契约及处理来源冲突。
 
 初始化任务由 [Issue #2](https://github.com/KevinHuo/LinxBox/issues/2) 跟踪。初始化完成后，优先开展关键链路验证。

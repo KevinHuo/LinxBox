@@ -22,7 +22,7 @@ Gateway 与 Desktop 是两个独立进程、两套部署（云端 PostgreSQL / �
 ## 决策
 
 - 取消仓库顶层的 `packages/` 与 `plugins/` 目录。
-- **契约的权威表述是 [`docs/contracts/`](../contracts/) 的文档。** JSON Schema 与 fixtures 是实现产物，不是文档阶段的交付物；落位由对应实现 Spec 决定，在那之前不预建目录、不放占位文件。
+- **契约的权威表述是 [`docs/contracts/`](../contracts) 的文档。** JSON Schema 与 fixtures 是实现产物，不是文档阶段的交付物；落位由对应实现 Spec 决定，在那之前不预建目录、不放占位文件。
 - Gateway 与 Desktop 各自实现 TypeScript 类型；一致性由同一组 fixtures 的 producer/consumer 双向校验保证（见 [`docs/modules.md`](../modules.md) 的"类型从 schema 生成或双向一致性检查"）。是否用代码生成类型，由首个契约 Task 在选型时决定。
 - pnpm workspace 保留，成员只有 `src/*`；Gateway 与 Desktop 之间不建立代码依赖。
 - 领域类型（ID 值对象、Task/Receipt 状态与转换）在各应用内实现，跨边界语义以 [`docs/contracts/domain.md`](../contracts/domain.md) 为准，不复制第二份状态机。

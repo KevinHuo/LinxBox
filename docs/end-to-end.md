@@ -4,7 +4,7 @@
 > Version: 1.1  
 > Last updated: 2026-10-24
 
-本文把模块文档和四组边界契约串成一条可实现、可恢复、可验收的链路。总体部署边界仍以[总架构](./architecture.md)为准。
+本文把模块文档和四组边界契约串成一条可实现、可恢复、可验收的链路。总体部署边界仍以[总架构](architecture.md)为准。
 
 ## 1. 四条相互隔离的链路
 
@@ -17,7 +17,7 @@
 
 控制链路不能直接发送 app-server 原始事件到 Device；展示链路不能绕过 Gateway 创建任务；语音/屏幕确认不能扩大 Desktop grant。
 
-可选 Hooks observer 可以把其他 Codex 客户端的 Session、Stop、Interrupt 和 Permission 等事件加入只读通知，但不能进入控制链路。LinxBox 管理任务的 start/resume/interrupt 和终态仍由 app-server 提供，详见 [ADR-0005](./adr/0005-hooks-observation-app-server-control.md)。
+可选 Hooks observer 可以把其他 Codex 客户端的 Session、Stop、Interrupt 和 Permission 等事件加入只读通知，但不能进入控制链路。LinxBox 管理任务的 start/resume/interrupt 和终态仍由 app-server 提供，详见 [ADR-0005](adr/0005-hooks-observation-app-server-control.md)。
 
 ## 2. 创建任务并显示结果
 
@@ -83,4 +83,4 @@ sequenceDiagram
 | 设备页面、游标、未确认草稿和有界缓存 | Device |
 | 自然语言指代 | 灵矽会话，仅作提示 |
 
-完整消息字段见[契约索引](./contracts/README.md)，模块实现顺序见[模块规范](./modules.md)；各模块负责人见对应开发 Issue。
+完整消息字段见[契约索引](contracts/README.md)，模块实现顺序见[模块规范](modules.md)；各模块负责人见对应开发 Issue。

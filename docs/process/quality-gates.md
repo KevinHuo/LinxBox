@@ -19,7 +19,7 @@ GitHub Issue 不因内容更旧而自动修改；发现差异时在交付说明�
 
 ## 2. 哪些变更必须有 Spec
 
-新增或改变公共/内部协议、状态权威、持久化 schema、幂等/恢复语义、运行时职责、部署边界、安全权限、跨模块行为或发布门禁时必须使用 [`docs/specs/template.md`](./specs/template.md)。小型文档、测试和不改变行为的重构可写 `Spec: N/A` 并解释。
+新增或改变公共/内部协议、状态权威、持久化 schema、幂等/恢复语义、运行时职责、部署边界、安全权限、跨模块行为或发布门禁时必须使用 [`docs/specs/template.md`](specs/template.md)。小型文档、测试和不改变行为的重构可写 `Spec: N/A` 并解释。
 
 一个 Spec 只覆盖一个主模块中的一个 bounded slice。跨模块 Spec 必须列 producer、consumer、一个 DRI、必要 Reviewer 和 Integration Owner。
 

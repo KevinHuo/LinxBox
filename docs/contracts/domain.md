@@ -115,6 +115,6 @@ MVP 只允许本地 grant 包含的 R0/R1。R2 在无可信本地审批 UI 时�
 
 ## 8. 公共错误
 
-`PublicError` 结构与标准 code 集合见 [MCP 工具契约](./mcp.md) §10；本模块的领域层只补充 `details` 的额外限制。
+`PublicError` 结构与标准 code 集合见 [MCP 工具契约](mcp.md) §10；本模块的领域层只补充 `details` 的额外限制。
 
 `details` 不允许出现 token、cookie、绝对路径、原始 prompt、代码、命令输出、环境变量或 provider 内部错误对象。

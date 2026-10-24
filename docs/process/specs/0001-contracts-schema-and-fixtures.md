@@ -5,7 +5,7 @@
 | Spec ID | `SPEC-0001` |
 | 状态 | `Proposed` |
 | 主模块 / Slice | `contracts` / 契约实现 slice |
-| 上游架构/契约/ADR | [`docs/architecture.md`](../architecture.md) §7、§11、§12、§16、§17；[`docs/contracts/mcp.md`](../contracts/mcp.md)（`linxbox.mcp/v1`）、[`docs/contracts/device-linx.md`](../contracts/device-linx.md)（`device-presentation/v1`）、[`docs/contracts/gateway-desktop.md`](../contracts/gateway-desktop.md)（`1.0`）、[`docs/contracts/domain.md`](../contracts/domain.md)（`task-domain/v1`、`task-result-v1`）；[ADR-0002](../adr/0002-codex-app-server-local-execution.md)、[ADR-0003](../adr/0003-typescript-pnpm-electron-profile.md)、[ADR-0004](../adr/0004-shared-contracts-as-plain-data.md) |
+| 上游架构/契约/ADR | [`docs/architecture.md`](../../architecture.md) §7、§11、§12、§16、§17；[`docs/contracts/mcp.md`](../../contracts/mcp.md)（`linxbox.mcp/v1`）、[`docs/contracts/device-linx.md`](../../contracts/device-linx.md)（`device-presentation/v1`）、[`docs/contracts/gateway-desktop.md`](../../contracts/gateway-desktop.md)（`1.0`）、[`docs/contracts/domain.md`](../../contracts/domain.md)（`task-domain/v1`、`task-result-v1`）；[ADR-0002](../../adr/0002-codex-app-server-local-execution.md)、[ADR-0003](../../adr/0003-typescript-pnpm-electron-profile.md)、[ADR-0004](../../adr/0004-shared-contracts-as-plain-data.md) |
 | DRI | `待指派（必须为具体个人）` |
 | 必要 Reviewer | `contracts` 模块备份评审人、`quality` 模块主负责人（均待指派） |
 | Integration Owner | `待指派（Gateway / Desktop / Device 三侧接入方）` |
@@ -19,7 +19,7 @@
 - 被替代内容：无。这是本仓库首次把契约实现为 schema、类型与 fixtures。
 - 接受阻塞项：
   1. DRI、必要 Reviewer、Integration Owner 尚未指派。
-  2. JSON Schema 校验库、类型生成方式、测试运行器与覆盖率工具未锁定。按 [`docs/code-structure.md`](../code-structure.md) §1，这些由 bootstrap Task/ADR 一次性选定并锁版，锁版前不得开始依赖其 API 的实现。
+  2. JSON Schema 校验库、类型生成方式、测试运行器与覆盖率工具未锁定。按 [`docs/code-structure.md`](../../code-structure.md) §1，这些由 bootstrap Task/ADR 一次性选定并锁版，锁版前不得开始依赖其 API 的实现。
   3. `device-presentation/v1` 的 wire encoding 未冻结，需按真实灵矽能力确认。
 
 ## 2. 当前实现事实
@@ -48,7 +48,7 @@
 ## 5. 权威边界与不变量
 
 - 权威顺序：`docs/architecture.md` → `docs/contracts/` 与 Accepted ADR → `docs/modules.md` → 本 Spec → Task Issue → 代码与测试。
-- schema 是实现阶段的单一事实源；文档是 schema 落地前的字段与语义基线（[`docs/contracts/README.md`](../contracts/README.md) §变更规则）。
+- schema 是实现阶段的单一事实源；文档是 schema 落地前的字段与语义基线（[`docs/contracts/README.md`](../../contracts/README.md) §变更规则）。
 - 公共错误 code 集合固定为：`UNAUTHENTICATED`、`PERMISSION_DENIED`、`INVALID_ARGUMENT`、`NOT_FOUND`、`CONFLICT`、`RESOURCE_EXHAUSTED`、`DEPENDENCY_UNAVAILABLE`、`APPROVAL_REQUIRED`、`POLICY_DENIED`、`INTERNAL`；设备侧固定为 `OFFLINE`、`STALE_REVISION`、`TARGET_NOT_FOUND`、`DUPLICATE`、`QUEUE_FULL`、`CONTENT_UNAVAILABLE`、`PERMISSION_DENIED`、`POLICY_DENIED`、`INTERNAL`。
 - 安全请求默认拒绝未知字段；只有显式声明可扩展的 metadata 容器允许未知键。
 - 标识符是不同值对象：`DeviceId`、`ClientId`、`ProjectId`、`TaskId`、`MessageId`、`RequestId`、`ProviderThreadId`、`ProviderTurnId` 禁止互换或退化为裸 string。
@@ -57,7 +57,7 @@
 
 ## 6. 组件、接口与版本策略
 
-契约的权威表述是 [`docs/contracts/`](../contracts/) 的文档；下表是本 Spec 要产出的实现产物，落位由对应 Slice 决定，文档阶段不预建目录。
+契约的权威表述是 [`docs/contracts/`](../../contracts/) 的文档；下表是本 Spec 要产出的实现产物，落位由对应 Slice 决定，文档阶段不预建目录。
 
 | 产物 | 内容 | 上游契约 |
 | --- | --- | --- |

@@ -7,7 +7,7 @@
 ## 1. 技术基线
 
 - TypeScript strict monorepo，使用 `pnpm-workspace.yaml` 管理 `src/*`；`packageManager` 字段和 lockfile 锁定 pnpm 版本。
-- 契约的权威表述是 [`docs/contracts/`](./contracts/) 的文档；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定，文档阶段不预建目录。见 [ADR-0004](adr/0004-shared-contracts-as-plain-data.md)。
+- 契约的权威表述是 [`docs/contracts/`](contracts) 的文档；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定，文档阶段不预建目录。见 [ADR-0004](adr/0004-shared-contracts-as-plain-data.md)。
 - Node.js 使用开始实现时的 active LTS，在 `.node-version`、CI 和 Desktop 构建中锁定同一版本，不跟随本机漂移。
 - Gateway 是单进程模块化单体，使用 PostgreSQL 保存云端事实。
 - Desktop 使用 Electron，Renderer、Main 和 Daemon 分离；Renderer 启用 sandbox 和 context isolation、禁用 Node integration，只通过最小化 `contextBridge` API 访问 Main/Daemon；SQLite 保存本地执行事实。
@@ -48,9 +48,9 @@ LinxBox/
 ├── scripts/                         # 文档与契约一致性自检，不属于产品代码
 │   └── check-docs.js
 ├── docs/
-│   ├── contracts/
-│   ├── adr/
-│   └── specs/
+│   ├── contracts/                  # 边界契约（对外）
+│   ├── adr/                        # 已接受决策
+│   └── process/                    # 执行规范：工程规范、质量门禁、Execution Spec
 └── tests/
     ├── fixtures/
     │   └── device/                      # Issue #4 UI/状态机与联网契约 fixtures
@@ -59,7 +59,7 @@ LinxBox/
     └── e2e/
 ```
 
-目录骨架已按本节创建，目录内当前为空（仅 `.gitkeep`），不含任何实现代码。`pnpm-workspace.yaml`、各包 `package.json`、`tsconfig.json`、lockfile 与 CI 属于工具链 bootstrap，由 [`SPEC-0001`](./specs/0001-contracts-schema-and-fixtures.md) 的 Slice 1 在选型锁定后补入；在此之前不创建，避免未锁定的依赖与版本进入仓库。
+目录骨架已按本节创建，目录内当前为空（仅 `.gitkeep`），不含任何实现代码。`pnpm-workspace.yaml`、各包 `package.json`、`tsconfig.json`、lockfile 与 CI 属于工具链 bootstrap，由 [`SPEC-0001`](process/specs/0001-contracts-schema-and-fixtures.md) 的 Slice 1 在选型锁定后补入；在此之前不创建，避免未锁定的依赖与版本进入仓库。
 
 ## 3. 分层规则
 

@@ -4,7 +4,7 @@
 > Version: 2.0  
 > Last updated: 2026-10-24
 
-本文件定义七个模块的职责、依赖方向、状态所有权与交付门禁。跨模块完整链路见[端到端串联](./end-to-end.md)，字段级语义见[契约索引](./contracts/README.md)，目录与分层见[代码与 Desktop UI 结构](./code-structure.md)。
+本文件定义七个模块的职责、依赖方向、状态所有权与交付门禁。跨模块完整链路见[端到端串联](end-to-end.md)，字段级语义见[契约索引](contracts/README.md)，目录与分层见[代码与 Desktop UI 结构](code-structure.md)。
 
 | 模块 | 一句话职责 |
 | --- | --- |
@@ -58,7 +58,7 @@ quality   ──验证──> 所有模块与完整链路
 
 状态所有权：Device 只拥有当前页面、选中项、页码、图片位置、未确认草稿和有界展示缓存。Task、Turn 和 Delivery 状态只显示服务端投影，不能由页面跳转或动画反向修改。
 
-输入与输出：按 [`device-presentation/v1`](./contracts/device-linx.md)；不输出本地路径、Codex/provider ID、权限决定、完整 diff、原始日志或凭据。
+输入与输出：按 [`device-presentation/v1`](contracts/device-linx.md)；不输出本地路径、Codex/provider ID、权限决定、完整 diff、原始日志或凭据。
 
 门禁：主机测试覆盖导航、分页、上下文冻结、按键抑制、去重、乱序、旧事件和恢复；固件资源、字体、Flash/RAM 水位和镜像 SHA-256 有证据；真机检查圆角裁切、中文可读性、100 次导航、25 次回复及 30 分钟稳定性；离线演示证据与真实联网证据分开报告，模拟数据必须显著标识。
 
@@ -99,7 +99,7 @@ Linx 同时承载两条相互隔离的逻辑通道：Agent 使用 MCP 控制任�
 - 写操作以已验证身份和 idempotency key 去重；Task 与首个 Delivery 同事务提交；
 - Device 不能提交 client ID、本地路径或 provider ID；续接只携带父 Task ID；
 - Presentation 只包含 Desktop 明确生成的 device-safe 内容：标题、短摘要、分页正文、受限图片衍生物和回执；
-- 禁传字段与内容分级见[契约索引](./contracts/README.md) 的单一事实源；
+- 禁传字段与内容分级见[契约索引](contracts/README.md) 的单一事实源；
 - 内容保存期限、最多八轮设备历史、页数/字节上限和删除必须由 schema/配置固定，不能无限增长；
 - ACK、receipt、turn terminal 和 task terminal 是不同事实。
 
@@ -166,7 +166,7 @@ Linx 同时承载两条相互隔离的逻辑通道：Agent 使用 MCP 控制任�
 - Task state、Turn receipt、Delivery ACK 和 Device UI state 分开定义；
 - 跨边界变更需要 Spec、双方 Reviewer 和 Integration Owner。
 
-模块不拥有 transport、数据库、UI 或 provider 实现；契约索引见 [`docs/contracts/README.md`](./contracts/README.md)。
+模块不拥有 transport、数据库、UI 或 provider 实现；契约索引见 [`docs/contracts/README.md`](contracts/README.md)。
 
 ## quality 模块
 
@@ -183,4 +183,4 @@ Linx 同时承载两条相互隔离的逻辑通道：Agent 使用 MCP 控制任�
 - 真机资源、按键、屏幕和 soak；
 - 合并门禁与功能启用/发布门禁。
 
-不得把 mock、截图、构建成功、生成固件、作者自审或 Spec 状态字段修改表述为真实验收通过。详细门禁见 [`docs/quality-gates.md`](./quality-gates.md)。
+不得把 mock、截图、构建成功、生成固件、作者自审或 Spec 状态字段修改表述为真实验收通过。详细门禁见 [`docs/process/quality-gates.md`](process/quality-gates.md)。
