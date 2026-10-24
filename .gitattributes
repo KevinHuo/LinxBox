@@ -1,8 +1,0 @@
-# 仓库文本处理约定
-
-# 默认按文本处理，统一 LF 行尾
-* text=auto eol=lf
-
-# Markdown 行尾两空格是硬换行（metadata 头、列表续行），
-# 属于有意为之，不计入 git diff --check 的空白错误。
-*.md whitespace=-trailing-space
