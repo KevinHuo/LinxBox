@@ -1,0 +1,220 @@
+/**
+ * IPC allowlist between the sandboxed renderer and the Electron main process.
+ *
+ * The renderer never receives a generic `invoke(channel, payload)` function.
+ * It gets a fixed set of named methods, and every payload is validated at
+ * runtime against a strict schema before a handler sees it.
+ *
+ * The renderer also never receives a token, a raw provider event or an
+ * absolute path of an unauthorised directory.
+ */
+import { z } from 'zod';
+
+export {
+  IPC_CHANNELS,
+  IPC_METHODS,
+  IPC_NAMESPACE,
+  IPC_VERSION,
+  channelFor,
+  isAllowedChannel,
+  type IpcChannel,
+  type IpcMethod,
+} from './ipc-channels.js';
+
+import { type IpcMethod } from './ipc-channels.js';
+
+/* ------------------------------------------------------------------ */
+/* Request payloads                                                     */
+/* ------------------------------------------------------------------ */
+
+export const projectCapabilitySchema = z.enum(['read', 'write', 'test']);
+
+const emptyPayloadSchema = z.object({}).strict();
+
+const connectionSaveSchema = z
+  .object({
+    gatewayUrl: z.string().url().max(2048),
+    accessToken: z.string().min(1).max(4096),
+    computerName: z.string().min(1).max(128),
+  })
+  .strict();
+
+/**
+ * The project root is deliberately absent.
+ *
+ * A grant is only created from the macOS directory picker inside the main
+ * process. Accepting a path from the renderer would let a compromised renderer
+ * authorise any directory on the machine.
+ */
+const projectGrantSchema = z
+  .object({
+    displayName: z.string().min(1).max(200),
+    capabilities: z
+      .array(projectCapabilitySchema)
+      .min(1)
+      .max(projectCapabilitySchema.options.length),
+  })
+  .strict();
+
+const projectRevokeSchema = z
+  .object({
+    projectId: z.string().min(1).max(128),
+  })
+  .strict();
+
+const taskGetSchema = z
+  .object({
+    taskId: z.string().min(1).max(128),
+  })
+  .strict();
+
+const taskCancelSchema = z
+  .object({
+    taskId: z.string().min(1).max(128),
+  })
+  .strict();
+
+const taskListSchema = z
+  .object({
+    limit: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
+export type ConnectionSaveInput = z.infer<typeof connectionSaveSchema>;
+export type ProjectGrantInput = z.infer<typeof projectGrantSchema>;
+export type ProjectRevokeInput = z.infer<typeof projectRevokeSchema>;
+export type TaskGetInput = z.infer<typeof taskGetSchema>;
+export type TaskCancelInput = z.infer<typeof taskCancelSchema>;
+export type TaskListInput = z.infer<typeof taskListSchema>;
+
+export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
+  'connection.read': emptyPayloadSchema,
+  'connection.save': connectionSaveSchema,
+  'connection.test': emptyPayloadSchema,
+  'projects.list': emptyPayloadSchema,
+  'projects.grant': projectGrantSchema,
+  'projects.revoke': projectRevokeSchema,
+  'tasks.list': taskListSchema,
+  'tasks.get': taskGetSchema,
+  'tasks.cancel': taskCancelSchema,
+  'diagnostics.read': emptyPayloadSchema,
+};
+
+/* ------------------------------------------------------------------ */
+/* Response payloads                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Connection state shown to the renderer.
+ *
+ * The access token is never part of this shape. Only a short hint that lets
+ * the operator confirm which token is stored.
+ */
+export interface ConnectionView {
+  readonly configured: boolean;
+  readonly connected: boolean;
+  readonly gatewayUrl: string | null;
+  readonly tokenHint: string | null;
+  readonly computerName: string | null;
+}
+
+/**
+ * A locally authorised project.
+ *
+ * `rootPath` is the realpath the user picked in the system dialog. It stays
+ * on the machine and never reaches the Gateway.
+ */
+export interface ProjectView {
+  readonly projectId: string;
+  readonly displayName: string;
+  readonly rootPath: string;
+  readonly capabilities: readonly string[];
+  readonly grantVersion: number;
+  readonly enabled: boolean;
+}
+
+/** Compact task row for the task list. */
+export interface TaskSummaryView {
+  readonly taskId: string;
+  readonly title: string;
+  readonly projectId: string;
+  readonly state: string;
+  readonly stage: string;
+  readonly updatedAt: string;
+  readonly needsAttention: boolean;
+}
+
+/** Full local task detail, including the local diff that never leaves the machine. */
+export interface TaskDetailView {
+  readonly taskId: string;
+  readonly title: string;
+  readonly projectId: string;
+  readonly state: string;
+  readonly stage: string;
+  readonly intent: string;
+  readonly summary: string;
+  readonly changes: readonly { readonly path: string; readonly description: string }[];
+  readonly verification: readonly {
+    readonly command: string;
+    readonly outcome: string;
+    readonly summary: string;
+  }[];
+  readonly risks: readonly { readonly code: string; readonly summary: string }[];
+  readonly needsUserAction: { readonly summary: string } | null;
+  readonly localDiff: string | null;
+}
+
+/** Local diagnostics. Contains no token, no absolute path and no task content. */
+export interface DiagnosticsView {
+  readonly desktopVersion: string;
+  readonly protocolVersions: readonly string[];
+  readonly databasePath: string | null;
+  readonly connected: boolean;
+  readonly lastError: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Request parsing                                                      */
+/* ------------------------------------------------------------------ */
+
+export type IpcParseResult<T> =
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+/**
+ * Validate a renderer request against the allowlist.
+ *
+ * Unknown methods, unknown fields and malformed values are all rejected
+ * before any handler runs.
+ */
+export function parseIpcRequest(method: string, payload: unknown): IpcParseResult<unknown> {
+  const schema = IPC_REQUEST_SCHEMAS[method as IpcMethod];
+  if (!schema) {
+    return {
+      ok: false,
+      code: 'INVALID_ARGUMENT',
+      message: '未知的桌面端调用',
+    };
+  }
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    return {
+      ok: false,
+      code: 'INVALID_ARGUMENT',
+      message: '调用参数不合法',
+    };
+  }
+  return { ok: true, data: result.data };
+}
+
+/**
+ * Mask an access token so the operator can recognise it without seeing it.
+ *
+ * Only the last four characters survive; anything shorter is fully masked.
+ */
+export function maskToken(token: string): string {
+  if (token.length <= 4) {
+    return '•'.repeat(token.length);
+  }
+  return `${'•'.repeat(8)}${token.slice(-4)}`;
+}
