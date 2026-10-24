@@ -20,9 +20,6 @@ HTTP 框架、PostgreSQL/SQLite adapter、UI 渲染库、schema 工具和测试�
 
 ```text
 LinxBox/
-├── .minimax/                           # AI 助手工作规范与工具脚本（非产品代码，不受模块 DRI 约束）
-│   └── skills/
-│       └── linxbox-contracts/          # 契约执行 skill：SKILL.md + references/ + scripts/
 ├── src/
 │   ├── gateway/                   # Cloud MCP Gateway
 │   │   ├── composition/           # 唯一组装根
@@ -48,6 +45,8 @@ LinxBox/
 │   │       ├── local-store/
 │   │       └── codex-adapter/
 │   └── admin-cli/                 # client/binding/token 运维
+├── scripts/                         # 文档与契约一致性自检，不属于产品代码
+│   └── check-docs.js
 ├── docs/
 │   ├── contracts/
 │   ├── adr/

@@ -3,11 +3,10 @@
  * LinxBox 文档与契约一致性检查
  *
  * 用法：
- *   node .minimax/skills/linxbox-contracts/scripts/check-docs.js [repoPath]
- *   LINXBOX_REPO=/path/to/repo node .minimax/skills/linxbox-contracts/scripts/check-docs.js
+ *   node scripts/check-docs.js [repoPath]
+ *   LINXBOX_REPO=/path/to/repo node scripts/check-docs.js
  *
- * 省略 repoPath 时默认取本脚本所在的仓库根目录
- * （<repo>/.minimax/skills/linxbox-contracts/scripts/ → <repo>）。
+ * 省略 repoPath 时默认取本脚本所在的仓库根目录（<repo>/scripts/ → <repo>）。
  *
  * 检查项：
  *   1. 相对链接与锚点可达（含仓库内 GitHub 绝对链接）
@@ -25,7 +24,7 @@ const fs = require('fs');
 const path = require('path');
 
 const REPO = path.resolve(
-  process.argv[2] || process.env.LINXBOX_REPO || path.resolve(__dirname, '../../../..')
+  process.argv[2] || process.env.LINXBOX_REPO || path.resolve(__dirname, '..')
 );
 
 const errors = [];
@@ -251,7 +250,7 @@ if (fs.existsSync(treePath)) {
     expected.add(stack.join('/'));
   }
 
-  const ROOTS = ['apps', 'tests'];
+  const ROOTS = ['src', 'tests'];
   const actual = new Set();
   for (const root of ROOTS) {
     const full = path.join(REPO, root);
