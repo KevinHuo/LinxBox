@@ -82,12 +82,8 @@ LinxBox 使用一个由产品方运营的公共 Gateway。灵矽 Agent 通过 MC
 - 公共 MCP 与 Codex provider 事件隔离。
 - 结果只能声明真实修改和真实执行过的验证。
 
-本文借鉴 LLGo 设计文档的稳定契约、adapter 隔离、deployment profile、失败语义和真实验收方法，不照搬其编译器实现。
+外部依据：
 
-参考：
-
-- [LLGo WebAssembly Proposal](https://github.com/xgo-dev/llgo/blob/main/doc/wasm-proposal.md)
-- [LLGo PCLN packaging design](https://github.com/xgo-dev/llgo/blob/main/doc/design/pclntab-packaging.md)
 - [灵矽云端 MCP 接入指南](https://linx.qiniu.com/docs/xrobot/mcp/software-mcp)
 - [灵矽第三方业务系统接入指南](https://linx.qiniu.com/docs/xrobot/guide/third-app)
 - [OpenAI Codex as a platform](https://developers.openai.com/blog/codex-as-a-platform)

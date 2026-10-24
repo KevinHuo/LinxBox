@@ -38,13 +38,3 @@
 首批业务代码落地时需提供统一检查命令、明确覆盖率指标与关键模块统计范围，并配置 CI 门槛。本次文档约定不代表自动检查已经启用。
 
 本规范约束控制工程自身；被控制的目标仓库按其实际要求执行，不直接套用或覆盖本文件。
-
-## 参考实践与本项目决策
-
-本项目借鉴 llgo 中可验证的工程方法，不声称与 llgo 规则完全一致：
-
-- [llgo AI 助手指南](https://github.com/xgo-dev/llgo/blob/main/CLAUDE.md)：在修复和功能中增加聚焦测试，并在交付前执行真实的格式、构建、静态检查和测试命令。
-- [llgo 格式检查](https://github.com/xgo-dev/llgo/blob/main/.github/workflows/fmt.yml) 和 [llgo 构建/测试工作流](https://github.com/xgo-dev/llgo/blob/main/.github/workflows/go.yml)：规范要由可执行 CI 证明，不只依赖文档声明。
-- [llgo 文档检查](https://github.com/xgo-dev/llgo/blob/main/.github/workflows/doc-link-checker.yml)：文档中的嵌入内容和链接也是可验证交付物。
-
-覆盖率 90% 门槛、Commit/PR 格式、Issue 层级、契约优先级和模块负责人制是 LinxBox 的项目决策，不归因于 llgo。只借鉴与 LinxBox 实际语言、平台和风险适配的命令与 CI 设计，不照搬 llgo 的 Go/LLVM 特定配置。

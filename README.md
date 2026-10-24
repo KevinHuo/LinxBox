@@ -48,4 +48,3 @@
 
 初始化任务由 [Issue #2](https://github.com/KevinHuo/LinxBox/issues/2) 跟踪。初始化完成后，优先开展关键链路验证。
 
-开发规范参考 [llgo](https://github.com/xgo-dev/llgo) 的可执行验证、测试和 CI 实践，但不声称与其规则完全一致。借鉴项与 LinxBox 自有决策的边界见 [CODING_STANDARDS.md](CODING_STANDARDS.md#参考实践与本项目决策)。
