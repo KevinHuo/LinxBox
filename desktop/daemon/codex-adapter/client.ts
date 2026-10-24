@@ -288,17 +288,20 @@ export class CodexClient {
     const turns = await this.process.call(CODEX_METHODS.threadTurnsList, {
       threadId,
       limit: turnLimit,
-      sortDirection: 'asc',
+      // Ask for the newest page, then restore chronological display order.
+      // Reading the first ascending page would hide recent replies once a
+      // conversation grows beyond the page limit.
+      sortDirection: 'desc',
       itemsView: 'full',
     });
     const raw = turns as { data?: unknown };
-    const data = Array.isArray(raw.data) ? raw.data : [];
+    const data: unknown[] = Array.isArray(raw.data) ? (raw.data as unknown[]) : [];
     return {
       threadId,
       title: parsed.title,
       cwd: parsed.cwd,
       updatedAt: null,
-      turns: data.map((turn) => {
+      turns: [...data].reverse().map((turn) => {
         const record = turn as { id?: unknown; status?: unknown; startedAt?: unknown };
         return {
           turnId: typeof record.id === 'string' ? record.id : '',
@@ -397,12 +400,13 @@ export class CodexClient {
     }
     if (event.type === 'exit' || event.type === 'error') {
       if (this.state.status === 'running') {
-        this.state = {
-          ...this.state,
-          status: 'interrupted',
+        this.applyDomainEvent({
+          type: 'terminal',
+          threadId: this.state.threadId,
+          turnId: this.state.turnId,
+          outcome: 'interrupted',
           error: '本机 Codex 进程已退出，无法确认任务结果',
-          completedAt: this.now().toISOString(),
-        };
+        });
       }
     }
   }

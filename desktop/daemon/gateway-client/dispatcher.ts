@@ -15,6 +15,7 @@
  */
 import type { CodexDomainEvent } from '../codex-adapter/events.js';
 import type { CodexTurnState } from '../codex-adapter/client.js';
+import { sanitizeVoiceSummary } from '../result-projector/projection.js';
 import { publicError } from './frames.js';
 import type {
   Disposition,
@@ -73,6 +74,13 @@ export interface DispatchOutcome {
   readonly error: string | null;
 }
 
+interface ActiveDispatchContext {
+  readonly messageId: string;
+  readonly taskId: string;
+  threadId: string | null;
+  turnId: string | null;
+}
+
 export class TaskDispatcher {
   private readonly options: TaskDispatcherOptions;
   private readonly now: () => Date;
@@ -80,7 +88,7 @@ export class TaskDispatcher {
   private readonly handled = new Map<string, DispatchOutcome>();
   private eventCounter = 0;
   private unsubscribe: (() => void) | null = null;
-  private activeTaskId: string | null = null;
+  private active: ActiveDispatchContext | null = null;
   /** A task may emit at most one terminal event. */
   private terminalEmitted = false;
 
@@ -125,11 +133,23 @@ export class TaskDispatcher {
       return outcome;
     }
 
+    if (this.active !== null) {
+      const outcome = this.reject('客户端正在执行另一项任务');
+      this.handled.set(messageId, outcome);
+      this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
+      return outcome;
+    }
+
     const taskId = payload.task_id;
-    this.activeTaskId = taskId;
+    // Reserve the message before the provider side effect. A concurrent replay
+    // can now only observe the reservation and cannot start a second turn.
+    const reservation: DispatchOutcome = { disposition: 'accepted', error: null };
+    this.handled.set(messageId, reservation);
+    const context: ActiveDispatchContext = { messageId, taskId, threadId: null, turnId: null };
+    this.active = context;
     this.eventCounter = 0;
     this.terminalEmitted = false;
-    this.subscribeToRunner(taskId);
+    this.subscribeToRunner();
 
     try {
       const started = await this.options.runner.startTurn({
@@ -137,17 +157,25 @@ export class TaskDispatcher {
         cwd: project.rootPath,
         clientMessageId: messageId,
       });
-      this.emit(taskId, 'task.started', {
-        state: 'running',
-        stage: 'preparing',
-        summary: '已在本机启动 Codex 任务',
-        result: null,
-        error: null,
-        threadId: started.threadId,
-        turnId: started.turnId,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '本机 Codex 启动失败';
+      if (this.active === context) {
+        context.threadId = started.threadId;
+        context.turnId = started.turnId;
+        this.emit(taskId, 'task.started', {
+          state: 'running',
+          stage: 'preparing',
+          summary: '已在本机启动 Codex 任务',
+          result: null,
+          error: null,
+          threadId: started.threadId,
+          turnId: started.turnId,
+        });
+      }
+    } catch {
+      if (this.active !== context) {
+        this.options.onDisposition?.(reservation.disposition, messageId);
+        return reservation;
+      }
+      const message = '本机 Codex 启动失败';
       this.emit(taskId, 'task.failed', {
         state: 'failed',
         stage: 'finished',
@@ -155,16 +183,15 @@ export class TaskDispatcher {
         result: null,
         error: publicError('DEPENDENCY_UNAVAILABLE', message, taskId),
       });
+      this.finishActiveTask();
       const outcome: DispatchOutcome = { disposition: 'rejected', error: message };
       this.handled.set(messageId, outcome);
       this.options.onDisposition?.(outcome.disposition, messageId, message);
       return outcome;
     }
 
-    const outcome: DispatchOutcome = { disposition: 'accepted', error: null };
-    this.handled.set(messageId, outcome);
-    this.options.onDisposition?.(outcome.disposition, messageId);
-    return outcome;
+    this.options.onDisposition?.(reservation.disposition, messageId);
+    return reservation;
   }
 
   private handleCancel(_payload: TaskCancelPayload): DispatchOutcome {
@@ -175,20 +202,41 @@ export class TaskDispatcher {
     return { disposition: 'rejected', error: reason };
   }
 
-  private subscribeToRunner(taskId: string): void {
+  private subscribeToRunner(): void {
     this.unsubscribe?.();
     this.unsubscribe = this.options.runner.on((event) => {
-      this.applyRunnerEvent(taskId, event);
+      this.applyRunnerEvent(event);
     });
   }
 
-  private applyRunnerEvent(taskId: string, event: CodexDomainEvent): void {
+  private applyRunnerEvent(event: CodexDomainEvent): void {
+    const active = this.active;
+    if (active === null) {
+      return;
+    }
+    if (event.type === 'thread-started') {
+      active.threadId ??= event.threadId;
+      return;
+    }
+    if (event.type === 'turn-started') {
+      active.threadId ??= event.threadId;
+      active.turnId ??= event.turnId;
+      return;
+    }
+    if (
+      event.type !== 'account' &&
+      event.type !== 'warning' &&
+      !this.eventBelongsToActiveTask(event, active)
+    ) {
+      return;
+    }
+    const taskId = active.taskId;
     switch (event.type) {
       case 'progress':
         this.emit(taskId, 'task.progress', {
           state: 'running',
           stage: 'analyzing',
-          summary: event.text.slice(0, 500),
+          summary: this.safeSummary(event.text, '本机任务正在执行'),
           result: null,
           error: null,
         });
@@ -197,7 +245,7 @@ export class TaskDispatcher {
         this.emit(taskId, 'task.progress', {
           state: 'running',
           stage: 'summarizing',
-          summary: event.text.slice(0, 500),
+          summary: this.safeSummary(event.text, '本机任务已生成回复'),
           result: null,
           error: null,
         });
@@ -217,11 +265,7 @@ export class TaskDispatcher {
             stage: 'finished',
             summary: '本机任务失败',
             result: null,
-            error: publicError(
-              event.error === null ? 'INTERNAL' : 'DEPENDENCY_UNAVAILABLE',
-              event.error ?? '本机 Codex 未给出失败原因',
-              taskId,
-            ),
+            error: publicError('DEPENDENCY_UNAVAILABLE', '本机 Codex 任务失败', taskId),
           });
         } else {
           this.emit(taskId, 'task.interrupted', {
@@ -229,11 +273,10 @@ export class TaskDispatcher {
             stage: 'finished',
             summary: '本机任务未确认完成',
             result: null,
-            error: publicError('INTERNAL', event.error ?? '本机任务被中断', taskId),
+            error: publicError('INTERNAL', '本机任务被中断，结果未确认', taskId),
           });
         }
-        this.unsubscribe?.();
-        this.unsubscribe = null;
+        this.finishActiveTask();
         return;
       case 'provider-error':
         this.emit(taskId, 'task.failed', {
@@ -241,15 +284,41 @@ export class TaskDispatcher {
           stage: 'finished',
           summary: '本机 Codex 返回错误',
           result: null,
-          error: publicError('DEPENDENCY_UNAVAILABLE', event.message, taskId),
+          error: publicError('DEPENDENCY_UNAVAILABLE', '本机 Codex 返回错误', taskId),
         });
+        this.finishActiveTask();
         return;
-      case 'turn-started':
-      case 'thread-started':
       case 'account':
       case 'warning':
         return;
     }
+  }
+
+  private eventBelongsToActiveTask(
+    event: Extract<CodexDomainEvent, { threadId: string | null; turnId: string | null }>,
+    active: ActiveDispatchContext,
+  ): boolean {
+    if (event.threadId !== null && active.threadId !== null && event.threadId !== active.threadId) {
+      return false;
+    }
+    if (event.turnId !== null && active.turnId !== null && event.turnId !== active.turnId) {
+      return false;
+    }
+    return (
+      (event.threadId !== null && event.threadId === active.threadId) ||
+      (event.turnId !== null && event.turnId === active.turnId)
+    );
+  }
+
+  private safeSummary(text: string, fallback: string): string {
+    const sanitized = sanitizeVoiceSummary(text);
+    return sanitized.length === 0 ? fallback : sanitized;
+  }
+
+  private finishActiveTask(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.active = null;
   }
 
   private emit(

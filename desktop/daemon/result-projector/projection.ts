@@ -151,6 +151,7 @@ const ABSOLUTE_PATH_DETECT = /(?<![A-Za-z0-9_:/])\/[^\s'"`),;]+/;
 /** 路径穿越 token 的检测规则。 */
 const PATH_TRAVERSAL_DETECT = /\.\.[\\/]/;
 const CREDENTIAL_PATTERNS: readonly RegExp[] = [
+  /\b(?:api[-_]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi,
   /\bsk-[A-Za-z0-9]{16,}\b/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
   /\bAKIA[0-9A-Z]{16}\b/g,

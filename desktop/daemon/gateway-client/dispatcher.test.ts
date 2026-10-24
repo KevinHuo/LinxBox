@@ -120,6 +120,103 @@ describe('TaskDispatcher', () => {
     expect(harness.started).toHaveLength(1);
   });
 
+  it('reserves a message before awaiting the provider side effect', async () => {
+    let resolveStart: ((value: { threadId: string; turnId: string }) => void) | undefined;
+    let starts = 0;
+    const dispatcher = new TaskDispatcher({
+      resolveProject: () => ({ rootPath: '/tmp/app', enabled: true }),
+      runner: {
+        startTurn: () => {
+          starts += 1;
+          return new Promise((resolve) => {
+            resolveStart = resolve;
+          });
+        },
+        on: () => () => undefined,
+        status: () => ({
+          threadId: null,
+          turnId: null,
+          status: 'running',
+          progress: '',
+          finalText: '',
+          error: null,
+          startedAt: null,
+          completedAt: null,
+        }),
+      },
+      onEvent: () => undefined,
+    });
+
+    const first = dispatcher.handle(dispatchFrame);
+    await Promise.resolve();
+    const replay = await dispatcher.handle(dispatchFrame);
+
+    expect(replay.disposition).toBe('duplicate');
+    expect(starts).toBe(1);
+    resolveStart?.({ threadId: 'th_1', turnId: 'tn_1' });
+    await expect(first).resolves.toMatchObject({ disposition: 'accepted' });
+  });
+
+  it('keeps an accepted delivery when a terminal event arrives before start rejects', async () => {
+    const events: DispatchedTaskEvent[] = [];
+    let rejectStart: ((reason: Error) => void) | undefined;
+    let listener: ((event: CodexDomainEvent) => void) | undefined;
+    const dispatcher = new TaskDispatcher({
+      resolveProject: () => ({ rootPath: '/tmp/app', enabled: true }),
+      runner: {
+        startTurn: () =>
+          new Promise((_resolve, reject) => {
+            rejectStart = reject;
+          }),
+        on: (next) => {
+          listener = next;
+          return () => undefined;
+        },
+        status: () => ({
+          threadId: 'th_1',
+          turnId: 'tn_1',
+          status: 'running',
+          progress: '',
+          finalText: '',
+          error: null,
+          startedAt: null,
+          completedAt: null,
+        }),
+      },
+      onEvent: (event) => events.push(event),
+    });
+
+    const pending = dispatcher.handle(dispatchFrame);
+    await Promise.resolve();
+    listener?.({ type: 'turn-started', threadId: 'th_1', turnId: 'tn_1' });
+    listener?.({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'interrupted',
+      error: 'provider exited',
+    });
+    rejectStart?.(new Error('provider exited'));
+
+    await expect(pending).resolves.toEqual({ disposition: 'accepted', error: null });
+    expect(events.map((event) => event.type)).toEqual(['task.interrupted']);
+  });
+
+  it('rejects a second task while one provider turn is active', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+    await harness.dispatcher.handle(dispatchFrame);
+    const secondFrame = {
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: { ...dispatchFrame.payload, task_id: 'tsk_2' },
+    } as GatewayFrame;
+
+    const second = await harness.dispatcher.handle(secondFrame);
+
+    expect(second).toEqual({ disposition: 'rejected', error: '客户端正在执行另一项任务' });
+    expect(harness.started).toHaveLength(1);
+  });
+
   it('maps provider commentary to a progress event', async () => {
     const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
     await harness.dispatcher.handle(dispatchFrame);
@@ -128,6 +225,48 @@ describe('TaskDispatcher', () => {
 
     const progress = harness.events.find((event) => event.type === 'task.progress');
     expect(progress?.payload.summary).toBe('正在看代码');
+  });
+
+  it('ignores events that belong to another provider turn', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+    await harness.dispatcher.handle(dispatchFrame);
+
+    harness.emit({ type: 'progress', threadId: 'th_other', turnId: 'tn_other', text: '串线内容' });
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_other',
+      turnId: 'tn_other',
+      outcome: 'completed',
+      error: null,
+    });
+
+    expect(harness.events.map((event) => event.type)).toEqual(['task.started']);
+  });
+
+  it('sanitizes provider text and never uploads an internal error', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+    await harness.dispatcher.handle(dispatchFrame);
+
+    harness.emit({
+      type: 'progress',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      text: '读取 /Users/demo/private.txt，token sk-1234567890abcdef password=hunter2',
+    });
+    harness.emit({
+      type: 'provider-error',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      message: 'secret at /Users/demo/private.txt: sk-1234567890abcdef',
+    });
+
+    const serialized = JSON.stringify(harness.events);
+    expect(serialized).not.toContain('/Users/demo');
+    expect(serialized).not.toContain('sk-1234567890abcdef');
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).toContain('[路径]');
+    expect(serialized).toContain('[凭据]');
+    expect(serialized).toContain('本机 Codex 返回错误');
   });
 
   it('emits exactly one terminal event', async () => {
@@ -185,6 +324,23 @@ describe('TaskDispatcher', () => {
 
     const terminal = harness.events.find((event) => event.type === 'task.interrupted');
     expect(terminal?.payload.state).toBe('interrupted');
+  });
+
+  it('maps an explicit provider failure to task.failed', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+    await harness.dispatcher.handle(dispatchFrame);
+
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'failed',
+      error: 'private provider detail',
+    });
+
+    const terminal = harness.events.find((event) => event.type === 'task.failed');
+    expect(terminal?.payload.error?.message).toBe('本机 Codex 任务失败');
+    expect(JSON.stringify(terminal)).not.toContain('private provider detail');
   });
 
   it('rejects an unsupported message type', async () => {
@@ -253,6 +409,52 @@ describe('TaskDispatcher cancel and failure paths', () => {
 
     expect(outcome.disposition).toBe('rejected');
     expect(harness.events.some((event) => event.type === 'task.failed')).toBe(true);
+  });
+
+  it('reports every disposition through the optional callback', async () => {
+    const dispositions: string[] = [];
+    const listeners = new Set<(event: CodexDomainEvent) => void>();
+    const dispatcher = new TaskDispatcher({
+      resolveProject: (projectId) =>
+        projectId === 'prj_1' ? { rootPath: '/tmp/app', enabled: true } : null,
+      runner: {
+        startTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' }),
+        on: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        status: () => ({
+          threadId: 'th_1',
+          turnId: 'tn_1',
+          status: 'running',
+          progress: '',
+          finalText: '',
+          error: null,
+          startedAt: null,
+          completedAt: null,
+        }),
+      },
+      onEvent: () => undefined,
+      onDisposition: (disposition, messageId, error) => {
+        dispositions.push([disposition, messageId, error ?? ''].join(':'));
+      },
+    });
+
+    await dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'unknown',
+      payload: { ...dispatchFrame.payload, project_id: 'missing' },
+    } as GatewayFrame);
+    await dispatcher.handle(dispatchFrame);
+    await dispatcher.handle(dispatchFrame);
+    await dispatcher.handle({ ...dispatchFrame, message_id: 'busy' });
+
+    expect(dispositions).toEqual([
+      'rejected:unknown:项目未授权',
+      'accepted:msg_1:',
+      'duplicate:msg_1:',
+      'rejected:busy:客户端正在执行另一项任务',
+    ]);
   });
 });
 

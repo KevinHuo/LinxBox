@@ -44,6 +44,19 @@ describe('extractProviderErrorMessage', () => {
     const result = extractProviderErrorMessage('a'.repeat(1000));
     expect(result?.length).toBeLessThanOrEqual(401);
   });
+
+  it('unwraps a flat provider error string', () => {
+    expect(extractProviderErrorMessage('{"error":"flat failure"}')).toBe('flat failure');
+  });
+
+  it('keeps the payload when a nested error message is not text', () => {
+    expect(extractProviderErrorMessage('{"error":{"message":42}}')).toContain('"message":42');
+    expect(extractProviderErrorMessage('{"error":42}')).toContain('"error":42');
+  });
+
+  it('returns null when the unwrapped provider error is only whitespace', () => {
+    expect(extractProviderErrorMessage('{"error":"   "}')).toBeNull();
+  });
 });
 
 describe('mapNotification', () => {

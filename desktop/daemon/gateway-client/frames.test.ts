@@ -140,6 +140,19 @@ describe('outbound frame builders', () => {
     expect('error' in frame.payload).toBe(false);
   });
 
+  it('includes a public error when an acknowledgement is rejected', () => {
+    const error = publicError('DEPENDENCY_UNAVAILABLE', '本机服务不可用', 'msg_1');
+    const frame = buildAckFrame({
+      messageId: 'msg_1',
+      sequence: 7,
+      taskId: 'tsk_1',
+      disposition: 'rejected',
+      sentAt: '2026-10-24T01:00:00Z',
+      error,
+    });
+    expect(frame.payload.error).toEqual(error);
+  });
+
   it('builds a heartbeat frame without task truth', () => {
     const frame = buildHeartbeatFrame({
       messageId: 'msg_2',
@@ -148,6 +161,16 @@ describe('outbound frame builders', () => {
     });
     expect(frame.type).toBe('client.heartbeat');
     expect(frame.payload.client_time).toBe('2026-10-24T01:00:00Z');
+  });
+
+  it('includes an explicitly supplied heartbeat summary', () => {
+    const frame = buildHeartbeatFrame({
+      messageId: 'msg_2',
+      sequence: 2,
+      clientTime: '2026-10-24T01:00:00Z',
+      summary: 'idle',
+    });
+    expect(frame.payload.summary).toBe('idle');
   });
 
   it('builds a task event frame with a monotonic event sequence', () => {

@@ -234,6 +234,12 @@ describe('normalizeProjectList', () => {
   it('returns an empty list for an unexpected payload', () => {
     expect(normalizeProjectList(null)).toEqual([]);
   });
+
+  it('drops list entries that have no project id', () => {
+    expect(normalizeProjectList({ data: [{ name: 'invalid' }, { id: 'valid' }] })).toEqual([
+      { projectId: 'valid', name: '(未命名项目)', roots: [], position: 0 },
+    ]);
+  });
 });
 
 describe('findProjectForPath', () => {
@@ -272,6 +278,17 @@ describe('normalizeDetailItem', () => {
     expect(detail.kind).toBe('user');
     expect(detail.title).toBe('你');
     expect(detail.body).toBe('你好');
+  });
+
+  it('ignores non-text user content parts', () => {
+    const detail = normalizeDetailItem({
+      type: 'userMessage',
+      content: [
+        { type: 'image', imageUrl: 'local' },
+        { type: 'text', text: '文字' },
+      ],
+    });
+    expect(detail.body).toBe('文字');
   });
 
   it('marks commentary as progress', () => {
@@ -325,6 +342,18 @@ describe('normalizeDetailItem', () => {
     expect(detail.kind).toBe('mcp');
     expect(detail.title).toContain('codex_app/open_in_codex');
     expect(detail.body).toContain('target');
+  });
+
+  it('keeps an explicit marker when an MCP result cannot be serialized', () => {
+    const circular: Record<string, unknown> = {};
+    circular['self'] = circular;
+    const detail = normalizeDetailItem({
+      type: 'mcpToolCall',
+      server: 'local',
+      tool: 'broken',
+      result: circular,
+    });
+    expect(detail.meta).toBe('[无法序列化的值]');
   });
 
   it('maps a web search', () => {

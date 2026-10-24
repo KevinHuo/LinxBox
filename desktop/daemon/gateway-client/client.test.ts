@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { GatewayClient, buildConnectUrl, type SocketLike } from './client.js';
 
@@ -90,6 +90,35 @@ describe('buildConnectUrl', () => {
 });
 
 describe('GatewayClient', () => {
+  it('uses the platform WebSocket implementation when no factory is supplied', () => {
+    const connected: { url: string; protocols: string[] }[] = [];
+    class StubWebSocket extends FakeSocket {
+      constructor(url: string, protocols: string[]) {
+        super();
+        connected.push({ url, protocols });
+      }
+    }
+    vi.stubGlobal('WebSocket', StubWebSocket);
+    try {
+      const client = new GatewayClient({
+        url: 'wss://gateway.example',
+        token: 'demo-token',
+        desktopVersion: '0.1.0',
+        capabilities: [],
+      });
+      client.connect();
+      expect(connected).toEqual([
+        {
+          url: 'wss://gateway.example/v1/clients/connect',
+          protocols: ['linxbox.v1', 'linxbox-token.demo-token'],
+        },
+      ]);
+      client.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('connects to the connect path and carries the token as a sub-protocol', () => {
     const { client, connected } = createClient();
     client.connect();
@@ -167,6 +196,20 @@ describe('GatewayClient', () => {
     client.close();
   });
 
+  it('accepts a non-string WebSocket payload that stringifies to JSON', () => {
+    const { client, socket } = createClient();
+    const frames: unknown[] = [];
+    client.on((event) => {
+      if (event.type === 'frame') frames.push(event.frame);
+    });
+    client.connect();
+    socket.open();
+    socket.fire('message', { data: { toString: () => JSON.stringify(dispatchFrame) } });
+
+    expect(frames).toHaveLength(1);
+    client.close();
+  });
+
   it('tracks the last acknowledged sequence', () => {
     const { client, socket } = createClient();
     client.connect();
@@ -176,6 +219,32 @@ describe('GatewayClient', () => {
     expect(client.lastAckedSequence).toBe(1043);
     const ack = socket.sentMessages().find((message) => message['type'] === 'task.ack');
     expect(ack?.['payload']).toMatchObject({ disposition: 'accepted', task_id: 'tsk_1' });
+    client.close();
+  });
+
+  it('includes an acknowledgement error and never moves the cursor backwards', () => {
+    const { client, socket } = createClient();
+    client.connect();
+    socket.open();
+    client.ack({ messageId: 'msg_2', sequence: 9, taskId: 'tsk_2', disposition: 'accepted' });
+    client.ack({
+      messageId: 'msg_1',
+      sequence: 8,
+      taskId: 'tsk_1',
+      disposition: 'rejected',
+      error: {
+        code: 'DEPENDENCY_UNAVAILABLE',
+        message: '不可用',
+        retryable: false,
+        request_id: 'msg_1',
+      },
+    });
+
+    expect(client.lastAckedSequence).toBe(9);
+    const ack = socket
+      .sentMessages()
+      .find((message) => (message['payload'] as { message_id?: string }).message_id === 'msg_1');
+    expect(ack?.['payload']).toMatchObject({ error: { code: 'DEPENDENCY_UNAVAILABLE' } });
     client.close();
   });
 
@@ -197,6 +266,13 @@ describe('GatewayClient', () => {
     const before = socket.sent.length;
     client.close();
     expect(socket.sent.length).toBe(before);
+  });
+
+  it('does not reconnect after the client has been closed', () => {
+    const { client, connected } = createClient();
+    client.close();
+    client.connect();
+    expect(connected).toHaveLength(0);
   });
 });
 
@@ -224,6 +300,15 @@ describe('GatewayClient reconnection', () => {
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(sockets.length).toBeGreaterThan(1);
     client.close();
+  });
+
+  it('uses default reconnect timing when no override is supplied', () => {
+    const { client, socket } = createClient();
+    client.connect();
+    socket.open();
+    socket.close();
+    client.close();
+    expect(socket.readyState).toBe(3);
   });
 
   it('reports a socket that cannot be created', () => {

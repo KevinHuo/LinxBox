@@ -293,17 +293,17 @@ payload：
 - `task.cancelled`
 - `task.interrupted`
 
-| 字段             | 类型                | 必填 | 语义                                                   |
-| ---------------- | ------------------- | ---- | ------------------------------------------------------ |
-| `task_id`        | string              | 是   | 任务 ID                                                |
-| `event_id`       | string              | 是   | 事件 ID                                                |
-| `event_sequence` | integer             | 是   | 同一 task 内从 1 递增                                  |
-| `occurred_at`    | string              | 是   | ISO 8601 时间                                          |
-| `state`          | string              | 是   | 当前任务状态                                           |
-| `stage`          | string              | 是   | 展示阶段，不驱动状态机                                 |
-| `summary`        | string              | 是   | 可展示摘要；当前 progress 最多取 Codex 文本前 500 字符 |
-| `result`         | TaskResult \| null  | 是   | 当前 dispatcher 始终发送 `null`                        |
-| `error`          | PublicError \| null | 是   | 失败/中断错误；正常事件为 `null`                       |
+| 字段             | 类型                | 必填 | 语义                                                                         |
+| ---------------- | ------------------- | ---- | ---------------------------------------------------------------------------- |
+| `task_id`        | string              | 是   | 任务 ID                                                                      |
+| `event_id`       | string              | 是   | 事件 ID                                                                      |
+| `event_sequence` | integer             | 是   | 同一 task 内从 1 递增                                                        |
+| `occurred_at`    | string              | 是   | ISO 8601 时间                                                                |
+| `state`          | string              | 是   | 当前任务状态                                                                 |
+| `stage`          | string              | 是   | 展示阶段，不驱动状态机                                                       |
+| `summary`        | string              | 是   | 可展示摘要；自由文本先移除路径、凭据、代码块、diff 和堆栈，再截断到 120 字符 |
+| `result`         | TaskResult \| null  | 是   | 当前 dispatcher 始终发送 `null`                                              |
+| `error`          | PublicError \| null | 是   | 失败/中断错误；正常事件为 `null`                                             |
 
 ```json
 {

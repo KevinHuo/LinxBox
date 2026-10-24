@@ -62,12 +62,12 @@ pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statem
 
 | 指标       | 覆盖率 |
 | ---------- | -----: |
-| Statements | 97.54% |
-| Branches   | 90.04% |
-| Functions  | 97.81% |
-| Lines      | 97.58% |
+| Statements | 98.35% |
+| Branches   | 93.48% |
+| Functions  | 98.55% |
+| Lines      | 98.33% |
 
-最近验证：2026-10-24，24 个测试文件通过、1 个跳过；458 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+最近验证：2026-10-24，24 个测试文件通过、1 个跳过；485 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
 
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 
