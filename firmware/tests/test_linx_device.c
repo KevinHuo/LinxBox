@@ -15,7 +15,7 @@ static void test_session_free(void *data);
 #define time test_time
 #define calloc test_session_alloc
 #define free test_session_free
-#include "../hardware/folotoy/ai-passport/linx_lingxi_device.c"
+#include "../main/linx_device.c"
 #undef time
 #undef calloc
 #undef free
@@ -118,13 +118,13 @@ void test_task_exit(portMUX_TYPE *lock) { assert(lock->depth == 1); --lock->dept
 static void cancel(void)
 {
     linx_voice_request_t request = {.command = LINX_VOICE_CANCEL, .generation = atomic_load(&active_generation)};
-    assert(linx_lingxi_device_request(&request, NULL));
+    assert(linx_device_request(&request, NULL));
 }
 
 static void finish(void)
 {
     linx_voice_request_t request = {.command = LINX_VOICE_FINISH, .generation = atomic_load(&active_generation)};
-    assert(linx_lingxi_device_request(&request, NULL));
+    assert(linx_device_request(&request, NULL));
 }
 
 static void *test_session_alloc(size_t count, size_t size)
@@ -201,7 +201,7 @@ void vTaskDelay(TickType_t ticks)
         strcpy(replacement.wifi_network.ssid, "next-network");
         replacement.wifi_network.security = LINX_WIFI_PERSONAL;
         strcpy(replacement.wifi_password, "next-secret");
-        assert(linx_lingxi_device_request(&replacement, NULL));
+        assert(linx_device_request(&replacement, NULL));
         memset(&replacement, 0, sizeof(replacement));
     }
     if (scan_live && scan_auto_complete) {
@@ -527,7 +527,7 @@ bool linx_wifi_portal_poll(linx_wifi_portal_t *portal, linx_wifi_network_t *netw
     if (portal_replace) {
         portal_replace = false;
         linx_voice_request_t next = {.command = LINX_VOICE_START, .generation = 8};
-        assert(linx_lingxi_device_request(&next, NULL));
+        assert(linx_device_request(&next, NULL));
         return false;
     }
     if (portal_time_out) { clock_us += SETUP_TIMEOUT_MS * 1000LL; return false; }
@@ -614,11 +614,11 @@ static void add_wait(unsigned action)
 }
 static void begin(void)
 {
-    assert(linx_lingxi_device_init());
+    assert(linx_device_init());
     assert(queue_calls == 2 && task_calls == 1 && session_allocations == 0);
     assert(!wifi_live && !audio_live);
     linx_voice_request_t request = {.command = LINX_VOICE_START, .generation = 7};
-    assert(linx_lingxi_device_request(&request, NULL));
+    assert(linx_device_request(&request, NULL));
 }
 static void execute(void)
 {
@@ -630,13 +630,13 @@ static void execute(void)
 static void expect_error_at(linx_voice_error_t error, int line)
 {
     linx_voice_event_t event;
-    assert(linx_lingxi_device_poll(&event));
+    assert(linx_device_poll(&event));
     if (event.state != LINX_VOICE_ERROR || event.error != error) {
         fprintf(stderr, "line %d: expected error %d, actual state %d error %d (injection %s)\n", line, error, event.state, event.error, failure ? failure : "none");
         assert(false);
     }
     assert(event.generation == 7);
-    assert(!linx_lingxi_device_poll(&event));
+    assert(!linx_device_poll(&event));
 }
 
 #define expect_error(error) expect_error_at(error, __LINE__)
@@ -644,36 +644,36 @@ static void expect_error_at(linx_voice_error_t error, int line)
 static void test_init_and_commands(void)
 {
     reset();
-    assert(!linx_lingxi_device_poll(NULL));
+    assert(!linx_device_poll(NULL));
     linx_voice_event_t event;
     linx_voice_request_t request = {.command = LINX_VOICE_START, .generation = 7};
-    assert(!linx_lingxi_device_poll(&event));
+    assert(!linx_device_poll(&event));
     request.command = LINX_VOICE_FINISH;
-    assert(!linx_lingxi_device_request(&request, NULL));
+    assert(!linx_device_request(&request, NULL));
     request.command = LINX_VOICE_START;
     failure = "xQueueCreate"; failure_index = 1;
-    assert(!linx_lingxi_device_init() && !commands && !events);
+    assert(!linx_device_init() && !commands && !events);
     failure_calls = 0; failure_index = 2;
-    assert(!linx_lingxi_device_init() && !commands && !events);
+    assert(!linx_device_init() && !commands && !events);
     failure = "xTaskCreate"; failure_calls = 0; failure_index = 1;
-    assert(!linx_lingxi_device_init() && !commands && !events);
+    assert(!linx_device_init() && !commands && !events);
     failure_calls = 0;
-    assert(!linx_lingxi_device_request(&request, NULL) && !commands && !events);
+    assert(!linx_device_request(&request, NULL) && !commands && !events);
     failure = NULL;
-    assert(linx_lingxi_device_request(&request, NULL) && commands && events);
+    assert(linx_device_request(&request, NULL) && commands && events);
     cancel(); execute();
-    reset(); begin(); assert(linx_lingxi_device_init() && task_calls == 1);
-    assert(!linx_lingxi_device_request(NULL, NULL));
+    reset(); begin(); assert(linx_device_init() && task_calls == 1);
+    assert(!linx_device_request(NULL, NULL));
     request.command = (linx_voice_command_t)-1;
-    assert(!linx_lingxi_device_request(&request, NULL));
+    assert(!linx_device_request(&request, NULL));
     request.command = (linx_voice_command_t)99;
-    assert(!linx_lingxi_device_request(&request, NULL));
+    assert(!linx_device_request(&request, NULL));
     request.command = LINX_VOICE_FINISH; request.generation = 3;
-    assert(linx_lingxi_device_request(&request, NULL) && !atomic_load(&finish_pending));
+    assert(linx_device_request(&request, NULL) && !atomic_load(&finish_pending));
     request.generation = 7;
-    assert(linx_lingxi_device_request(&request, NULL) && !atomic_load(&finish_pending));
+    assert(linx_device_request(&request, NULL) && !atomic_load(&finish_pending));
     cancel(); execute();
-    assert(session_allocations == 0 && linx_lingxi_device_poll(&event) && event.state == LINX_VOICE_CLOSED);
+    assert(session_allocations == 0 && linx_device_poll(&event) && event.state == LINX_VOICE_CLOSED);
     reset(); begin(); session_oom = true; execute(); expect_error(LINX_VOICE_NO_MEMORY);
 }
 
@@ -697,7 +697,7 @@ static void test_success_stream(void)
     assert(wifi_stops == 1 && wifi_deinits == 1 && netif_destroys == 1 && unregisters == 2 && loop_deletes == 1);
     assert(event_counts[LINX_VOICE_LISTENING] == 2 && event_counts[LINX_VOICE_WAITING] == 1 && event_counts[LINX_VOICE_SPEAKING] == 1);
     assert(persisted_uuid[14] == '4');
-    linx_voice_event_t event; assert(linx_lingxi_device_poll(&event) && event.state == LINX_VOICE_CLOSED);
+    linx_voice_event_t event; assert(linx_device_poll(&event) && event.state == LINX_VOICE_CLOSED);
 }
 
 static void test_wifi_and_identity_failures(void)
@@ -783,7 +783,7 @@ static void test_time_and_gateway(void)
     reset(); begin(); http_overflow = true; execute(); expect_error(LINX_VOICE_PROTOCOL_FAILED);
     reset(); begin(); cancel_perform = true; execute(); assert(ssl_destroys == 0 && http_cleanups == 1 && event_counts[LINX_VOICE_ERROR] == 0);
     reset(); begin(); http_body = "{\"activation\":{\"code\":\"123456\"}}"; execute();
-    linx_voice_event_t event; assert(linx_lingxi_device_poll(&event) && event.state == LINX_VOICE_BINDING && !strcmp(event.activation_code, "123456"));
+    linx_voice_event_t event; assert(linx_device_poll(&event) && event.state == LINX_VOICE_BINDING && !strcmp(event.activation_code, "123456"));
     assert(ssl_destroys == 0 && audio_sleeps == 0 && http_cleanups == 1);
 }
 
@@ -833,12 +833,12 @@ static void test_protocol_sequences_and_cancel(void)
     reset(); begin(); frames[frame_count++] = (frame_t){.opcode = 9, .fin = true, .payload = 1}; execute(); expect_error(LINX_VOICE_NETWORK_FAILED);
     reset(); begin(); add_text(hello_opus); add_wait(1); add_wait(1); add_text(tts_start); add_text(tts_stop); execute(); assert(listen_starts == 2 && listen_stops == 1);
     reset(); begin(); linx_voice_event_t stale = {.generation = 2, .state = LINX_VOICE_ERROR}; xQueueOverwrite(events, &stale);
-    linx_voice_event_t event; assert(!linx_lingxi_device_poll(&event)); cancel();
-    stale.generation = 7; xQueueOverwrite(events, &stale); assert(!linx_lingxi_device_poll(&event)); execute();
+    linx_voice_event_t event; assert(!linx_device_poll(&event)); cancel();
+    stale.generation = 7; xQueueOverwrite(events, &stale); assert(!linx_device_poll(&event)); execute();
     reset(); begin(); linx_voice_request_t replacement = {.command = LINX_VOICE_START, .generation = 8};
-    assert(linx_lingxi_device_request(&replacement, NULL));
+    assert(linx_device_request(&replacement, NULL));
     linx_voice_request_t late = {.command = LINX_VOICE_CANCEL, .generation = 7};
-    assert(linx_lingxi_device_request(&late, NULL) && current(8));
+    assert(linx_device_request(&late, NULL) && current(8));
     execute(); assert(session_allocations == 1 && atomic_load(&active_generation) == 8);
 }
 
@@ -901,7 +901,7 @@ static void test_audio_resume(void)
     assert(bsp_audio_set_format(16000, 16, 1) == ESP_ERR_INVALID_STATE);
     frame_count = frame_index = 0;
     linx_voice_request_t request = {.command = LINX_VOICE_START, .generation = 8};
-    assert(linx_lingxi_device_request(&request, NULL));
+    assert(linx_device_request(&request, NULL));
     add_text(hello_opus); add_wait(2); execute();
     assert(audio_sleeps == 2 && opus_opens == 2 && event_counts[LINX_VOICE_ERROR] == 0);
 }
@@ -915,7 +915,7 @@ static void begin_wifi(linx_voice_command_t command)
         request.wifi_network.security = LINX_WIFI_PERSONAL;
         strcpy(request.wifi_password, "new-secret");
     }
-    assert(linx_lingxi_device_request(&request, NULL));
+    assert(linx_device_request(&request, NULL));
     memset(&request, 0, sizeof(request));
 }
 
@@ -945,7 +945,7 @@ static void test_wifi_scan(void)
     scan_records[8].authmode = WIFI_AUTH_WPA_WPA2_PSK;
     scan_records[7].authmode = WIFI_AUTH_OPEN;
     execute();
-    linx_voice_event_t event; assert(linx_lingxi_device_poll(&event));
+    linx_voice_event_t event; assert(linx_device_poll(&event));
     assert(event.state == LINX_VOICE_WIFI_NETWORKS && event.wifi_count == 8);
     assert(!strcmp(event.wifi_networks[0].ssid, "shared") && event.wifi_networks[0].security == LINX_WIFI_UNSUPPORTED);
     assert(!strcmp(event.wifi_networks[1].ssid, "enterprise") && event.wifi_networks[1].security == LINX_WIFI_UNSUPPORTED);
@@ -958,7 +958,7 @@ static void test_wifi_scan(void)
     assert_old_network();
 
     reset(); begin_wifi(LINX_VOICE_WIFI_SCAN); execute();
-    assert(linx_lingxi_device_poll(&event) && event.state == LINX_VOICE_WIFI_NETWORKS && event.wifi_count == 0);
+    assert(linx_device_poll(&event) && event.state == LINX_VOICE_WIFI_NETWORKS && event.wifi_count == 0);
     const char *operations[] = {"nvs_flash_init", "esp_wifi_start", "esp_wifi_scan_start", "esp_wifi_scan_get_ap_records", "esp_wifi_clear_ap_list"};
     for (unsigned i = 0; i < sizeof(operations) / sizeof(*operations); ++i) {
         reset(); begin_wifi(LINX_VOICE_WIFI_SCAN); failure = operations[i]; execute(); expect_error(LINX_VOICE_WIFI_FAILED); assert_old_network();
@@ -975,14 +975,14 @@ static void test_wifi_scan(void)
     reset(); begin_wifi(LINX_VOICE_WIFI_SCAN); scan_auto_complete = false; replace_scan_with_save = true; execute();
     assert(session_allocations == 2 && task_calls == 1 && scan_stops == 1 && scan_clears == 1);
     assert(event_counts[LINX_VOICE_WIFI_NETWORKS] == 0 && event_counts[LINX_VOICE_WIFI_SAVED] == 1);
-    assert(linx_lingxi_device_poll(&event) && event.generation == 8 && event.state == LINX_VOICE_WIFI_SAVED);
+    assert(linx_device_poll(&event) && event.generation == 8 && event.state == LINX_VOICE_WIFI_SAVED);
     assert(!strcmp((char *)flash_config.sta.ssid, "next-network"));
 }
 
 static void test_wifi_save(void)
 {
     reset(); begin_wifi(LINX_VOICE_WIFI_SAVE); execute();
-    linx_voice_event_t event; assert(linx_lingxi_device_poll(&event));
+    linx_voice_event_t event; assert(linx_device_poll(&event));
     assert(event.state == LINX_VOICE_WIFI_SAVED && event_counts[LINX_VOICE_WIFI_CONNECTING] == 1);
     assert(!strcmp((char *)flash_config.sta.ssid, "new-network") && !strcmp((char *)flash_config.sta.password, "new-secret"));
     assert(ram_sets == 2 && flash_sets == 1 && http_cleanups == 0 && nvs_closes == 0);
@@ -990,20 +990,20 @@ static void test_wifi_save(void)
     /* NVS 网络优先于编译时设置。 */
     test_ssid = "compile-fallback"; test_password = "fallback-secret";
     linx_voice_request_t voice = {.command = LINX_VOICE_START, .generation = 8};
-    assert(linx_lingxi_device_request(&voice, NULL)); execute();
+    assert(linx_device_request(&voice, NULL)); execute();
     assert(flash_sets == 1 && !strcmp((char *)flash_config.sta.ssid, "new-network"));
 
     reset(); begin_wifi(LINX_VOICE_WIFI_SAVE);
     linx_voice_request_t open = {.command = LINX_VOICE_WIFI_SAVE, .generation = 7};
     strcpy(open.wifi_network.ssid, "open-network"); open.wifi_network.security = LINX_WIFI_OPEN;
-    assert(linx_lingxi_device_request(&open, NULL)); execute();
+    assert(linx_device_request(&open, NULL)); execute();
     assert(!strcmp((char *)flash_config.sta.ssid, "open-network") && flash_config.sta.password[0] == 0);
 
     reset(); begin_wifi(LINX_VOICE_WIFI_SAVE);
     linx_voice_request_t maximum = {.command = LINX_VOICE_WIFI_SAVE, .generation = 7};
     memset(maximum.wifi_network.ssid, 's', 32); maximum.wifi_network.security = LINX_WIFI_PERSONAL;
     memset(maximum.wifi_password, 'a', 64);
-    assert(linx_lingxi_device_request(&maximum, NULL)); execute();
+    assert(linx_device_request(&maximum, NULL)); execute();
     assert(!memcmp(flash_config.sta.ssid, maximum.wifi_network.ssid, 32));
     assert(!memcmp(flash_config.sta.password, maximum.wifi_password, 64));
     memset(&maximum, 0, sizeof(maximum));
@@ -1020,7 +1020,7 @@ static void test_wifi_save(void)
         if (invalid == 4) strcpy(request.wifi_password, "short");
         if (invalid == 5) memset(request.wifi_password, 'x', sizeof(request.wifi_password));
         if (invalid == 6) { request.wifi_network.security = LINX_WIFI_OPEN; strcpy(request.wifi_password, "not-empty"); }
-        assert(linx_lingxi_device_request(&request, NULL)); memset(&request, 0, sizeof(request));
+        assert(linx_device_request(&request, NULL)); memset(&request, 0, sizeof(request));
         execute(); expect_error(LINX_VOICE_NOT_CONFIGURED); assert_old_network(); assert(ram_sets == 0 && flash_sets == 0);
     }
 
@@ -1049,7 +1049,7 @@ static void test_wifi_setup(void)
     reset(); begin_wifi(LINX_VOICE_WIFI_SETUP); portal_submissions = 1;
     execute();
     linx_voice_event_t event;
-    assert(linx_lingxi_device_poll(&event) && event.state == LINX_VOICE_WIFI_SAVED);
+    assert(linx_device_poll(&event) && event.state == LINX_VOICE_WIFI_SAVED);
     assert(event_counts[LINX_VOICE_WIFI_PORTAL] == 1 && event_counts[LINX_VOICE_WIFI_NETWORKS] == 0);
     assert(portal_starts == 1 && portal_stops == 1 && ap_sets == 1 && ap_destroys == 1);
     assert(portal_statuses[LINX_WIFI_PORTAL_CONNECTING] == 1 && portal_statuses[LINX_WIFI_PORTAL_SAVED] == 1);
@@ -1114,19 +1114,19 @@ static void test_wifi_flash_persistence(void)
     execute();
     assert(flash_sets == 1 && !strcmp((char *)flash_config.sta.ssid, "phone-network"));
     assert(!strcmp((char *)flash_config.sta.password, "phone-secret") && ram_config.sta.ssid[0] == 0);
-    linx_voice_event_t event; assert(linx_lingxi_device_poll(&event) && event.state == LINX_VOICE_WIFI_SAVED);
+    linx_voice_event_t event; assert(linx_device_poll(&event) && event.state == LINX_VOICE_WIFI_SAVED);
     unsigned previous_errors = event_counts[LINX_VOICE_ERROR];
     linx_voice_request_t voice = {.command = LINX_VOICE_START, .generation = 8};
-    assert(linx_lingxi_device_request(&voice, NULL)); execute();
+    assert(linx_device_request(&voice, NULL)); execute();
     assert(http_cleanups == 1 && event_counts[LINX_VOICE_ERROR] == previous_errors);
     assert(flash_sets == 1 && !strcmp((char *)flash_config.sta.ssid, "phone-network"));
 
     /* 同一已保存网络重复配网：同值 SDK fast path 不写 NVS，但原数据仍持久存在。 */
     linx_voice_request_t repeat = {.command = LINX_VOICE_WIFI_SETUP, .generation = 9};
-    portal_submissions = 1; assert(linx_lingxi_device_request(&repeat, NULL)); execute();
-    assert(linx_lingxi_device_poll(&event) && event.generation == 9 && event.state == LINX_VOICE_WIFI_SAVED);
+    portal_submissions = 1; assert(linx_device_request(&repeat, NULL)); execute();
+    assert(linx_device_poll(&event) && event.generation == 9 && event.state == LINX_VOICE_WIFI_SAVED);
     assert(flash_sets == 1 && config_noops >= 3);
-    voice.generation = 10; assert(linx_lingxi_device_request(&voice, NULL)); execute();
+    voice.generation = 10; assert(linx_device_request(&voice, NULL)); execute();
     assert(http_cleanups == 2 && event_counts[LINX_VOICE_ERROR] == previous_errors);
 
     reset(); begin_wifi(LINX_VOICE_WIFI_SAVE); flash_error_after_ram = true; execute();

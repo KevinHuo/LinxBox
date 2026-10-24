@@ -11,6 +11,9 @@ fonts = ROOT / "assets/fonts"
 points = {int(line, 16) for line in (fonts / "codepoints.txt").read_text().splitlines()}
 required = set(range(32, 127))
 for source in (ROOT / "main").glob("*.[ch]"):
+    # 设备运行和手机网页不在设备屏幕绘制，无须进入屏幕字库。
+    if source.stem in ("linx_device", "linx_wifi_portal"):
+        continue
     required.update(ord(c) for c in source.read_text() if ord(c) >= 128 and not c.isspace())
 missing = required - points
 assert not missing, "Missing font inventory: " + ", ".join(f"U+{cp:04X}" for cp in sorted(missing))

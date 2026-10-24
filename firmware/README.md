@@ -2,14 +2,14 @@
 
 这里保留 LinX 应用、自有资源、测试和必要的硬件接入。当前设备为 **FoloToy AI Passport**：ESP32-C3、8 MB Flash、无 PSRAM，使用 ESP-IDF 5.5.3。
 
-当前 **LinX 0.2** 保留任务、回复、图片和电量的离线演示；进入语音页后，默认连接灵矽智能体，实时上传麦克风声音并播放语音回复。关闭 `CONFIG_LINX_LINGXI_ENABLE` 可恢复原来的模拟语音输入，不启动网络和音频。真实语音不会变成演示任务的发送回执，尚未实现设备间对讲；操作和未验证项见 [main/README.md](main/README.md)。
+当前 **LinX 0.2** 保留任务、回复、图片和电量的离线演示；进入语音页后，默认连接灵矽智能体，实时上传麦克风声音并播放语音回复。关闭 `CONFIG_LINX_VOICE_ENABLE` 可恢复原来的模拟语音输入，不启动网络和音频。真实语音不会变成演示任务的发送回执，尚未实现设备间对讲；操作和未验证项见 [main/README.md](main/README.md)。
 
 ## 目录总览
 
 | 目录 | 用途与入口 |
 | --- | --- |
-| [main/](main/README.md) | 应用入口、页面、内容、按键、导航、阅读与灵矽协议 |
-| [hardware/](hardware/folotoy/ai-passport/README.md) | FoloToy AI Passport 的板级接入和网络、音频运行实现 |
+| [main/](main/README.md) | 应用入口、页面、导航、阅读、配网、联网与灵矽语音 |
+| [hardware/](hardware/folotoy/ai-passport/README.md) | FoloToy AI Passport 的型号接入配置及必要硬件差异 |
 | [assets/](#资源与生成) | 字体、许可、字形清单和生成的图片 |
 | [tests/](tests/README.md) | 应用逻辑、依赖接入及真实 LVGL 主机测试 |
 | [tools/](tools/README.md) | 固定依赖准备、资源生成／检查与验证入口 |
@@ -24,9 +24,9 @@
 
 依赖缓存位于主仓库 `.local/dependencies/ai-passport/<提交号>/`。验证入口会自动准备并校验；首次获取通常需要网络，完整缓存可离线复用，也可用 `python3 tools/prepare_upstream.py --source <本机仓库> --print-path` 从包含同一提交的 Git 仓库初始化。
 
-AI Passport 所需的硬件适配由上游 `components/bsp/` 提供。本地 `hardware/folotoy/ai-passport/board.cmake` 接入这些驱动，`linx_lingxi_device.*` 使用它们实现 Wi-Fi、灵矽会话与录放音；不复制或修改上游 BSP，具体对应关系见[硬件说明](hardware/folotoy/ai-passport/README.md)。
+AI Passport 所需的硬件适配由上游 `components/bsp/` 提供，本地 `hardware/folotoy/ai-passport/board.cmake` 接入这些驱动。应用层的 `main/linx_device.*` 使用 BSP 接口管理联网、灵矽会话与录放音，`main/linx_wifi_portal.*` 提供手机配网页；不复制或修改上游 BSP，具体对应关系见[硬件说明](hardware/folotoy/ai-passport/README.md)。灵矽相关代码统一使用 `linx_` 前缀。
 
-语音协议复用 **[78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32/tree/39d23aee5b8682f77bbdf9cdc66799456b5ad408)**，固定提交 `39d23aee5b8682f77bbdf9cdc66799456b5ad408`。将其 `protocol.cc` 的开始／停止监听、打断，以及 `websocket_protocol.cc` 的 Hello 消息与默认参数规则，适配到现有 `main/linx_lingxi_protocol.c`，保留 [MIT 版权与许可](LICENSE)。例如最小 Hello 或缺少 format/channels 的合法响应会按小智默认的 24 kHz、单声道 Opus 处理，显式不支持的参数仍拒绝。具体来源文件、函数和适配差异记录在 `upstream.json`。
+语音协议复用 **[78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32/tree/39d23aee5b8682f77bbdf9cdc66799456b5ad408)**，固定提交 `39d23aee5b8682f77bbdf9cdc66799456b5ad408`。将其 `protocol.cc` 的开始／停止监听、打断，以及 `websocket_protocol.cc` 的 Hello 消息与默认参数规则，适配到现有 `main/linx_protocol.c`，保留 [MIT 版权与许可](LICENSE)。例如最小 Hello 或缺少 format/channels 的合法响应会按小智默认的 24 kHz、单声道 Opus 处理，显式不支持的参数仍拒绝。具体来源文件、函数和适配差异记录在 `upstream.json`。
 
 小智使用 Opus 上行；本设备采用灵矽[官方支持的 PCM 上行](https://linx.qiniu.com/docs/xrobot/platform/websocket)，减少 ESP32-C3 的编码开销，语音回复仍能解码 Opus。未声明设备侧 MCP、AEC 或动态字形等尚未实现的能力；不直接引入小智整套 C++ 应用框架及额外依赖。
 
@@ -46,7 +46,9 @@ AI Passport 所需的硬件适配由上游 `components/bsp/` 提供。本地 `ha
 
 网页列出进入配网时扫描到的最多八个可见网络，按信号强度去重；需要重新扫描时退出设备配网页后重新进入。支持开放网络、WPA2／WPA3 个人网络及 WPA／WPA2 混合网络，企业认证、WPA-only 等不支持。不提供隐藏网络名称输入；个人网络密码支持 8–63 个可打印 ASCII 字符或 64 位十六进制密钥。网页直接显示原始网络名称，不受设备中文字库子集限制。当前需手动打开网页，未实现自动弹出配网页。
 
-开发时可激活 ESP-IDF 5.5.3，在 `firmware/` 运行 `idf.py menuconfig`，进入“LinX 灵矽语音”设置开关及开发用 Wi-Fi。设备优先使用 NVS 已保存的网络，仅在没有保存网络时回退到编译配置。本地 `sdkconfig`、生成配置和镜像会包含填写的凭据，不应提交或公开分享；清空开发配置不会清除设备已保存的网络。关闭 `CONFIG_LINX_LINGXI_ENABLE` 保留原离线演示，不显示配网入口。
+开发时可激活 ESP-IDF 5.5.3，在 `firmware/` 运行 `idf.py menuconfig`，进入“LinX 灵矽语音”设置开关及开发用 Wi-Fi。设备优先使用 NVS 已保存的网络，仅在没有保存网络时回退到编译配置。本地 `sdkconfig`、生成配置和镜像会包含填写的凭据，不应提交或公开分享；清空开发配置不会清除设备已保存的网络。关闭 `CONFIG_LINX_VOICE_ENABLE` 保留原离线演示，不显示配网入口。
+
+开发 Wi-Fi 使用 `CONFIG_LINX_WIFI_SSID` 和 `CONFIG_LINX_WIFI_PASSWORD`；`main/sdkconfig.rename` 让 ESP-IDF 自动迁移命名整理前的三项旧配置。迁移表只包含配置键名，不包含凭据，也不会改动设备已经保存在 NVS 的网络。
 
 HTTPS 和 WSS 使用证书与主机名校验；网络时间无法满足校验条件、鉴权失败、超时或断线时显示错误，短按 OK 手动重试，不自动重传上一轮语音。灵矽 Token 只留在当前运行内存，不写源码或 NVS。设备标识及已保存 Wi-Fi 会保留在 NVS。
 

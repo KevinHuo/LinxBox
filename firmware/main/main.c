@@ -1,6 +1,6 @@
 #include "sdkconfig.h"
-#if CONFIG_LINX_LINGXI_ENABLE
-#include "linx_lingxi_device.h"
+#if CONFIG_LINX_VOICE_ENABLE
+#include "linx_device.h"
 #endif
 #include "bsp_button.h"
 #include "bsp_display.h"
@@ -61,8 +61,8 @@ static linx_ui_key_t ui_key(linx_input_action_t action)
 
 void app_main(void)
 {
-#if CONFIG_LINX_LINGXI_ENABLE
-    ESP_LOGI(TAG, "LinX; Lingxi voice connects on demand");
+#if CONFIG_LINX_VOICE_ENABLE
+    ESP_LOGI(TAG, "LinX voice connects on demand");
 #else
     ESP_LOGI(TAG, "LinX warm-white offline demo; no radio, audio or battery initialization");
 #endif
@@ -93,9 +93,9 @@ void app_main(void)
         return;
     }
     linx_ui_init(lv_screen_active(), (uint64_t)esp_timer_get_time() / 1000);
-#if CONFIG_LINX_LINGXI_ENABLE
-    if (!linx_lingxi_device_init()) ESP_LOGE(TAG, "Voice worker allocation failed");
-    linx_ui_set_voice_handler(linx_lingxi_device_request, NULL);
+#if CONFIG_LINX_VOICE_ENABLE
+    if (!linx_device_init()) ESP_LOGE(TAG, "Voice worker allocation failed");
+    linx_ui_set_voice_handler(linx_device_request, NULL);
 #endif
     bsp_lvgl_unlock();
     s_input_ready = true;
@@ -115,9 +115,9 @@ void app_main(void)
         if (!bsp_lvgl_lock(100)) continue;
         const uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000;
         const linx_ui_page_t before_tick = linx_ui_page();
-#if CONFIG_LINX_LINGXI_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE
         linx_voice_event_t voice_event;
-        if (linx_lingxi_device_poll(&voice_event)) linx_ui_voice_event(&voice_event);
+        if (linx_device_poll(&voice_event)) linx_ui_voice_event(&voice_event);
 #endif
         linx_ui_tick(now_ms);
         if (linx_ui_page() != before_tick) {

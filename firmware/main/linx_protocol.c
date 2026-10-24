@@ -4,7 +4,7 @@
  * 小智 hello/listen/abort 与 hello 默认参数移植，来源及适配说明见 upstream.json。
  * https://github.com/78/xiaozhi-esp32/tree/39d23aee5b8682f77bbdf9cdc66799456b5ad408/main/protocols
  */
-#include "linx_lingxi_protocol.h"
+#include "linx_protocol.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -28,7 +28,7 @@ static bool bounded_string(const char *text, size_t capacity, bool empty_allowed
 /* 在交给 cJSON 前限制递归深度；禁止 NUL，避免其 C 字符串接口截断鉴权字段。 */
 static cJSON *parse_object(const char *json, size_t size)
 {
-    if (json == NULL || size == 0U || size > LINX_LINGXI_MESSAGE_CAPACITY) return NULL;
+    if (json == NULL || size == 0U || size > LINX_MESSAGE_CAPACITY) return NULL;
     unsigned depth = 0;
     bool quoted = false;
     for (size_t i = 0; i < size; ++i) {
@@ -84,7 +84,7 @@ static bool finish_json(char *out, size_t capacity, cJSON *root, bool valid)
     return result;
 }
 
-bool linx_lingxi_build_ota(char *out, size_t capacity, const linx_lingxi_device_info_t *device)
+bool linx_build_ota(char *out, size_t capacity, const linx_device_info_t *device)
 {
     if (!output_ready(out, capacity)) return false;
     if (device == NULL || !bounded_string(device->device_id, 64U, false) ||
@@ -108,11 +108,11 @@ bool linx_lingxi_build_ota(char *out, size_t capacity, const linx_lingxi_device_
     return finish_json(out, capacity, root, valid);
 }
 
-bool linx_lingxi_parse_endpoint(const char *url, linx_lingxi_endpoint_t *out)
+bool linx_parse_endpoint(const char *url, linx_endpoint_t *out)
 {
     if (out == NULL) return false;
     memset(out, 0, sizeof(*out));
-    if (url == NULL || !bounded_string(url, LINX_LINGXI_URL_CAPACITY, false) || strncmp(url, "wss://", 6) != 0) return false;
+    if (url == NULL || !bounded_string(url, LINX_URL_CAPACITY, false) || strncmp(url, "wss://", 6) != 0) return false;
     for (const char *p = url; *p != '\0'; ++p) {
         if (*p == '@' || *p == '#' || *p == ' ' || (unsigned char)*p >= 0x7fU) return false;
     }
@@ -143,14 +143,14 @@ bool linx_lingxi_parse_endpoint(const char *url, linx_lingxi_endpoint_t *out)
     return true;
 }
 
-linx_lingxi_gateway_result_t linx_lingxi_parse_gateway(const char *json, size_t size,
-                                                     linx_lingxi_gateway_t *out)
+linx_gateway_result_t linx_parse_gateway(const char *json, size_t size,
+                                                     linx_gateway_t *out)
 {
-    if (out == NULL) return LINX_LINGXI_GATEWAY_INVALID;
+    if (out == NULL) return LINX_GATEWAY_INVALID;
     memset(out, 0, sizeof(*out));
     cJSON *root = parse_object(json, size);
-    if (root == NULL) return LINX_LINGXI_GATEWAY_INVALID;
-    linx_lingxi_gateway_result_t result = LINX_LINGXI_GATEWAY_INVALID;
+    if (root == NULL) return LINX_GATEWAY_INVALID;
+    linx_gateway_result_t result = LINX_GATEWAY_INVALID;
     if (cJSON_GetObjectItemCaseSensitive(root, "error") != NULL) goto done;
     const cJSON *websocket = cJSON_GetObjectItemCaseSensitive(root, "websocket");
     const cJSON *token_field = cJSON_GetObjectItemCaseSensitive(websocket, "token");
@@ -161,7 +161,7 @@ linx_lingxi_gateway_result_t linx_lingxi_parse_gateway(const char *json, size_t 
         const char *code = string_field(activation, "code");
         if (code == NULL || strlen(code) != 6U || strspn(code, "0123456789") != 6U) goto done;
         memcpy(out->activation_code, code, 7);
-        result = LINX_LINGXI_GATEWAY_BINDING;
+        result = LINX_GATEWAY_BINDING;
         goto done;
     }
     if (strncmp(token, "Bearer ", 7) == 0) token += 7;
@@ -171,17 +171,17 @@ linx_lingxi_gateway_result_t linx_lingxi_parse_gateway(const char *json, size_t 
     }
     const char *url = string_field(websocket, "url");
     if (url != NULL && strcmp(url, "ws://xrobo-io.qiniuapi.com/v1/ws/") == 0) url = "wss://xrobo-io.qiniuapi.com/v1/ws/";
-    linx_lingxi_endpoint_t endpoint;
-    if (!linx_lingxi_parse_endpoint(url, &endpoint)) goto done;
+    linx_endpoint_t endpoint;
+    if (!linx_parse_endpoint(url, &endpoint)) goto done;
     strcpy(out->url, url);
     strcpy(out->token, token);
-    result = LINX_LINGXI_GATEWAY_READY;
+    result = LINX_GATEWAY_READY;
 done:
     cJSON_Delete(root);
     return result;
 }
 
-bool linx_lingxi_build_hello(char *out, size_t capacity, const linx_reply_context_t *context)
+bool linx_build_hello(char *out, size_t capacity, const linx_reply_context_t *context)
 {
     if (!output_ready(out, capacity)) return false;
     if (context == NULL) return false;
@@ -218,7 +218,7 @@ bool linx_lingxi_build_hello(char *out, size_t capacity, const linx_reply_contex
 static bool build_control(char *out, size_t capacity, const char *session, const char *state)
 {
     if (!output_ready(out, capacity)) return false;
-    if (!bounded_string(session, LINX_LINGXI_SESSION_CAPACITY, true)) return false;
+    if (!bounded_string(session, LINX_SESSION_CAPACITY, true)) return false;
     cJSON *root = cJSON_CreateObject();
     bool valid = root != NULL;
     valid &= cJSON_AddStringToObject(root, "type", state == NULL ? "abort" : "listen") != NULL;
@@ -230,12 +230,12 @@ static bool build_control(char *out, size_t capacity, const char *session, const
     return finish_json(out, capacity, root, valid);
 }
 
-bool linx_lingxi_build_listen(char *out, size_t capacity, const char *session_id, bool start)
+bool linx_build_listen(char *out, size_t capacity, const char *session_id, bool start)
 {
     return build_control(out, capacity, session_id, start ? "start" : "stop");
 }
 
-bool linx_lingxi_build_abort(char *out, size_t capacity, const char *session_id)
+bool linx_build_abort(char *out, size_t capacity, const char *session_id)
 {
     return build_control(out, capacity, session_id, NULL);
 }
@@ -246,10 +246,10 @@ static bool number_is(const cJSON *object, const char *name, double expected)
     return cJSON_IsNumber(value) && value->valuedouble == expected;
 }
 
-static bool compatible_audio(const cJSON *audio, linx_lingxi_message_t *out)
+static bool compatible_audio(const cJSON *audio, linx_message_t *out)
 {
     /* 小智 ParseServerHello 允许缺省音频参数，默认24k Opus、单声道。 */
-    out->audio = LINX_LINGXI_AUDIO_OPUS;
+    out->audio = LINX_AUDIO_OPUS;
     out->sample_rate = 24000;
     if (audio == NULL) return true;
     if (!cJSON_IsObject(audio)) return false;
@@ -273,16 +273,16 @@ static bool compatible_audio(const cJSON *audio, linx_lingxi_message_t *out)
         if (endian != NULL && (!cJSON_IsString(endian) || strcmp(endian->valuestring, "little") != 0)) return false;
         if (sample != NULL && (!cJSON_IsString(sample) || strcmp(sample->valuestring, "signed_int16") != 0)) return false;
     }
-    out->audio = is_opus ? LINX_LINGXI_AUDIO_OPUS : LINX_LINGXI_AUDIO_PCM;
+    out->audio = is_opus ? LINX_AUDIO_OPUS : LINX_AUDIO_PCM;
     out->sample_rate = rate != NULL ? (uint32_t)rate->valuedouble : (is_opus ? 24000U : 16000U);
     return true;
 }
 
-bool linx_lingxi_parse_message(const char *json, size_t size, linx_lingxi_message_t *out)
+bool linx_parse_message(const char *json, size_t size, linx_message_t *out)
 {
     if (out == NULL) return false;
     memset(out, 0, sizeof(*out));
-    out->kind = LINX_LINGXI_IGNORE;
+    out->kind = LINX_IGNORE;
     cJSON *root = parse_object(json, size);
     if (root == NULL) return false;
     bool valid = false;
@@ -297,17 +297,17 @@ bool linx_lingxi_parse_message(const char *json, size_t size, linx_lingxi_messag
         const char *transport = string_field(root, "transport");
         if (transport == NULL || strcmp(transport, "websocket") != 0 ||
             !compatible_audio(cJSON_GetObjectItemCaseSensitive(root, "audio_params"), out)) goto done;
-        out->kind = LINX_LINGXI_HELLO;
+        out->kind = LINX_HELLO;
     } else if (strcmp(type, "stt") == 0) {
-        out->kind = LINX_LINGXI_STT;
+        out->kind = LINX_STT;
     } else if (strcmp(type, "tts") == 0) {
         const char *state = string_field(root, "state");
         if (state == NULL) goto done;
         const cJSON *aborted = cJSON_GetObjectItemCaseSensitive(root, "is_aborted");
         if (aborted != NULL && !cJSON_IsBool(aborted)) goto done;
         out->aborted = cJSON_IsTrue(aborted);
-        if (strcmp(state, "start") == 0) out->kind = LINX_LINGXI_TTS_START;
-        else if (strcmp(state, "stop") == 0) out->kind = LINX_LINGXI_TTS_STOP;
+        if (strcmp(state, "start") == 0) out->kind = LINX_TTS_START;
+        else if (strcmp(state, "stop") == 0) out->kind = LINX_TTS_STOP;
     }
     valid = true;
 done:
@@ -315,12 +315,12 @@ done:
     return valid;
 }
 
-void linx_lingxi_receiver_init(linx_lingxi_receiver_t *receiver)
+void linx_receiver_init(linx_receiver_t *receiver)
 {
     if (receiver != NULL) memset(receiver, 0, sizeof(*receiver));
 }
 
-bool linx_lingxi_receive(linx_lingxi_receiver_t *receiver, unsigned opcode, bool fin,
+bool linx_receive(linx_receiver_t *receiver, unsigned opcode, bool fin,
                         size_t payload_size, const void *chunk, size_t size, bool *complete)
 {
     if (complete == NULL) return false;
@@ -351,8 +351,8 @@ bool linx_lingxi_receive(linx_lingxi_receiver_t *receiver, unsigned opcode, bool
             receiver->used = 0;
             receiver->kind = opcode;
         }
-        if (receiver->used > LINX_LINGXI_MESSAGE_CAPACITY ||
-            payload_size > LINX_LINGXI_MESSAGE_CAPACITY - receiver->used) return false;
+        if (receiver->used > LINX_MESSAGE_CAPACITY ||
+            payload_size > LINX_MESSAGE_CAPACITY - receiver->used) return false;
         receiver->frame_opcode = opcode;
         receiver->frame_size = payload_size;
         receiver->frame_fin = fin;

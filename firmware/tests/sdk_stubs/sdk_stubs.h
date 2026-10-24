@@ -1,5 +1,5 @@
-#ifndef LINX_LINGXI_SDK_STUBS_H
-#define LINX_LINGXI_SDK_STUBS_H
+#ifndef LINX_SDK_STUBS_H
+#define LINX_SDK_STUBS_H
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -12,8 +12,8 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERR_WIFI_NOT_CONNECT 0x300f
 #define ESP_ERR_NVS_NOT_FOUND 0x1102
-#define CONFIG_LINX_LINGXI_WIFI_SSID test_ssid
-#define CONFIG_LINX_LINGXI_WIFI_PASSWORD test_password
+#define CONFIG_LINX_WIFI_SSID test_ssid
+#define CONFIG_LINX_WIFI_PASSWORD test_password
 #define CONFIG_LWIP_SNTP_MAX_SERVERS 3
 extern const char *test_ssid;
 extern const char *test_password;

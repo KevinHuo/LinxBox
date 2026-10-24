@@ -6,7 +6,7 @@
 
 `test_main_runtime.c` 运行真实 `main/main.c` 和上游按键保护逻辑，`device_stubs/` 仅提供 ESP-IDF／BSP 接口替身。每个场景在独立进程中调用一次设备入口，模拟初始化失败、唤醒保护、队列溢出、切页屏障和定期内存日志，检查调用顺序及结果；这部分不连接板卡，也不能证明真实驱动行为。
 
-`test_linx_lingxi_protocol.c` 使用 ESP-IDF 中的真实 cJSON，检查设备接入消息、激活码、WSS 地址、会话事件、长度上限及 WebSocket 拆包，并回归小智最小 Hello、可选音频参数和开始／停止／打断消息；`test_linx_lingxi_device.c` 运行本地 `hardware/folotoy/ai-passport/linx_lingxi_device.c`，通过 `lingxi_stubs/` 模拟 Wi-Fi、时间、HTTPS、WebSocket、Opus 与 BSP 接口，检查录放音、结束上传、取消及错误清理。替身不访问真实灵矽、网络、麦克风或账号，不能证明 Opus 库的真实解码效果或真机语音链路。
+`test_linx_protocol.c` 使用 ESP-IDF 中的真实 cJSON，检查设备接入消息、激活码、WSS 地址、会话事件、长度上限及 WebSocket 拆包，并回归小智最小 Hello、可选音频参数和开始／停止／打断消息；`test_linx_device.c` 运行本地 `main/linx_device.c`，通过 `sdk_stubs/` 模拟 Wi-Fi、时间、HTTPS、WebSocket、Opus 与 BSP 接口，检查录放音、结束上传、取消及错误清理。替身不访问真实灵矽、网络、麦克风或账号，不能证明 Opus 库的真实解码效果或真机语音链路。
 
 冷启动校时回归模拟最多 5 秒启动延迟、首台服务器无应答后 15 秒轮换，覆盖超过原 10 秒期限才成功、三个时间源分别成功、全部失败后 60 秒退出、等待期间取消与断网，以及已有有效时间时跳过校时。测试只验证应用能正确等待 SDK，不代替真实 DNS、UDP、备用服务器切换和断电重启验证。
 

@@ -88,10 +88,10 @@ EOF
     local scenarios
     local variant
     local runtime_flags
-    for variant in offline lingxi; do
-        runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main" -Ihardware/folotoy/ai-passport)
-        if [[ "${variant}" == "lingxi" ]]; then
-            runtime_flags+=(-DCONFIG_LINX_LINGXI_ENABLE=1)
+    for variant in offline voice; do
+        runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main")
+        if [[ "${variant}" == "voice" ]]; then
+            runtime_flags+=(-DCONFIG_LINX_VOICE_ENABLE=1)
         fi
         "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain "${runtime_flags[@]}" \
             tests/test_main_runtime.c main/main.c main/linx_input.c \
@@ -104,16 +104,16 @@ EOF
     # 使用当前 ESP-IDF 的真实 JSON 实现；第三方对象与自有代码分开编译。
     "${CC:-cc}" -std=c11 -O0 -g -c "${cjson_dir}/cJSON.c" -o "${test_dir}/cJSON.o"
     "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Imain -I"${cjson_dir}" \
-        tests/test_linx_lingxi_protocol.c main/linx_lingxi_protocol.c \
-        "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_lingxi_protocol"
-    "${test_dir}/test_linx_lingxi_protocol"
-    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/lingxi_stubs \
-        -Imain -Ihardware/folotoy/ai-passport -I"${cjson_dir}" \
-        tests/test_linx_lingxi_device.c main/linx_lingxi_protocol.c main/linx_wifi.c \
-        "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_lingxi_device"
-    "${test_dir}/test_linx_lingxi_device"
-    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/lingxi_stubs \
-        -Itests/device_stubs -Imain -Ihardware/folotoy/ai-passport -I"${cjson_dir}" \
+        tests/test_linx_protocol.c main/linx_protocol.c \
+        "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_protocol"
+    "${test_dir}/test_linx_protocol"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
+        -Imain -I"${cjson_dir}" \
+        tests/test_linx_device.c main/linx_protocol.c main/linx_wifi.c \
+        "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_device"
+    "${test_dir}/test_linx_device"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
+        -Itests/device_stubs -Imain -I"${cjson_dir}" \
         tests/test_linx_wifi_portal.c main/linx_wifi.c "${test_dir}/cJSON.o" \
         -lm -o "${test_dir}/test_linx_wifi_portal"
     "${test_dir}/test_linx_wifi_portal"

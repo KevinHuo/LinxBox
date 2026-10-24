@@ -1,4 +1,4 @@
-#include "linx_lingxi_device.h"
+#include "linx_device.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -24,7 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include "linx_lingxi_protocol.h"
+#include "linx_protocol.h"
 #include "linx_wifi_portal.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -86,15 +86,15 @@ typedef struct {
     esp_transport_handle_t ssl;
     esp_transport_handle_t ws;
     void *decoder;
-    linx_lingxi_gateway_t gateway;
-    linx_lingxi_receiver_t receiver;
-    linx_lingxi_audio_t audio;
-    char session_id[LINX_LINGXI_SESSION_CAPACITY];
+    linx_gateway_t gateway;
+    linx_receiver_t receiver;
+    linx_audio_t audio;
+    char session_id[LINX_SESSION_CAPACITY];
     char device_id[18];
     char client_id[37];
-    char scratch[LINX_LINGXI_MESSAGE_CAPACITY + 1U];
-    uint8_t pcm[LINX_LINGXI_PCM_OUTPUT_BYTES];
-    uint8_t microphone[LINX_LINGXI_PCM_FRAME_BYTES];
+    char scratch[LINX_MESSAGE_CAPACITY + 1U];
+    uint8_t pcm[LINX_PCM_OUTPUT_BYTES];
+    uint8_t microphone[LINX_PCM_FRAME_BYTES];
     uint8_t control[125];
     size_t control_used;
     size_t http_used;
@@ -289,15 +289,15 @@ static linx_voice_error_t wifi_start(voice_session_t *session)
         clear_sensitive(&config, sizeof(config));
         return sdk_error(result, LINX_VOICE_WIFI_FAILED);
     }
-    if (!config.sta.ssid[0] && CONFIG_LINX_LINGXI_WIFI_SSID[0]) {
-        size_t ssid_size = strlen(CONFIG_LINX_LINGXI_WIFI_SSID);
-        size_t password_size = strlen(CONFIG_LINX_LINGXI_WIFI_PASSWORD);
+    if (!config.sta.ssid[0] && CONFIG_LINX_WIFI_SSID[0]) {
+        size_t ssid_size = strlen(CONFIG_LINX_WIFI_SSID);
+        size_t password_size = strlen(CONFIG_LINX_WIFI_PASSWORD);
         if (ssid_size > sizeof(config.sta.ssid) || password_size > sizeof(config.sta.password)) {
             clear_sensitive(&config, sizeof(config));
             return LINX_VOICE_NOT_CONFIGURED;
         }
-        memcpy(config.sta.ssid, CONFIG_LINX_LINGXI_WIFI_SSID, ssid_size);
-        memcpy(config.sta.password, CONFIG_LINX_LINGXI_WIFI_PASSWORD, password_size);
+        memcpy(config.sta.ssid, CONFIG_LINX_WIFI_SSID, ssid_size);
+        memcpy(config.sta.password, CONFIG_LINX_WIFI_PASSWORD, password_size);
         result = esp_wifi_set_config(WIFI_IF_STA, &config);
         clear_sensitive(&config, sizeof(config));
         if (result != ESP_OK) return sdk_error(result, LINX_VOICE_WIFI_FAILED);
@@ -613,7 +613,7 @@ static esp_err_t http_event(esp_http_client_event_t *event)
     voice_session_t *session = event->user_data;
     if (!current(session->generation)) return ESP_FAIL;
     if (event->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
-    if (event->data_len < 0 || (size_t)event->data_len > LINX_LINGXI_MESSAGE_CAPACITY - session->http_used) {
+    if (event->data_len < 0 || (size_t)event->data_len > LINX_MESSAGE_CAPACITY - session->http_used) {
         session->http_overflow = true;
         return ESP_FAIL;
     }
@@ -632,10 +632,10 @@ static linx_voice_error_t gateway(voice_session_t *session)
     const esp_app_desc_t *app = esp_app_get_description();
     char sha256[65];
     esp_app_get_elf_sha256(sha256, sizeof(sha256));
-    linx_lingxi_device_info_t info = {.device_id = session->device_id, .client_id = session->client_id,
+    linx_device_info_t info = {.device_id = session->device_id, .client_id = session->client_id,
                                     .version = app->version, .elf_sha256 = sha256,
                                     .ssid = ssid, .rssi = access_point.rssi};
-    if (!linx_lingxi_build_ota(session->scratch, sizeof(session->scratch), &info)) return LINX_VOICE_PROTOCOL_FAILED;
+    if (!linx_build_ota(session->scratch, sizeof(session->scratch), &info)) return LINX_VOICE_PROTOCOL_FAILED;
     esp_http_client_config_t config = {.url = OTA_URL, .timeout_ms = CONNECT_TIMEOUT_MS,
                                       .crt_bundle_attach = esp_crt_bundle_attach,
                                       .disable_auto_redirect = true, .event_handler = http_event,
@@ -655,10 +655,10 @@ static linx_voice_error_t gateway(voice_session_t *session)
     esp_http_client_cleanup(client);
     if (session->http_overflow) return LINX_VOICE_PROTOCOL_FAILED;
     if (result != ESP_OK || status != 200) return sdk_error(result, LINX_VOICE_NETWORK_FAILED);
-    linx_lingxi_gateway_result_t parsed = linx_lingxi_parse_gateway((char *)session->receiver.data,
+    linx_gateway_result_t parsed = linx_parse_gateway((char *)session->receiver.data,
                                                                  session->http_used, &session->gateway);
-    if (parsed == LINX_LINGXI_GATEWAY_INVALID) return LINX_VOICE_PROTOCOL_FAILED;
-    if (parsed == LINX_LINGXI_GATEWAY_BINDING)
+    if (parsed == LINX_GATEWAY_INVALID) return LINX_VOICE_PROTOCOL_FAILED;
+    if (parsed == LINX_GATEWAY_BINDING)
         publish(session->generation, LINX_VOICE_BINDING, LINX_VOICE_OK, session->gateway.activation_code);
     return LINX_VOICE_OK;
 }
@@ -675,7 +675,7 @@ static linx_voice_error_t send_frame(voice_session_t *session, unsigned opcode, 
 static linx_voice_error_t listen_start(voice_session_t *session)
 {
     atomic_store(&finish_pending, false);
-    if (!linx_lingxi_build_listen(session->scratch, sizeof(session->scratch), session->session_id, true))
+    if (!linx_build_listen(session->scratch, sizeof(session->scratch), session->session_id, true))
         return LINX_VOICE_PROTOCOL_FAILED;
     linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
     if (result == LINX_VOICE_OK && current(session->generation)) {
@@ -689,8 +689,8 @@ static linx_voice_error_t listen_start(voice_session_t *session)
 
 static linx_voice_error_t websocket_start(voice_session_t *session, const linx_reply_context_t *context)
 {
-    linx_lingxi_endpoint_t endpoint;
-    if (!linx_lingxi_parse_endpoint(session->gateway.url, &endpoint)) return LINX_VOICE_PROTOCOL_FAILED;
+    linx_endpoint_t endpoint;
+    if (!linx_parse_endpoint(session->gateway.url, &endpoint)) return LINX_VOICE_PROTOCOL_FAILED;
     session->ssl = esp_transport_ssl_init();
     if (!session->ssl) return LINX_VOICE_NO_MEMORY;
     esp_transport_ssl_crt_bundle_attach(session->ssl, esp_crt_bundle_attach);
@@ -713,8 +713,8 @@ static linx_voice_error_t websocket_start(voice_session_t *session, const linx_r
     if (!current(session->generation)) return LINX_VOICE_OK;
     if (esp_transport_connect(session->ws, endpoint.host, endpoint.port, CONNECT_TIMEOUT_MS) < 0)
         return LINX_VOICE_NETWORK_FAILED;
-    if (!linx_lingxi_build_hello(session->scratch, sizeof(session->scratch), context)) return LINX_VOICE_PROTOCOL_FAILED;
-    linx_lingxi_receiver_init(&session->receiver);
+    if (!linx_build_hello(session->scratch, sizeof(session->scratch), context)) return LINX_VOICE_PROTOCOL_FAILED;
+    linx_receiver_init(&session->receiver);
     session->last_activity = esp_timer_get_time();
     return send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
 }
@@ -736,7 +736,7 @@ static linx_voice_error_t play_packet(voice_session_t *session)
     if (!session->hello || !session->speaking) return LINX_VOICE_PROTOCOL_FAILED;
     size_t size = session->receiver.used;
     uint8_t *data = session->receiver.data;
-    if (session->audio == LINX_LINGXI_AUDIO_OPUS) {
+    if (session->audio == LINX_AUDIO_OPUS) {
         esp_audio_dec_in_raw_t raw = {.buffer = data, .len = (uint32_t)size};
         esp_audio_dec_out_frame_t frame = {.buffer = session->pcm, .len = sizeof(session->pcm)};
         esp_audio_dec_info_t info = {0};
@@ -784,17 +784,17 @@ static linx_voice_error_t resume_listening(voice_session_t *session, bool aborte
 static linx_voice_error_t message(voice_session_t *session)
 {
     if (session->receiver.kind == WS_TRANSPORT_OPCODES_BINARY) return play_packet(session);
-    linx_lingxi_message_t parsed;
-    if (!linx_lingxi_parse_message((char *)session->receiver.data, session->receiver.used, &parsed))
+    linx_message_t parsed;
+    if (!linx_parse_message((char *)session->receiver.data, session->receiver.used, &parsed))
         return LINX_VOICE_PROTOCOL_FAILED;
     if (!session->hello) {
-        if (parsed.kind != LINX_LINGXI_HELLO) return LINX_VOICE_PROTOCOL_FAILED;
+        if (parsed.kind != LINX_HELLO) return LINX_VOICE_PROTOCOL_FAILED;
         session->hello = true;
         session->audio = parsed.audio;
         memcpy(session->session_id, parsed.session_id, sizeof(session->session_id));
         linx_voice_error_t result = audio_start(session);
         if (result != LINX_VOICE_OK) return result;
-        if (parsed.audio == LINX_LINGXI_AUDIO_OPUS) {
+        if (parsed.audio == LINX_AUDIO_OPUS) {
             esp_opus_dec_cfg_t config = {.sample_rate = 16000, .channel = 1,
                                         .frame_duration = ESP_OPUS_DEC_FRAME_DURATION_120_MS,
                                         .self_delimited = false};
@@ -804,16 +804,16 @@ static linx_voice_error_t message(voice_session_t *session)
         }
         return listen_start(session);
     }
-    if (parsed.kind == LINX_LINGXI_HELLO) return LINX_VOICE_PROTOCOL_FAILED;
+    if (parsed.kind == LINX_HELLO) return LINX_VOICE_PROTOCOL_FAILED;
     if (parsed.session_id[0] && strcmp(parsed.session_id, session->session_id)) return LINX_VOICE_PROTOCOL_FAILED;
-    if (parsed.kind == LINX_LINGXI_TTS_START) {
+    if (parsed.kind == LINX_TTS_START) {
         atomic_store(&listening, false);
         atomic_store(&finish_pending, false);
         session->waiting = false;
         session->speaking = true;
         if (session->decoder && esp_opus_dec_reset(session->decoder) != ESP_AUDIO_ERR_OK) return LINX_VOICE_AUDIO_FAILED;
         publish(session->generation, LINX_VOICE_SPEAKING, LINX_VOICE_OK, NULL);
-    } else if (parsed.kind == LINX_LINGXI_TTS_STOP) {
+    } else if (parsed.kind == LINX_TTS_STOP) {
         if (!session->speaking) return LINX_VOICE_PROTOCOL_FAILED;
         return resume_listening(session, parsed.aborted);
     }
@@ -826,7 +826,7 @@ static linx_voice_error_t receive(voice_session_t *session)
     int ready = esp_transport_poll_read(session->ws, atomic_load(&listening) ? 0 : READ_TIMEOUT_MS);
     if (ready < 0) return LINX_VOICE_NETWORK_FAILED;
     if (ready == 0) return LINX_VOICE_OK;
-    int size = esp_transport_read(session->ws, session->scratch, LINX_LINGXI_MESSAGE_CAPACITY, FRAME_TIMEOUT_MS);
+    int size = esp_transport_read(session->ws, session->scratch, LINX_MESSAGE_CAPACITY, FRAME_TIMEOUT_MS);
     if (size < 0) return LINX_VOICE_NETWORK_FAILED;
     if (!current(session->generation)) return LINX_VOICE_OK;
     unsigned opcode = (unsigned)esp_transport_ws_get_read_opcode(session->ws);
@@ -839,7 +839,7 @@ static linx_voice_error_t receive(voice_session_t *session)
     if (opcode == WS_TRANSPORT_OPCODES_CLOSE) return LINX_VOICE_NETWORK_FAILED;
     if (opcode == WS_TRANSPORT_OPCODES_PING || opcode == WS_TRANSPORT_OPCODES_PONG) {
         bool complete;
-        if (!linx_lingxi_receive(&session->receiver, opcode, esp_transport_ws_get_fin_flag(session->ws),
+        if (!linx_receive(&session->receiver, opcode, esp_transport_ws_get_fin_flag(session->ws),
                                 (size_t)payload_size, session->scratch, (size_t)size, &complete))
             return LINX_VOICE_PROTOCOL_FAILED;
         if (size) memcpy(session->control + session->control_used, session->scratch, (size_t)size);
@@ -857,7 +857,7 @@ static linx_voice_error_t receive(voice_session_t *session)
         session->frame_size = (size_t)payload_size;
     }
     bool complete = false;
-    if (!linx_lingxi_receive(&session->receiver, session->frame_opcode, session->frame_fin,
+    if (!linx_receive(&session->receiver, session->frame_opcode, session->frame_fin,
                              session->frame_size, session->scratch, (size_t)size, &complete))
         return LINX_VOICE_PROTOCOL_FAILED;
     if (!complete) return LINX_VOICE_OK;
@@ -872,7 +872,7 @@ static linx_voice_error_t conversation(voice_session_t *session)
         if (atomic_load(&listening)) {
             if (atomic_exchange(&finish_pending, false)) {
                 atomic_store(&listening, false);
-                if (!linx_lingxi_build_listen(session->scratch, sizeof(session->scratch), session->session_id, false))
+                if (!linx_build_listen(session->scratch, sizeof(session->scratch), session->session_id, false))
                     return LINX_VOICE_PROTOCOL_FAILED;
                 linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT,
                                                       session->scratch, strlen(session->scratch));
@@ -918,7 +918,7 @@ static linx_voice_error_t cleanup(voice_session_t *session)
     pending_cleanup = NULL;
     /* 退出不等待服务端回复，不重连，也不会重传用户上一轮的录音。 */
     if (session->ws) {
-        if (session->hello && linx_lingxi_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
+        if (session->hello && linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
             esp_transport_ws_send_raw(session->ws, WS_TRANSPORT_OPCODES_TEXT | WS_TRANSPORT_OPCODES_FIN,
                                       session->scratch, (int)strlen(session->scratch), READ_TIMEOUT_MS);
         esp_transport_close(session->ws);
@@ -1001,7 +1001,7 @@ static void worker(void *user)
     }
 }
 
-bool linx_lingxi_device_init(void)
+bool linx_device_init(void)
 {
     if (commands) return true;
     QueueHandle_t command_queue = xQueueCreate(1, sizeof(linx_voice_request_t));
@@ -1023,13 +1023,13 @@ bool linx_lingxi_device_init(void)
     return true;
 }
 
-bool linx_lingxi_device_request(const linx_voice_request_t *request, void *user)
+bool linx_device_request(const linx_voice_request_t *request, void *user)
 {
     (void)user;
     if (!request || (unsigned)request->command > LINX_VOICE_WIFI_SETUP) return false;
     bool starts = request->command == LINX_VOICE_START || request->command == LINX_VOICE_WIFI_SCAN ||
                   request->command == LINX_VOICE_WIFI_SAVE || request->command == LINX_VOICE_WIFI_SETUP;
-    if (!commands && (!starts || !linx_lingxi_device_init())) return false;
+    if (!commands && (!starts || !linx_device_init())) return false;
     if (starts) {
         atomic_store(&listening, false);
         atomic_store(&finish_pending, false);
@@ -1051,7 +1051,7 @@ bool linx_lingxi_device_request(const linx_voice_request_t *request, void *user)
     return xQueueOverwrite(commands, request) == pdTRUE;
 }
 
-bool linx_lingxi_device_poll(linx_voice_event_t *event)
+bool linx_device_poll(linx_voice_event_t *event)
 {
     if (!event || !events || xQueueReceive(events, event, 0) != pdTRUE) return false;
     return event->generation == atomic_load(&active_generation) &&

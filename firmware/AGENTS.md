@@ -4,7 +4,7 @@
 
 ## 维护边界
 
-- 当前硬件为 FoloToy AI Passport，ESP32-C3、8 MB Flash、无 PSRAM，ESP-IDF 5.5.3。LinX 0.2 保留离线任务界面，默认在语音页直接连接灵矽智能体并录放音；关闭 `CONFIG_LINX_LINGXI_ENABLE` 保留完整离线演示，尚未实现对讲。
+- 当前硬件为 FoloToy AI Passport，ESP32-C3、8 MB Flash、无 PSRAM，ESP-IDF 5.5.3。LinX 0.2 保留离线任务界面，默认在语音页直接连接灵矽智能体并录放音；关闭 `CONFIG_LINX_VOICE_ENABLE` 保留完整离线演示，尚未实现对讲。
 - 开始前检查 Git 状态，保留已有修改和未跟踪文件；只做当前任务，不擅自清理、覆盖或改动无关内容。
 - 自有应用放在 `main/`，字体和图片资源分别放在 `assets/fonts/`、`assets/images/`，对应测试和工具留在 `tests/`、`tools/`；硬件接入配置及必要补丁归入 `hardware/folotoy/ai-passport/`，不得混入应用页面。
 - 上游唯一版本来源为 `upstream.json`。使用 `python3 tools/prepare_upstream.py --print-path` 获取并校验依赖；缓存位于父仓库 `.local/dependencies/ai-passport/<提交号>/`，只读使用，不直接编辑或重新复制 BSP、上游文档、示例及技能。
@@ -16,7 +16,7 @@
 - 硬件事实以产品规格、实测结果及锁定上游的 `components/bsp/include/bsp_pins.h` 和相邻实现为依据。缺少任务所需硬件信息时先核实，不猜测引脚、时序或电源行为。
 - LVGL 非线程安全，LVGL 任务外访问对象必须持有 `bsp_lvgl_lock()`。退出页面前停止所有可能访问页面的任务、定时器、回调和事件处理器。
 - 按键回调不得阻塞，音频、存储、网络等慢操作放在工作任务。可测试的状态机、协议、计时和布局计算应与 ESP-IDF／LVGL 解耦，并有主机测试。
-- 灵矽协议逻辑放在 `main/linx_lingxi_protocol.*`，本型号的联网与音频运行实现放在 `hardware/folotoy/ai-passport/linx_lingxi_device.*`。设备任务不直接操作 LVGL，通过有界命令／状态及会话代号隔离已退出页面；取消后不自动重传语音。
+- 灵矽代码统一使用 `linx_` 前缀。协议逻辑放在 `main/linx_protocol.*`，联网与音频运行放在 `main/linx_device.*`，手机配网页放在 `main/linx_wifi_portal.*`；`hardware/` 只维护型号接入与必要的硬件差异，底层驱动复用固定上游 BSP。设备任务不直接操作 LVGL，通过有界命令／状态及会话代号隔离已退出页面；取消后不自动重传语音。
 - 音频和外部消息使用固定容量，不累计整段录音或回复。上行为 20 ms／640 字节 PCM；Opus 解码为 16 kHz 单声道，最大 120 ms 输出缓冲为 3840 字节。改变容量、格式或线程归属须补相应边界与取消测试，再检查真机内存预算。
 - 中文显示必须核对实际文案的字形覆盖、控件选用字体与行高；UTF-8 正确或编译成功不能证明真机显示正确。字体图片应修改来源或生成器后重新生成，并运行资源检查。
 - 不擅自改变分区、组件版本、驱动行为或增加依赖。本次语音接入已授权新增固定 `espressif/esp_audio_codec` 2.6.2，仅使用 Opus 解码；LVGL 保持 9.5.0。确需升级上游时明确锁定完整提交，审查差异并执行完整验证，保留来源与许可证。

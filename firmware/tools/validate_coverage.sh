@@ -63,10 +63,10 @@ compile_test test_linx_reader tests/test_linx_reader.c main/linx_reader.c main/l
 for test in test_linx_input test_linx_wifi test_linx_demo test_linx_navigation test_linx_reader; do
     "${run_dir}/${test}"
 done
-for variant in offline lingxi; do
-    runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main" -Ihardware/folotoy/ai-passport)
-    if [[ "${variant}" == "lingxi" ]]; then
-        runtime_flags+=(-DCONFIG_LINX_LINGXI_ENABLE=1)
+for variant in offline voice; do
+    runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main")
+    if [[ "${variant}" == "voice" ]]; then
+        runtime_flags+=(-DCONFIG_LINX_VOICE_ENABLE=1)
     fi
     compile_test "test_main_runtime_${variant}" "${runtime_flags[@]}" \
         tests/test_main_runtime.c main/main.c main/linx_input.c
@@ -77,15 +77,15 @@ for variant in offline lingxi; do
 done
 # 第三方 JSON 库不进入自有代码统计；两组语音测试仍调用其真实实现。
 "${coverage_cc}" -std=c11 -O0 -g -c "${cjson_dir}/cJSON.c" -o "${run_dir}/cJSON.o"
-compile_test test_linx_lingxi_protocol -I"${cjson_dir}" \
-    tests/test_linx_lingxi_protocol.c main/linx_lingxi_protocol.c "${run_dir}/cJSON.o" -lm
-"${run_dir}/test_linx_lingxi_protocol"
-compile_test test_linx_lingxi_device -Itests/lingxi_stubs \
-    -Ihardware/folotoy/ai-passport -I"${cjson_dir}" \
-    tests/test_linx_lingxi_device.c main/linx_lingxi_protocol.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
-"${run_dir}/test_linx_lingxi_device"
-compile_test test_linx_wifi_portal -Itests/lingxi_stubs -Itests/device_stubs \
-    -Ihardware/folotoy/ai-passport -I"${cjson_dir}" \
+compile_test test_linx_protocol -I"${cjson_dir}" \
+    tests/test_linx_protocol.c main/linx_protocol.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_protocol"
+compile_test test_linx_device -Itests/sdk_stubs \
+    -I"${cjson_dir}" \
+    tests/test_linx_device.c main/linx_protocol.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_device"
+compile_test test_linx_wifi_portal -Itests/sdk_stubs -Itests/device_stubs \
+    -I"${cjson_dir}" \
     tests/test_linx_wifi_portal.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
 "${run_dir}/test_linx_wifi_portal"
 

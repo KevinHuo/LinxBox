@@ -9,7 +9,7 @@ static void *portal_alloc(size_t count, size_t size);
 static void portal_free(void *memory);
 #define calloc portal_alloc
 #define free portal_free
-#include "../hardware/folotoy/ai-passport/linx_wifi_portal.c"
+#include "../main/linx_wifi_portal.c"
 #undef calloc
 #undef free
 
