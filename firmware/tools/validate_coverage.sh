@@ -79,5 +79,7 @@ coverage_args+=(-instr-profile="${run_dir}/combined.profdata" -sources "${source
 "${llvm_cov}" report "${coverage_args[@]}" > "${run_dir}/report.txt"
 "${llvm_cov}" show "${coverage_args[@]}" -format=html -show-branches=count \
     -output-dir="${run_dir}/html"
+# llvm-cov 为 HTML 创建私有子目录；报告上传由容器外的 runner 执行。
+chmod -R a+rX "${run_dir}/html"
 echo "报告目录：${run_dir}"
 python3 tools/check_c_coverage.py "${run_dir}/coverage.json" --summary "${run_dir}/summary.json"
