@@ -316,7 +316,7 @@ effective_capabilities =
 ## 16. 部署与代码边界
 
 ```text
-apps/
+src/
 ├── gateway/
 ├── desktop/
 └── admin-cli/

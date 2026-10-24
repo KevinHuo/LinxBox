@@ -109,14 +109,14 @@ Linx 同时承载两条相互隔离的逻辑通道：Agent 使用 MCP 控制任�
 
 | 子模块 | 目录 | 责任 |
 | --- | --- | --- |
-| `ui` | `apps/desktop/src/main`、`apps/desktop/src/renderer` | token、连接、项目授权、任务、完整 diff、验证、风险和取消 |
-| `gateway-client` | `apps/desktop/src/daemon/gateway-client` | 出站 WSS、hello、heartbeat、sequence、ACK 和恢复 |
-| `project-registry` | `apps/desktop/src/daemon/project-registry` | 本地路径、不透明 project ID、grant 和撤销 |
-| `policy` | `apps/desktop/src/daemon/policy` | realpath、能力交集、风险和本地最终拒绝 |
-| `tasks` | `apps/desktop/src/daemon/tasks` | 去重、执行所有权、状态、取消和崩溃恢复 |
-| `result-projector` | `apps/desktop/src/daemon/result-projector` | 将本地结果投影为 `local-detail`、`cloud-summary`、`device-content` 三级 |
-| `codex-adapter` | `apps/desktop/src/daemon/codex-adapter` | Codex app-server 生命周期与事件到领域事件的映射，见 [`codex` 模块](#codex-模块) |
-| `local-store` | `apps/desktop/src/daemon/local-store` | project、delivery、task/provider ownership、完整本地结果 |
+| `ui` | `src/desktop/main`、`src/desktop/renderer` | token、连接、项目授权、任务、完整 diff、验证、风险和取消 |
+| `gateway-client` | `src/desktop/daemon/gateway-client` | 出站 WSS、hello、heartbeat、sequence、ACK 和恢复 |
+| `project-registry` | `src/desktop/daemon/project-registry` | 本地路径、不透明 project ID、grant 和撤销 |
+| `policy` | `src/desktop/daemon/policy` | realpath、能力交集、风险和本地最终拒绝 |
+| `tasks` | `src/desktop/daemon/tasks` | 去重、执行所有权、状态、取消和崩溃恢复 |
+| `result-projector` | `src/desktop/daemon/result-projector` | 将本地结果投影为 `local-detail`、`cloud-summary`、`device-content` 三级 |
+| `codex-adapter` | `src/desktop/daemon/codex-adapter` | Codex app-server 生命周期与事件到领域事件的映射，见 [`codex` 模块](#codex-模块) |
+| `local-store` | `src/desktop/daemon/local-store` | project、delivery、task/provider ownership、完整本地结果 |
 
 结果分级：
 

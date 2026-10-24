@@ -61,7 +61,7 @@ description: |
 
 ### 仓库当前没有实现代码
 
-`apps/` 与 `tests/` 目前只有空骨架（`.gitkeep`），且 SPEC-0001 的工具链选型（D-2 校验库、D-3 类型生成、D-4 测试与覆盖率工具）还没锁定。这种状态下：
+`src/` 与 `tests/` 目前只有空骨架（`.gitkeep`），且 SPEC-0001 的工具链选型（D-2 校验库、D-3 类型生成、D-4 测试与覆盖率工具）还没锁定。这种状态下：
 
 - 交付物是契约文本 + Task Issue + 关联 Proposal + Execution Spec + 验收条件，不是代码。
 - 不要写依赖具体库 API 的实现，也不要在仓库里预置 `package.json`、`tsconfig.json`、`pnpm-workspace.yaml` 或 CI——那些属于 SPEC-0001 Slice 1 的工具链 bootstrap，选型锁定前进入仓库就是替维护者做了决定。

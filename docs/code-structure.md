@@ -6,7 +6,7 @@
 
 ## 1. 技术基线
 
-- TypeScript strict monorepo，使用 `pnpm-workspace.yaml` 管理 `apps/*`；`packageManager` 字段和 lockfile 锁定 pnpm 版本。
+- TypeScript strict monorepo，使用 `pnpm-workspace.yaml` 管理 `src/*`；`packageManager` 字段和 lockfile 锁定 pnpm 版本。
 - 契约的权威表述是 [`docs/contracts/`](./contracts/) 的文档；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定，文档阶段不预建目录。见 [ADR-0004](adr/0004-shared-contracts-as-plain-data.md)。
 - Node.js 使用开始实现时的 active LTS，在 `.node-version`、CI 和 Desktop 构建中锁定同一版本，不跟随本机漂移。
 - Gateway 是单进程模块化单体，使用 PostgreSQL 保存云端事实。
@@ -23,33 +23,31 @@ LinxBox/
 ├── .minimax/                           # AI 助手工作规范与工具脚本（非产品代码，不受模块 DRI 约束）
 │   └── skills/
 │       └── linxbox-contracts/          # 契约执行 skill：SKILL.md + references/ + scripts/
-├── apps/
-│   ├── gateway/
-│   │   └── src/
-│   │       ├── composition/       # 唯一组装根
-│   │       ├── mcp-transport/     # MCP DTO/progress/result
-│   │       ├── identity/          # client/token/binding
-│   │       ├── projects/          # 云端项目投影
-│   │       ├── tasks/             # use case + state machine
-│   │       ├── presentation/      # 设备安全任务/内容/回执投影
-│   │       ├── broker/            # Desktop WSS
-│   │       ├── outbox/            # Delivery worker
-│   │       ├── policy/            # 云端策略
-│   │       └── audit/             # 脱敏审计
-│   ├── desktop/
-│   │   └── src/
-│   │       ├── main/              # Electron 主进程与安全 IPC
-│   │       ├── renderer/          # 纯 UI，不直接访问 Node
-│   │       └── daemon/
-│   │           ├── composition/
-│   │           ├── gateway-client/
-│   │           ├── project-registry/
-│   │           ├── policy/
-│   │           ├── tasks/
-│   │           ├── result-projector/        # local-detail/cloud-summary/device-content 三级投影
-│   │           ├── local-store/
-│   │           └── codex-adapter/
-│   └── admin-cli/                      # client/binding/token 运维
+├── src/
+│   ├── gateway/                   # Cloud MCP Gateway
+│   │   ├── composition/           # 唯一组装根
+│   │   ├── mcp-transport/         # MCP DTO/progress/result
+│   │   ├── identity/              # client/token/binding
+│   │   ├── projects/              # 云端项目投影
+│   │   ├── tasks/                 # use case + state machine
+│   │   ├── presentation/          # 设备安全任务/内容/回执投影
+│   │   ├── broker/                # Desktop WSS
+│   │   ├── outbox/                # Delivery worker
+│   │   ├── policy/                # 云端策略
+│   │   └── audit/                 # 脱敏审计
+│   ├── desktop/                   # LinxBox Desktop
+│   │   ├── main/                  # Electron 主进程与安全 IPC
+│   │   ├── renderer/              # 纯 UI，不直接访问 Node
+│   │   └── daemon/
+│   │       ├── composition/
+│   │       ├── gateway-client/
+│   │       ├── project-registry/
+│   │       ├── policy/
+│   │       ├── tasks/
+│   │       ├── result-projector/  # local-detail/cloud-summary/device-content 三级投影
+│   │       ├── local-store/
+│   │       └── codex-adapter/
+│   └── admin-cli/                 # client/binding/token 运维
 ├── docs/
 │   ├── contracts/
 │   ├── adr/

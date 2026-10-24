@@ -14,7 +14,7 @@
 ## 1. 定位、依赖和消费者
 
 - 上游契约：本 Spec 只实现 `docs/contracts/` 下四份已接受契约的字段与语义，不新增、不改写契约含义。
-- 下游消费者：`apps/gateway` 的 `mcp-transport`、`presentation`、`broker`、`tasks`；`apps/desktop` 的 `daemon/gateway-client`、`tasks`、`codex-adapter`、`local-store`；`apps/admin-cli`；`tests/fixtures/device`（Issue #4 离线演示 fixture）；producer/consumer 契约测试。
+- 下游消费者：`src/gateway` 的 `mcp-transport`、`presentation`、`broker`、`tasks`；`src/desktop` 的 `daemon/gateway-client`、`tasks`、`codex-adapter`、`local-store`；`src/admin-cli`；`tests/fixtures/device`（Issue #4 离线演示 fixture）；producer/consumer 契约测试。
 - 依赖 Spec/PR：[Task #5](https://github.com/KevinHuo/LinxBox/issues/5)（仓库内契约基线入库）。
 - 被替代内容：无。这是本仓库首次把契约实现为 schema、类型与 fixtures。
 - 接受阻塞项：
@@ -24,7 +24,7 @@
 
 ## 2. 当前实现事实
 
-- 仓库当前没有业务代码：`apps/` 只有空骨架，`.minimax/` 是助手工作规范。
+- 仓库当前没有业务代码：`src/` 只有空骨架，`.minimax/` 是助手工作规范。
 - 没有 schema 文件、类型定义、fixtures、测试运行器或 CI。
 - 已有事实仅限 `docs/` 下的语义基线文档，以及 Issue #4 提供的设备端 UI/状态机离线 fixture 需求。
 
@@ -194,7 +194,7 @@ sending -> desktop_received -> queued -> agent_accepted -> running
 
 | 顺序 | PR Slice | DRI | Reviewer | 依赖 | 输出 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 工具链与骨架：pnpm workspace、schema 校验库、类型生成、测试运行器与覆盖率接入 | 待指派 | quality 模块主负责人 | ADR-0003、ADR-0004、工具链选型决策 | 可运行的 `apps/*` 骨架与 CI 入口 |
+| 1 | 工具链与骨架：pnpm workspace、schema 校验库、类型生成、测试运行器与覆盖率接入 | 待指派 | quality 模块主负责人 | ADR-0003、ADR-0004、工具链选型决策 | 可运行的 `src/*` 骨架与 CI 入口 |
 | 2 | 领域类型与状态机：标识符值对象、Task/Receipt 转换、风险等级（实现于各应用，语义以 schema 为准） | 待指派 | contracts 备份评审人 | Slice 1 | 领域类型与状态机单测 |
 | 3 | MCP 与 Result schema（落位由本 Slice 决定） | 待指派 | contracts 备份评审人 | Slice 2 | MCP 工具与结果 schema、错误 schema |
 | 4 | Device 与 Gateway/Desktop schema（落位由本 Slice 决定） | 待指派 | contracts 备份评审人 | Slice 2 | 展示投影、envelope 与命令/事件 schema |

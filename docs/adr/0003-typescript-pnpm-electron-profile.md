@@ -9,7 +9,7 @@ Gateway、Desktop、公共契约和测试若各自选择语言与 DTO，会让 A
 
 ## 决策
 
-- 仓库采用 TypeScript strict monorepo，由 pnpm workspace 管理 `apps/*`、`packages/*` 和 `plugins/*`。**目录布局部分已由 [ADR-0004](./0004-shared-contracts-as-plain-data.md) 修订**：workspace 成员只保留 `apps/*`，MVP 不建 `packages/` 与 `plugins/`。
+- 仓库采用 TypeScript strict monorepo，由 pnpm workspace 管理 `apps/*`、`packages/*` 和 `plugins/*`。**目录布局部分已由 [ADR-0004](./0004-shared-contracts-as-plain-data.md) 修订**：workspace 成员只保留 `src/*`，MVP 不建 `packages/` 与 `plugins/`。
 - Node.js 使用开始实现时的 active LTS，并在仓库、CI 和 Desktop 构建中锁定同一版本。
 - Gateway 采用模块化单体并以 PostgreSQL 保存云端事实。
 - Desktop 采用 Electron，将 sandboxed Renderer、Main 和 Daemon 分离；SQLite 保存本地执行事实。

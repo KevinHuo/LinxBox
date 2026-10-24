@@ -24,13 +24,13 @@ Gateway 与 Desktop 是两个独立进程、两套部署（云端 PostgreSQL / �
 - 取消仓库顶层的 `packages/` 与 `plugins/` 目录。
 - **契约的权威表述是 [`docs/contracts/`](../contracts/) 的文档。** JSON Schema 与 fixtures 是实现产物，不是文档阶段的交付物；落位由对应实现 Spec 决定，在那之前不预建目录、不放占位文件。
 - Gateway 与 Desktop 各自实现 TypeScript 类型；一致性由同一组 fixtures 的 producer/consumer 双向校验保证（见 [`docs/modules.md`](../modules.md) 的"类型从 schema 生成或双向一致性检查"）。是否用代码生成类型，由首个契约 Task 在选型时决定。
-- pnpm workspace 保留，成员只有 `apps/*`；Gateway 与 Desktop 之间不建立代码依赖。
+- pnpm workspace 保留，成员只有 `src/*`；Gateway 与 Desktop 之间不建立代码依赖。
 - 领域类型（ID 值对象、Task/Receipt 状态与转换）在各应用内实现，跨边界语义以 [`docs/contracts/domain.md`](../contracts/domain.md) 为准，不复制第二份状态机。
 - `plugins/` 的能力属于产品化阶段，MVP 不预建目录。
 
 ## 后果
 
-- 仓库顶层只剩 `apps/`、`docs/`、`tests/`（以及助手工作规范目录），MVP 内不出现空包或占位目录。
+- 仓库顶层只剩 `src/`、`docs/`、`tests/`（以及助手工作规范目录），MVP 内不出现空包或占位目录。
 - 失去包依赖图对"契约层不依赖 transport"的强制力，改为靠目录约定、契约测试和评审保证。
 - schema 变更不再自动同步两端类型；漂移会在契约测试或 CI 失败，而不是编译期失败。因此契约测试是必选项，不是可选项。
 - 灵矽与固件工程在实现阶段直接消费 schema 与 fixture 文件，不需要安装本仓库的包。
