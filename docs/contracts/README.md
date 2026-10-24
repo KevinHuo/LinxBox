@@ -1,0 +1,21 @@
+# 契约索引
+
+> Status: accepted  
+> Version: 1.0  
+> Last updated: 2026-10-24
+
+| 契约 | 边界 | 版本 |
+| --- | --- | --- |
+| [MCP 工具](./mcp.md) | 灵矽 AI <-> Gateway | `linxbox.mcp/v1` |
+| [Device/Linx 展示与输入](./device-linx.md) | AI Passport/ESP32 <-> 灵矽 Presentation Bridge | `device-presentation/v1` |
+| [Gateway/Desktop](./gateway-desktop.md) | Gateway <-> Desktop Daemon | `1.0` |
+| [领域状态与结果](./domain.md) | Gateway、Desktop、UI、回执和设备投影 | `task-domain/v1`、`task-result-v1` |
+
+OpenAI Codex app-server 协议不由 LinxBox 重新定义。`codex-adapter` 必须以[OpenAI 官方 app-server 文档](https://developers.openai.com/codex/app-server/)和已锁定的 app-server 版本为依据，将其映射到本目录的稳定领域契约。
+
+## 变更规则
+
+- schema 文件是实现阶段的单一事实源；本文档集是 schema 落地前的字段和语义基线。
+- 新增 optional 字段可在同一主版本演进；删除、改名、改变类型或语义必须升约主版本。
+- 安全请求默认拒绝未知字段；仅显式声明可扩展的 metadata 容器允许未知键。
+- 每个契约变更必须有 producer/consumer fixture、兼容性测试和迁移说明。
