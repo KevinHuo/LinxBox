@@ -14,7 +14,7 @@
 ## 1. 定位、依赖和消费者
 
 - 上游契约：本 Spec 只实现 `docs/contracts/` 下四份已接受契约的字段与语义，不新增、不改写契约含义。
-- 下游消费者：`src/gateway` 的 `mcp-transport`、`presentation`、`broker`、`tasks`；`src/desktop` 的 `daemon/gateway-client`、`tasks`、`codex-adapter`、`local-store`；`src/admin-cli`；`tests/fixtures/device`（Issue #4 离线演示 fixture）；producer/consumer 契约测试。
+- 下游消费者：`src/gateway` 的 `mcp-transport`、`presentation`、`broker`、`tasks`；`src/desktop` 的 `daemon/gateway-client`、`tasks`、`codex-adapter`、`local-store`；`src/admin-cli`；设备端 UI/状态机 fixture（Issue #4，由该 Issue 的实现 slice 创建）；producer/consumer 契约测试。
 - 依赖 Spec/PR：[Task #5](https://github.com/KevinHuo/LinxBox/issues/5)（仓库内契约基线入库）。
 - 被替代内容：无。这是本仓库首次把契约实现为 schema、类型与 fixtures。
 - 接受阻塞项：
@@ -24,7 +24,7 @@
 
 ## 2. 当前实现事实
 
-- 仓库当前没有业务代码：`src/` 与 `tests/` 只有空骨架，不含任何实现。
+- 仓库当前没有业务代码：`src/` 只有空骨架，不含任何实现；测试目录由各实现 slice 按需创建。
 - 没有 schema 文件、类型定义、fixtures、测试运行器或 CI。
 - 已有事实仅限 `docs/` 下的语义基线文档，以及 Issue #4 提供的设备端 UI/状态机离线 fixture 需求。
 

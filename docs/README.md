@@ -41,17 +41,11 @@ LinxBox/
 │   │       ├── local-store/
 │   │       └── codex-adapter/
 │   └── admin-cli/                  # client/binding/token 运维
-├── docs/                           # 契约与规范
+└── docs/                           # 契约与规范
 │   ├── contracts/                  # 边界契约（对外）
 │   ├── adr/                        # 已接受决策
 │   └── process/                    # 执行规范：工程规范、质量门禁、Execution Spec
 │       └── specs/                  # Execution Spec 流程、模板与各 Spec
-└── tests/
-    ├── fixtures/
-    │   └── device/                # Issue #4 UI/状态机与联网契约 fixtures
-    ├── integration/
-    ├── security/
-    └── e2e/
 ```
 
 目录骨架已按上表创建，目录内当前为空（仅 `.gitkeep`）。`pnpm-workspace.yaml`、各包 `package.json`、`tsconfig.json`、lockfile 与 CI 属于工具链 bootstrap，由 [`SPEC-0001`](process/specs/0001-contracts-schema-and-fixtures.md) 的 Slice 1 在选型锁定后补入；在此之前不创建，避免未锁定的依赖与版本进入仓库。
