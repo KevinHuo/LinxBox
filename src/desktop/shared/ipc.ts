@@ -113,6 +113,19 @@ const codexSessionsReadSchema = z
   })
   .strict();
 
+const codexSessionContinueSchema = z
+  .object({
+    threadId: z.string().min(1).max(128),
+    prompt: z.string().min(1).max(20_000),
+  })
+  .strict();
+
+const codexSessionAuthorizeSchema = z
+  .object({
+    threadId: z.string().min(1).max(128),
+  })
+  .strict();
+
 export type ConnectionSaveInput = z.infer<typeof connectionSaveSchema>;
 export type ProjectGrantInput = z.infer<typeof projectGrantSchema>;
 export type ProjectRevokeInput = z.infer<typeof projectRevokeSchema>;
@@ -127,6 +140,8 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.turn.interrupt': codexTurnInterruptSchema,
   'codex.sessions.list': codexSessionsListSchema,
   'codex.sessions.read': codexSessionsReadSchema,
+  'codex.session.continue': codexSessionContinueSchema,
+  'codex.session.authorize': codexSessionAuthorizeSchema,
   'connection.read': emptyPayloadSchema,
   'connection.save': connectionSaveSchema,
   'connection.test': emptyPayloadSchema,

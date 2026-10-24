@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cancelTask,
+  findAuthorizedProject,
   createDesktopState,
   getTask,
   grantProject,
@@ -175,5 +176,53 @@ describe('diagnostics', () => {
     expect(diagnostics.databasePath).toBeNull();
     expect(diagnostics.connected).toBe(false);
     expect(diagnostics.lastError).toBeNull();
+  });
+});
+
+describe('findAuthorizedProject', () => {
+  const state = () =>
+    createDesktopState({
+      projects: [
+        {
+          projectId: 'prj_1',
+          displayName: 'app',
+          rootPath: '/Users/demo/app',
+          capabilities: ['read'],
+          grantVersion: 1,
+          enabled: true,
+        },
+      ],
+    });
+
+  it('covers the project root itself', () => {
+    expect(findAuthorizedProject(state(), '/Users/demo/app')?.projectId).toBe('prj_1');
+  });
+
+  it('covers a directory inside the project', () => {
+    expect(findAuthorizedProject(state(), '/Users/demo/app/src')?.projectId).toBe('prj_1');
+  });
+
+  it('does not cover a sibling that shares a name prefix', () => {
+    expect(findAuthorizedProject(state(), '/Users/demo/app-other')).toBeNull();
+  });
+
+  it('does not cover a directory outside every project', () => {
+    expect(findAuthorizedProject(state(), '/Users/demo/other')).toBeNull();
+  });
+
+  it('does not cover a revoked project', () => {
+    const revoked = createDesktopState({
+      projects: [
+        {
+          projectId: 'prj_1',
+          displayName: 'app',
+          rootPath: '/Users/demo/app',
+          capabilities: ['read'],
+          grantVersion: 2,
+          enabled: false,
+        },
+      ],
+    });
+    expect(findAuthorizedProject(revoked, '/Users/demo/app')).toBeNull();
   });
 });

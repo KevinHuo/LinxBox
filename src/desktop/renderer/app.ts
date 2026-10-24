@@ -60,15 +60,16 @@ const state = {
   codexSessions: [] as CodexSessionFacts[],
   codexSessionDetail: null as CodexSessionDetailFacts | null,
   selectedThreadId: null as string | null,
+  pendingPrompt: '' as string,
   runningOnly: false,
   selectedTaskId: null as string | null,
 };
 const labels: Record<string, readonly [string, string]> = {
+  codex: ['LOCAL CODEX', 'Codex 会话'],
   overview: ['LINXBOX HOME', '你好，这里是 LinxBox'],
   lingxi: ['MCP WEBSOCKET', '连接 MCP WebSocket'],
   projects: ['LOCAL PROJECTS', '本地项目'],
   tasks: ['TASK HISTORY', '任务记录'],
-  codex: ['LOCAL CODEX', 'Codex 会话'],
   diagnostics: ['SETTINGS & DIAGNOSTICS', '设置与诊断'],
 };
 
@@ -294,12 +295,18 @@ function renderCodexPanel(): void {
 
   const runButton = qs<HTMLButtonElement>('#codex-run');
   const interruptButton = qs<HTMLButtonElement>('#codex-interrupt');
+  const promptLabel = qs('#codex-prompt-label');
   const running = isCodexTurnRunning(state.codexTurn);
+  const hasSelection = state.selectedThreadId !== null;
   if (runButton) {
-    runButton.disabled = running;
+    runButton.disabled = !hasSelection || running;
+    runButton.textContent = hasSelection ? '继续这个对话' : '先选一个会话';
   }
   if (interruptButton) {
     interruptButton.disabled = !running;
+  }
+  if (promptLabel) {
+    promptLabel.textContent = hasSelection ? '继续这个对话' : '先在左边选一个会话';
   }
 
   const projectSelect = qs<HTMLSelectElement>('#codex-project');
@@ -413,6 +420,19 @@ async function pollCodexTurn(): Promise<void> {
   const turn = (await bridge.readCodexTurn()) as CodexTurnFacts;
   state.codexTurn = turn;
   renderCodexPanel();
+
+  // 继续对话之后，新消息会落在同一个 thread 里，所以要重读一次对话记录。
+  if (state.selectedThreadId !== null) {
+    const detail = (await bridge.readCodexSession({ threadId: state.selectedThreadId })) as {
+      ok?: boolean;
+      data?: CodexSessionDetailFacts;
+    };
+    if (detail?.ok) {
+      state.codexSessionDetail = detail.data ?? null;
+      renderCodexMessages();
+    }
+  }
+
   if (!isCodexTurnRunning(turn)) {
     stopCodexPolling();
   }
@@ -462,8 +482,10 @@ async function readCodexSession(threadId: string): Promise<void> {
   }
   state.selectedThreadId = threadId;
   state.codexSessionDetail = result.data ?? null;
+  showAuthorizeButton(false);
   renderCodexSessions();
   renderCodexMessages();
+  renderCodexPanel();
 }
 
 async function probeCodex(): Promise<void> {
@@ -477,33 +499,72 @@ async function probeCodex(): Promise<void> {
   showToast(probe.available ? '本机 Codex 已就绪' : (probe.error ?? '未找到本机 Codex'));
 }
 
-async function runCodexTurn(): Promise<void> {
+function showAuthorizeButton(visible: boolean): void {
+  const button = qs<HTMLButtonElement>('#codex-authorize');
+  if (button) {
+    button.hidden = !visible;
+  }
+}
+
+async function continueCodexSession(): Promise<void> {
   if (bridge === null) {
     showToast('未接入桌面端桥接，仅本地预览');
     return;
   }
+  const threadId = state.selectedThreadId;
+  if (threadId === null) {
+    showToast('先在左边选一个会话');
+    return;
+  }
   const prompt = qs<HTMLTextAreaElement>('#codex-prompt')?.value.trim() ?? '';
-  const projectId = qs<HTMLSelectElement>('#codex-project')?.value ?? '';
-  if (!prompt) {
-    showToast('请填写任务提示词');
+  if (prompt.length === 0) {
+    showToast('写点内容再继续');
     return;
   }
-  if (!projectId) {
-    showToast('请先在"本地项目"里授权一个项目');
-    return;
-  }
-  const result = (await bridge.startCodexTurn({ prompt, projectId })) as {
+  state.pendingPrompt = prompt;
+
+  const result = (await bridge.continueCodexSession({ threadId, prompt })) as {
     ok?: boolean;
+    code?: string;
     message?: string;
     data?: CodexTurnFacts;
   };
   if (!result?.ok) {
-    showToast(result?.message ?? '启动失败');
+    showToast(result?.message ?? '继续失败');
+    showAuthorizeButton(result?.code === 'PERMISSION_DENIED');
     return;
+  }
+  showAuthorizeButton(false);
+  const input = qs<HTMLTextAreaElement>('#codex-prompt');
+  if (input) {
+    input.value = '';
   }
   state.codexTurn = result.data ?? state.codexTurn;
   renderCodexPanel();
   startCodexPolling();
+}
+
+async function authorizeCodexSession(): Promise<void> {
+  if (bridge === null) {
+    return;
+  }
+  const threadId = state.selectedThreadId;
+  if (threadId === null) {
+    return;
+  }
+  const result = (await bridge.authorizeCodexSession({ threadId })) as {
+    ok?: boolean;
+    message?: string;
+  };
+  if (!result?.ok) {
+    showToast(result?.message ?? '授权失败');
+    return;
+  }
+  showToast('已授权该目录');
+  showAuthorizeButton(false);
+  if (state.pendingPrompt.length > 0) {
+    await continueCodexSession();
+  }
 }
 
 async function interruptCodexTurn(): Promise<void> {
@@ -638,7 +699,11 @@ function wireEvents(): void {
   });
 
   qs('#codex-run')?.addEventListener('click', () => {
-    void runCodexTurn();
+    void continueCodexSession();
+  });
+
+  qs('#codex-authorize')?.addEventListener('click', () => {
+    void authorizeCodexSession();
   });
 
   qs('#codex-interrupt')?.addEventListener('click', () => {
@@ -710,5 +775,7 @@ async function revokeProject(projectId: string): Promise<void> {
 }
 
 wireEvents();
+// 让顶栏与默认激活的导航项保持一致，避免静态标题和实际视图对不上。
+switchView(qs<HTMLElement>('.nav-item.is-active')?.dataset['view'] ?? 'codex');
 renderAll();
 void refreshFromBridge();

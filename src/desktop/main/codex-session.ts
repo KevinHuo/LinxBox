@@ -184,6 +184,37 @@ export class CodexSession {
     };
   }
 
+  /**
+   * Continue an existing session with a new turn.
+   *
+   * The working directory comes from the provider's own record of the
+   * session, never from the caller.
+   */
+  async continueSession(threadId: string, prompt: string): Promise<CodexTurnView> {
+    const client = await this.connect();
+    const session = await client.readSession(threadId);
+    if (session === null) {
+      throw new Error('会话不存在');
+    }
+    if (session.cwd === null) {
+      throw new Error('该会话没有工作目录，无法继续');
+    }
+    await client.continueSession({
+      threadId,
+      prompt,
+      cwd: session.cwd,
+      clientMessageId: `linxbox-${Date.now().toString(36)}`,
+    });
+    return this.status();
+  }
+
+  /** The working directory a session belongs to, as the provider records it. */
+  async sessionCwd(threadId: string): Promise<string | null> {
+    const client = await this.connect();
+    const session = await client.readSession(threadId);
+    return session?.cwd ?? null;
+  }
+
   /** The observable state of the current turn. */
   status(): CodexTurnView {
     return this.client === null ? EMPTY_TURN_VIEW : toTurnView(this.client.turnState);

@@ -26,20 +26,20 @@
         </div>
 
         <nav class="rail-nav">
-          <button class="nav-item is-active" type="button" data-view="overview" aria-current="page">
-            <span class="nav-index">01</span><span>首页</span>
+          <button class="nav-item is-active" type="button" data-view="codex" aria-current="page">
+            <span class="nav-index">01</span><span>Codex 会话</span>
+          </button>
+          <button class="nav-item" type="button" data-view="overview">
+            <span class="nav-index">02</span><span>首页</span>
           </button>
           <button class="nav-item" type="button" data-view="lingxi">
-            <span class="nav-index">02</span><span>MCP 连接</span>
+            <span class="nav-index">03</span><span>MCP 连接</span>
           </button>
           <button class="nav-item" type="button" data-view="projects">
-            <span class="nav-index">03</span><span>本地项目</span>
+            <span class="nav-index">04</span><span>本地项目</span>
           </button>
           <button class="nav-item" type="button" data-view="tasks">
-            <span class="nav-index">04</span><span>任务记录</span>
-          </button>
-          <button class="nav-item" type="button" data-view="codex">
-            <span class="nav-index">05</span><span>Codex 会话</span>
+            <span class="nav-index">05</span><span>任务记录</span>
           </button>
           <button class="nav-item" type="button" data-view="diagnostics">
             <span class="nav-index">06</span><span>设置与诊断</span>
@@ -56,8 +56,8 @@
       <main id="workspace" class="workspace" tabindex="-1">
         <header class="topbar">
           <div>
-            <p class="eyebrow" id="view-kicker">LINXBOX HOME</p>
-            <h1 id="view-title">你好，这里是 LinxBox</h1>
+            <p class="eyebrow" id="view-kicker">LOCAL CODEX</p>
+            <h1 id="view-title">Codex 会话</h1>
           </div>
           <div class="topbar-actions">
             <div class="connection-pill" id="connection-pill" data-state="offline">
@@ -70,7 +70,7 @@
           </div>
         </header>
 
-        <section class="view is-active" data-view-panel="overview" aria-labelledby="view-title">
+        <section class="view" data-view-panel="overview" aria-labelledby="view-title">
           <div class="hero-grid">
             <article class="mission-card reveal">
               <p class="eyebrow">YOUR MAC, READY FOR LINGXI</p>
@@ -288,7 +288,7 @@
           </div>
         </section>
 
-        <section class="view" data-view-panel="codex" aria-labelledby="codex-heading">
+        <section class="view is-active" data-view-panel="codex" aria-labelledby="codex-heading">
           <div class="section-intro">
             <div>
               <p class="eyebrow">LOCAL CODEX</p>
@@ -346,17 +346,19 @@
               <div class="codex-messages" id="codex-messages"></div>
               <div class="codex-run">
                 <label>
-                  <span>任务提示词</span>
-                  <textarea id="codex-prompt" rows="3">
-只回答一句话：当前工作目录里能看到什么？不要执行任何命令。</textarea>
-                </label>
-                <label>
-                  <span>执行项目</span
-                  ><select id="codex-project"></select>
+                  <span id="codex-prompt-label">继续这个对话</span>
+                  <textarea
+                    id="codex-prompt"
+                    rows="3"
+                    placeholder="选中左侧一个会话，然后在这里继续聊…"
+                  ></textarea>
                 </label>
                 <div class="form-actions">
-                  <button class="button button-primary" id="codex-run" type="button">
-                    运行真实任务
+                  <button class="button button-primary" id="codex-run" disabled type="button">
+                    继续这个对话
+                  </button>
+                  <button class="button button-quiet" id="codex-authorize" hidden type="button">
+                    授权该目录
                   </button>
                   <button class="button button-quiet" id="codex-interrupt" disabled type="button">
                     中断

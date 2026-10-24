@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import {
   cancelTask,
   createDesktopState,
+  findAuthorizedProject,
   getTask,
   grantProject,
   listProjects,
@@ -163,6 +164,97 @@ function handleCodexTurnStatus(): unknown {
   return codexSession.status();
 }
 
+/**
+ * Continue a session the user is looking at.
+ *
+ * The working directory comes from the provider's own record of the session.
+ * The Desktop only runs it when that directory is covered by a project the
+ * user has explicitly authorised.
+ */
+async function handleCodexSessionContinue(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.session.continue', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { threadId, prompt } = parsed.data as { threadId: string; prompt: string };
+
+  const cwd = await codexSession.sessionCwd(threadId);
+  if (cwd === null) {
+    return { ok: false, code: 'NOT_FOUND', message: '会话不存在或没有工作目录' };
+  }
+  if (findAuthorizedProject(state, cwd) === null) {
+    return {
+      ok: false,
+      code: 'PERMISSION_DENIED',
+      message: `这个会话在 ${cwd}，先授权这个目录才能继续`,
+    };
+  }
+
+  try {
+    const turn = await codexSession.continueSession(threadId, prompt);
+    return { ok: true, data: turn };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '继续会话失败';
+    logger.error('继续 Codex 会话失败', { message });
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
+/**
+ * Authorise the directory a session belongs to.
+ *
+ * The directory still has to be confirmed in the macOS picker, so the
+ * renderer can never widen the grant on its own.
+ */
+async function handleCodexSessionAuthorize(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.session.authorize', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { threadId } = parsed.data as { threadId: string };
+
+  const cwd = await codexSession.sessionCwd(threadId);
+  if (cwd === null) {
+    return { ok: false, code: 'NOT_FOUND', message: '会话不存在或没有工作目录' };
+  }
+
+  const picked = await dialog.showOpenDialog({
+    title: '授权这个会话所在的目录',
+    defaultPath: cwd,
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  const selected = picked.canceled ? undefined : picked.filePaths[0];
+  if (!selected) {
+    return { ok: false, code: 'NOT_FOUND', message: '未选择目录' };
+  }
+
+  let rootPath: string;
+  try {
+    rootPath = realpathSync(selected);
+  } catch {
+    return { ok: false, code: 'INVALID_ARGUMENT', message: '所选目录不可用' };
+  }
+  if (rootPath !== cwd) {
+    return {
+      ok: false,
+      code: 'POLICY_DENIED',
+      message: '所选目录与这个会话的工作目录不一致',
+    };
+  }
+
+  const name =
+    rootPath
+      .split('/')
+      .filter((part) => part.length > 0)
+      .pop() ?? rootPath;
+  const project = grantProject(
+    state,
+    { displayName: name, capabilities: ['read', 'write', 'test'] },
+    rootPath,
+  );
+  return { ok: true, data: project };
+}
+
 async function handleCodexSessionsList(payload: unknown): Promise<unknown> {
   const parsed = parseIpcRequest('codex.sessions.list', payload);
   if (!parsed.ok) {
@@ -240,6 +332,8 @@ async function handleCodexTurnInterrupt(payload: unknown): Promise<unknown> {
 
 const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'codex.probe': () => handleCodexProbe(),
+  'codex.session.continue': (payload) => handleCodexSessionContinue(payload),
+  'codex.session.authorize': (payload) => handleCodexSessionAuthorize(payload),
   'codex.sessions.list': (payload) => handleCodexSessionsList(payload),
   'codex.sessions.read': (payload) => handleCodexSessionsRead(payload),
   'codex.turn.start': (payload) => handleCodexTurnStart(payload),

@@ -252,6 +252,32 @@ export function cancelTask(state: DesktopState, taskId: string): boolean {
   return true;
 }
 
+/**
+ * Find the authorised project that covers a directory.
+ *
+ * The boundary check is path-segment aware: a root of `/a/proj` does not
+ * cover `/a/proj-other`.
+ */
+export function findAuthorizedProject(
+  state: DesktopState,
+  directory: string,
+): ProjectRecord | null {
+  for (const project of state.projects.values()) {
+    if (!project.enabled) {
+      continue;
+    }
+    const root = project.rootPath;
+    if (directory === root) {
+      return project;
+    }
+    const prefix = root.endsWith('/') ? root : `${root}/`;
+    if (directory.startsWith(prefix)) {
+      return project;
+    }
+  }
+  return null;
+}
+
 /** Local diagnostics for the settings page. */
 export function readDiagnostics(state: DesktopState): DiagnosticsView {
   return {

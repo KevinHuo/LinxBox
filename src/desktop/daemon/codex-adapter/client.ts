@@ -223,6 +223,25 @@ export class CodexClient {
   }
 
   /**
+   * Continue an existing session with a new turn.
+   *
+   * The thread is resumed first so the provider keeps its own history, then a
+   * new turn is started inside it. The reply comes back through the normal
+   * domain events.
+   */
+  async continueSession(input: {
+    threadId: string;
+    prompt: string;
+    cwd: string;
+    clientMessageId: string;
+  }): Promise<{ threadId: string; turnId: string }> {
+    this.assertInitialized();
+    const resumed = await this.resumeThread(input.threadId, input.cwd);
+    const turnId = await this.startTurn(resumed, input.prompt, input.clientMessageId);
+    return { threadId: resumed, turnId };
+  }
+
+  /**
    * List the sessions the provider knows about.
    *
    * This is a local read of the provider's own thread store. It does not

@@ -222,3 +222,112 @@ describe('CodexSession session browsing', () => {
     session.close();
   });
 });
+
+describe('CodexSession continuing a conversation', () => {
+  it('resumes the thread and starts a new turn in it', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const continuing = session.continueSession('th_1', '继续说');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // 先是 thread/read，再是 thread/resume，最后是 turn/start
+    harness.child.emitMessage({ id: 2, result: { thread: { id: 'th_1', cwd: '/tmp/work' } } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 3, result: { thread: { id: 'th_1' } } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 4, result: { turn: { id: 'tn_9', status: 'inProgress' } } });
+
+    const turn = await continuing;
+    expect(turn.turnId).toBe('tn_9');
+    expect(turn.status).toBe('running');
+
+    const methods = harness.child.sentMessages().map((message) => message['method']);
+    expect(methods).toContain('thread/read');
+    expect(methods).toContain('thread/resume');
+    expect(methods).toContain('turn/start');
+    session.close();
+  });
+
+  it('refuses to continue a session that does not exist', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const continuing = session.continueSession('th_missing', '继续说');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: {} } });
+
+    await expect(continuing).rejects.toThrow('会话不存在');
+    session.close();
+  });
+
+  it('refuses to continue a session without a working directory', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const continuing = session.continueSession('th_1', '继续说');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: { id: 'th_1' } } });
+
+    await expect(continuing).rejects.toThrow('没有工作目录');
+    session.close();
+  });
+
+  it('reports the working directory a session belongs to', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const reading = session.sessionCwd('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: { id: 'th_1', cwd: '/tmp/work' } } });
+
+    await expect(reading).resolves.toBe('/tmp/work');
+    session.close();
+  });
+
+  it('reports no working directory for a session without one', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const reading = session.sessionCwd('th_1');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: {} } });
+
+    await expect(reading).resolves.toBeNull();
+    session.close();
+  });
+});

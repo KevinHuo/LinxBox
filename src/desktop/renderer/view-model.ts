@@ -244,6 +244,8 @@ export function isCodexTurnRunning(turn: CodexTurnFacts): boolean {
 export interface LinxboxBridge {
   probeCodex(): Promise<unknown>;
   listCodexSessions(payload?: unknown): Promise<unknown>;
+  continueCodexSession(payload: unknown): Promise<unknown>;
+  authorizeCodexSession(payload: unknown): Promise<unknown>;
   readCodexSession(payload: unknown): Promise<unknown>;
   startCodexTurn(payload: unknown): Promise<unknown>;
   readCodexTurn(payload?: unknown): Promise<unknown>;
