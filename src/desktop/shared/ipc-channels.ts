@@ -17,7 +17,6 @@ export const IPC_METHODS = [
   'codex.turn.start',
   'codex.conversation.read',
   'codex.projects.list',
-  'codex.session.authorize',
   'codex.session.continue',
   'codex.sessions.list',
   'codex.sessions.read',

@@ -17,7 +17,6 @@ export interface LinxboxApi {
   listCodexProjects(payload?: unknown): Promise<unknown>;
   readCodexConversation(payload: unknown): Promise<unknown>;
   continueCodexSession(payload: unknown): Promise<unknown>;
-  authorizeCodexSession(payload: unknown): Promise<unknown>;
   readCodexSession(payload: unknown): Promise<unknown>;
   startCodexTurn(payload: unknown): Promise<unknown>;
   readCodexTurn(payload?: unknown): Promise<unknown>;
@@ -50,7 +49,6 @@ export function createLinxboxApi(invoke: InvokeFn): LinxboxApi {
     listCodexProjects: (payload = {}) => call('codex.projects.list', payload),
     readCodexConversation: (payload) => call('codex.conversation.read', payload),
     continueCodexSession: (payload) => call('codex.session.continue', payload),
-    authorizeCodexSession: (payload) => call('codex.session.authorize', payload),
     readCodexSession: (payload) => call('codex.sessions.read', payload),
     startCodexTurn: (payload) => call('codex.turn.start', payload),
     readCodexTurn: (payload = {}) => call('codex.turn.status', payload),

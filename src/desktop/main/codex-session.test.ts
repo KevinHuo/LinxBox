@@ -292,44 +292,6 @@ describe('CodexSession continuing a conversation', () => {
     await expect(continuing).rejects.toThrow('没有工作目录');
     session.close();
   });
-
-  it('reports the working directory a session belongs to', async () => {
-    const harness = createFakeProcess();
-    const session = new CodexSession({
-      binary: { path: '/opt/codex', version: '1' },
-      spawnFn: harness.spawnFn,
-    });
-    const probing = session.probe();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    harness.child.emitMessage({ id: 1, result: initializeResult });
-    await probing;
-
-    const reading = session.sessionCwd('th_1');
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    harness.child.emitMessage({ id: 2, result: { thread: { id: 'th_1', cwd: '/tmp/work' } } });
-
-    await expect(reading).resolves.toBe('/tmp/work');
-    session.close();
-  });
-
-  it('reports no working directory for a session without one', async () => {
-    const harness = createFakeProcess();
-    const session = new CodexSession({
-      binary: { path: '/opt/codex', version: '1' },
-      spawnFn: harness.spawnFn,
-    });
-    const probing = session.probe();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    harness.child.emitMessage({ id: 1, result: initializeResult });
-    await probing;
-
-    const reading = session.sessionCwd('th_1');
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    harness.child.emitMessage({ id: 2, result: { thread: {} } });
-
-    await expect(reading).resolves.toBeNull();
-    session.close();
-  });
 });
 
 describe('CodexSession projects and conversations', () => {

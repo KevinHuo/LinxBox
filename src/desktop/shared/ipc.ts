@@ -120,12 +120,6 @@ const codexSessionContinueSchema = z
   })
   .strict();
 
-const codexSessionAuthorizeSchema = z
-  .object({
-    threadId: z.string().min(1).max(128),
-  })
-  .strict();
-
 const codexProjectsListSchema = z.object({}).strict();
 
 const codexConversationReadSchema = z
@@ -149,7 +143,6 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.sessions.list': codexSessionsListSchema,
   'codex.sessions.read': codexSessionsReadSchema,
   'codex.session.continue': codexSessionContinueSchema,
-  'codex.session.authorize': codexSessionAuthorizeSchema,
   'codex.projects.list': codexProjectsListSchema,
   'codex.conversation.read': codexConversationReadSchema,
   'connection.read': emptyPayloadSchema,

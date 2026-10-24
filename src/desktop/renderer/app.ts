@@ -33,6 +33,7 @@ import {
   type TaskFacts,
 } from './view-model.js';
 import { mockConnection, mockDiagnostics, mockProjects, mockTasks } from './fixtures.js';
+import { createConversationRefreshController } from './conversation-refresh.js';
 
 const bridge: LinxboxBridge | null = getBridge();
 
@@ -66,7 +67,6 @@ const state = {
   codexConversation: null as CodexConversationFacts | null,
   selectedProjectId: null as string | null,
   selectedThreadId: null as string | null,
-  pendingPrompt: '' as string,
   runningOnly: false,
   selectedTaskId: null as string | null,
 };
@@ -448,6 +448,28 @@ function renderAll(): void {
 
 let codexPollTimer: ReturnType<typeof setInterval> | undefined;
 
+const conversationRefresh = createConversationRefreshController<CodexConversationFacts | null>({
+  getSelectedThreadId: () => state.selectedThreadId,
+  isActive: () => document.visibilityState !== 'hidden',
+  read: async (threadId) => {
+    if (bridge === null) {
+      return undefined;
+    }
+    const result = (await bridge.readCodexConversation({ threadId })) as {
+      ok?: boolean;
+      data?: CodexConversationFacts;
+    };
+    return result?.ok ? (result.data ?? null) : undefined;
+  },
+  apply: (conversation) => {
+    if (JSON.stringify(conversation) === JSON.stringify(state.codexConversation)) {
+      return;
+    }
+    state.codexConversation = conversation;
+    renderCodexDetails();
+  },
+});
+
 function stopCodexPolling(): void {
   if (codexPollTimer !== undefined) {
     clearInterval(codexPollTimer);
@@ -463,17 +485,7 @@ async function pollCodexTurn(): Promise<void> {
   state.codexTurn = turn;
   renderCodexPanel();
 
-  // 继续对话之后，新内容会落在同一个 thread 里，所以要重读一次详情。
-  if (state.selectedThreadId !== null) {
-    const detail = (await bridge.readCodexConversation({ threadId: state.selectedThreadId })) as {
-      ok?: boolean;
-      data?: CodexConversationFacts;
-    };
-    if (detail?.ok) {
-      state.codexConversation = detail.data ?? null;
-      renderCodexDetails();
-    }
-  }
+  await conversationRefresh.refreshNow();
 
   if (!isCodexTurnRunning(turn)) {
     stopCodexPolling();
@@ -534,6 +546,7 @@ function visibleSessions(): CodexSessionFacts[] {
 
 /** Select a project and show the conversations inside it. */
 async function selectProject(projectId: string): Promise<void> {
+  conversationRefresh.stop();
   state.selectedProjectId = projectId;
   state.selectedThreadId = null;
   state.codexConversation = null;
@@ -562,11 +575,11 @@ async function readCodexConversation(threadId: string): Promise<void> {
   }
   state.selectedThreadId = threadId;
   state.codexConversation = result.data ?? null;
-  showAuthorizeButton(false);
   renderCodexProjects();
   renderCodexSessions();
   renderCodexDetails();
   renderCodexPanel();
+  conversationRefresh.start();
 }
 
 async function probeCodex(): Promise<void> {
@@ -578,13 +591,6 @@ async function probeCodex(): Promise<void> {
   state.codexProbe = probe;
   renderCodexPanel();
   showToast(probe.available ? '本机 Codex 已就绪' : (probe.error ?? '未找到本机 Codex'));
-}
-
-function showAuthorizeButton(visible: boolean): void {
-  const button = qs<HTMLButtonElement>('#codex-authorize');
-  if (button) {
-    button.hidden = !visible;
-  }
 }
 
 async function continueCodexSession(): Promise<void> {
@@ -602,50 +608,23 @@ async function continueCodexSession(): Promise<void> {
     showToast('写点内容再继续');
     return;
   }
-  state.pendingPrompt = prompt;
-
   const result = (await bridge.continueCodexSession({ threadId, prompt })) as {
     ok?: boolean;
-    code?: string;
     message?: string;
     data?: CodexTurnFacts;
   };
   if (!result?.ok) {
     showToast(result?.message ?? '继续失败');
-    showAuthorizeButton(result?.code === 'PERMISSION_DENIED');
     return;
   }
-  showAuthorizeButton(false);
   const input = qs<HTMLTextAreaElement>('#codex-prompt');
   if (input) {
     input.value = '';
   }
   state.codexTurn = result.data ?? state.codexTurn;
   renderCodexPanel();
+  void conversationRefresh.refreshNow();
   startCodexPolling();
-}
-
-async function authorizeCodexSession(): Promise<void> {
-  if (bridge === null) {
-    return;
-  }
-  const threadId = state.selectedThreadId;
-  if (threadId === null) {
-    return;
-  }
-  const result = (await bridge.authorizeCodexSession({ threadId })) as {
-    ok?: boolean;
-    message?: string;
-  };
-  if (!result?.ok) {
-    showToast(result?.message ?? '授权失败');
-    return;
-  }
-  showToast('已授权该目录');
-  showAuthorizeButton(false);
-  if (state.pendingPrompt.length > 0) {
-    await continueCodexSession();
-  }
 }
 
 async function interruptCodexTurn(): Promise<void> {
@@ -795,12 +774,19 @@ function wireEvents(): void {
     void continueCodexSession();
   });
 
-  qs('#codex-authorize')?.addEventListener('click', () => {
-    void authorizeCodexSession();
-  });
-
   qs('#codex-interrupt')?.addEventListener('click', () => {
     void interruptCodexTurn();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void conversationRefresh.refreshNow();
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    conversationRefresh.stop();
+    stopCodexPolling();
   });
 }
 

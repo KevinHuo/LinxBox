@@ -248,13 +248,6 @@ export class CodexSession {
     return this.status();
   }
 
-  /** The working directory a session belongs to, as the provider records it. */
-  async sessionCwd(threadId: string): Promise<string | null> {
-    const client = await this.connect();
-    const session = await client.readSession(threadId);
-    return session?.cwd ?? null;
-  }
-
   /** The observable state of the current turn. */
   status(): CodexTurnView {
     return this.client === null ? EMPTY_TURN_VIEW : toTurnView(this.client.turnState);
