@@ -1,0 +1,20 @@
+idf_component_register(
+    SRCS "main.c"
+         "linx_input.c"
+         "linx_demo.c"
+         "linx_content.c"
+         "linx_navigation.c"
+         "linx_reader.c"
+         "linx_ui.c"
+         "../assets/fonts/linx_font_12.c"
+         "../assets/fonts/linx_font_14.c"
+         "../assets/fonts/linx_font_16.c"
+         "../assets/fonts/linx_font_20.c"
+         "../assets/fonts/linx_font_16_bold.c"
+         "../assets/fonts/linx_font_20_bold.c"
+         "../assets/fonts/linx_font_24_bold.c"
+         "../assets/fonts/linx_font_28_bold.c"
+         "../assets/images/linx_image_data.c"
+    INCLUDE_DIRS "." "${AI_PASSPORT_DIR}/main"
+    REQUIRES bsp esp_timer
+)

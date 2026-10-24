@@ -46,3 +46,6 @@ __pycache__/
 
 # Codex capability probe output
 codex-capabilities.json
+
+# Local integration files
+.local/

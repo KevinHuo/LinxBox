@@ -1,0 +1,49 @@
+{
+  "upstream": {
+    "repository": "https://github.com/FoloToy/ai-passport.git",
+    "baseline_commit": "006c2279852e352a8433b2c21e5e09be2ca36f77",
+    "license": "MIT",
+    "license_file": "LICENSE",
+    "documentation": "https://github.com/FoloToy/ai-passport/blob/006c2279852e352a8433b2c21e5e09be2ca36f77/docs/README.zh_CN.md"
+  },
+  "application": {
+    "name": "LinX 离线界面演示",
+    "version": "linx-demo-0.2.0",
+    "documentation": "main/README.md",
+    "intercom_implemented": false,
+    "description": "当前应用为 LinX 0.2 离线界面演示，任务、回答、图片和语音输入使用模拟数据，尚未实现设备间对讲。"
+  },
+  "maintenance_root": "firmware/",
+  "documentation_language": "简体中文",
+  "target": {
+    "brand": "FoloToy",
+    "model": "AI Passport",
+    "hardware_root": "hardware/folotoy/ai-passport/",
+    "chip": "ESP32-C3",
+    "flash_mb": 8,
+    "psram": false,
+    "esp_idf": "5.5.3",
+    "bsp_source": "固定上游依赖的 components/bsp/"
+  },
+  "local_modifications": [
+    "main/ 中的 LinX 0.2 离线应用、导航、阅读与输入交互",
+    "assets/fonts/ 与 assets/images/ 中的源字体、许可、清单和生成资源，以及对应生成检查工具",
+    "tests/ 中的四组 LinX 逻辑测试、tests/linx_host/ 真实 LVGL 主机测试及依赖接入回归",
+    "hardware/folotoy/ai-passport/ 中的品牌型号接入说明与 board.cmake 配置；不复制上游 BSP",
+    "本地构建入口、默认配置、分区、组件锁、依赖准备器和检查器，以及中文应用说明"
+  ],
+  "provenance_note": "固件基于固定版本的 FoloToy/ai-passport，上游驱动、工具与说明不在活跃源码中复制维护；78/xiaozhi-esp32 仅在此前对讲方案讨论中作为参考，并非本工程上游。当前尚未实现设备间对讲。",
+  "dependency": {
+    "mode": "固定 Git 提交，只读加载",
+    "prepare_command": "python3 tools/prepare_upstream.py --print-path",
+    "cache_root": ".local/dependencies/ai-passport/<baseline_commit>/",
+    "cache_root_relative_to": "LinxBox Git 根目录",
+    "loaded_paths": [
+      "components/bsp/",
+      "main/key_guard.h"
+    ],
+    "reuse": "上游原始测试、镜像校验与调试归档工具直接从校验过的缓存使用",
+    "availability": "首次获取通常需要网络；完整且校验通过的缓存可离线复用；可用 --source 从包含相同提交的本机 Git 仓库初始化",
+    "upgrade": "明确更改固定提交并审查差异，执行完整固件门禁、真实 LVGL 主机验证与截图比较；不得直接修改缓存或跟随浮动分支"
+  }
+}
