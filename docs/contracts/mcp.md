@@ -9,6 +9,8 @@
 
 `installation_id`、`device_id`、`session_id` 和入口身份由 Gateway transport 从已验证的连接与 Header 注入。所有工具 `arguments` 中都禁止出现这些字段，也禁止出现 `client_id`、本地路径、cwd 或任意运行时配置。
 
+Device 确认产生的 `command_id/draft_id/target` 也不属于模型可写的 `arguments`。Presentation Bridge 必须从已验证设备连接注入可信 `CommandContext`；Gateway 校验它与工具参数中的 `task_id` 一致后，才进入任务控制链路。
+
 所有 ID 是不透明字符串，调用方不得解析其前缀或猜测值。
 
 ## 2. 共通字段
@@ -21,6 +23,27 @@
 | `project_id` | string | 只能使用 `list_projects` 返回的值 |
 
 字符串限制、枚举、未知字段拒绝和 payload 大小上限必须在实现 schema 中明确，不使用无上限字符串。
+
+任务类工具统一返回以下 `TaskToolResult`；`start_task`、`continue_task`、`get_task_status` 和 `stop_task` 不得各造一种任务身份结构：
+
+```json
+{
+  "contract_version": "linxbox.mcp/v1",
+  "task": {
+    "task_id": "tsk_01H...",
+    "turn_id": "trn_01H...",
+    "parent_task_id": null,
+    "project_id": "prj_01H...",
+    "state": "running",
+    "stage": "testing",
+    "summary": "正在运行相关测试。",
+    "updated_at": "2026-10-24T01:00:00Z",
+    "result": null
+  }
+}
+```
+
+首条 progress 与最终 `TaskToolResult` 都必须包含同一个 `task_id/turn_id`。`turn_id` 是 LinxBox 公开标识，不是 provider ID。终态时 `result` 必须符合 `task-result-v1` 且 `result.status` 与 Task 终态一致；非终态时为 null。`parent_task_id` 只在续接产生的子 Task 中非空。
 
 ## 3. `list_projects`
 
@@ -94,7 +117,7 @@
 3. Task 和首个 Delivery 同事务持久化后，才发送首条 progress。
 4. `tools/call` 保持进行中，直到终态或 transport 超时；transport 断开不取消 Task。
 
-首条 progress 必须包含 `task_id`、`state=queued` 和单调 `progress` 序号。最终结果符合 [`task-result-v1`](domain.md#7-task-result-v1)。
+首条 progress 必须包含 `task_id/turn_id`、`state=queued` 和单调 `progress` 序号。最终返回 `TaskToolResult`，其中终态 `task.result` 符合 [`task-result-v1`](domain.md#7-task-result-v1)。即使客户端丢失 progress，也能从最终结果恢复 `task_id/turn_id`。
 
 ## 6. `get_task_status`
 
@@ -104,13 +127,15 @@
 {"request_id":"req_01H...","task_id":"tsk_01H..."}
 ```
 
-结果：
+结果使用共通 `TaskToolResult`：
 
 ```json
 {
   "contract_version": "linxbox.mcp/v1",
   "task": {
     "task_id": "tsk_01H...",
+    "turn_id": "trn_01H...",
+    "parent_task_id": null,
     "project_id": "prj_01H...",
     "state": "running",
     "stage": "testing",
@@ -137,7 +162,7 @@
 }
 ```
 
-续接前 Gateway 和 Desktop 重新计算绑定、project grant、能力和风险。只能在同一 client、project、provider 和策略允许的范围内 resume。续接产生新 turn，但保留 task lineage。
+请求中的 `task_id` 是父 Task。续接前 Gateway 和 Desktop 重新计算绑定、project grant、能力和风险；只能在同一 client、project、provider 和策略允许的范围内 resume。每次成功续接创建新的子 Task 和新的 `turn_id`，返回新的 `task_id`，并把输入 Task 记录为 `parent_task_id`；终态 Task 不回到活动态。同一 provider thread 同时存在活动子 Task 时返回 `CONFLICT`。相同幂等 key 重放原子 Task，不创建第二个 turn。
 
 ## 8. `stop_task`
 
@@ -152,7 +177,7 @@
 }
 ```
 
-结果只能声明已记录取消请求，不得在 Desktop/provider 真正终止前返回 `cancelled`。
+结果使用共通 `TaskToolResult`，只能显示 `cancel_requested` 或原有终态并声明已记录取消请求；不得在 Desktop/provider 真正终止前返回 `cancelled`。
 
 ## 9. 进度
 
@@ -169,6 +194,7 @@
         "contract_version": "task-domain/v1",
         "message_id": "evt_01H...",
         "task_id": "tsk_01H...",
+        "turn_id": "trn_01H...",
         "state": "running",
         "stage": "testing",
         "voice_summary": "正在运行相关测试。"
@@ -182,7 +208,30 @@
 
 ## 10. 错误
 
-所有失败使用 JSON-RPC error，`error.data` 符合 `PublicError`：
+错误分两类：
+
+1. 未知工具、无效 JSON-RPC envelope、缺少 `tools/call` 必要协议字段等协议错误使用标准 JSON-RPC error。
+2. 身份/权限拒绝、业务参数、资源不存在、冲突、容量、依赖、策略和内部执行失败使用 `CallToolResult`，设置 `isError: true`；`structuredContent.error` 符合 `PublicError`，同时提供简短脱敏 `TextContent` 供不消费 structured content 的客户端读取。
+
+工具执行错误示例：
+
+```json
+{
+  "content": [{"type":"text","text":"当前设备无权访问该项目"}],
+  "structuredContent": {
+    "contract_version": "linxbox.mcp/v1",
+    "error": {
+      "code": "PERMISSION_DENIED",
+      "message": "当前设备无权访问该项目",
+      "retryable": false,
+      "request_id": "req_01H..."
+    }
+  },
+  "isError": true
+}
+```
+
+`PublicError`：
 
 ```json
 {

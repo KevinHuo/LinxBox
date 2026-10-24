@@ -186,7 +186,7 @@ Desktop 选择目录后创建不透明 `project_id`，只向 Gateway 同步别�
 | `list_agents` | 可用执行能力，不暴露本地凭据 |
 | `start_task` | 创建并执行任务，通过 progress 实时返回阶段 |
 | `get_task_status` | 查询持久化状态，用于主动查询和断线恢复 |
-| `continue_task` | 重新授权后续接已有任务 |
+| `continue_task` | 重新授权后从父任务创建子 Task 与新 turn |
 | `stop_task` | 请求取消，不等于已经停止 |
 
 `client_id/device_id/session_id/installation_id` 从认证上下文、Header 和绑定注入，工具参数不能覆盖；`request_id` 必填，写工具还要 `idempotency_key`。
@@ -195,15 +195,17 @@ Desktop 选择目录后创建不透明 `project_id`，只向 Gateway 同步别�
 
 ### 7.1 MCP 长任务进度
 
-灵矽已支持 MCP 长任务。MVP 保持 `tools/call` 进行中，Gateway 发送标准 `notifications/progress`：
+MVP 目标是在灵矽与 Gateway 双方完成能力协商后，保持 `tools/call` 进行中并由 Gateway 发送标准 `notifications/progress`：
 
 - 灵矽维护 `progressToken → device_id/session_id/device_wss_connection`；
 - `progress` 是同一 token 内单调递增序号，无法估算百分比时省略 `total`；
-- 首条通知包含已持久化的 `task_id`；
+- 首条通知包含已持久化的 `task_id/turn_id`；
 - Gateway 只发阶段变化和短摘要，不发送原始日志或内部推理；
 - 最终返回标准 `CallToolResult + structuredContent`；
 - MCP 断线不取消任务，恢复后通过 `get_task_status` 查询；
 - 只有双方协商能力后才切换 MCP Tasks 扩展。
+
+当前仓库没有真实灵矽环境证据证明 progress metadata 能被消费并正确路由到设备 WSS，也没有证明长调用超时期间仍可查询/停止。该能力是实现前提，不是已完成事实：在 integration Spec 记录客户端版本、progress 路由、超时、断线查询和停止验证前，实时 progress 通道默认关闭，只允许使用持久化 Task + `get_task_status` 进行恢复查询，且不得宣称已通过真实链路验收。
 
 ## 8. 端到端时序
 
@@ -211,7 +213,7 @@ Desktop 选择目录后创建不透明 `project_id`，只向 Gateway 同步别�
 
 1. Device 采集语音，灵矽 Agent 澄清项目并调用 MCP。
 2. Gateway 验证入口、binding、project 和幂等键，事务写入 Task + Outbox。
-3. Desktop 持久化 Delivery 后 ACK，再检查本地 grant 并创建 Codex turn。
+3. Desktop 持久化 Delivery、检查本地 grant/目标/策略后 ACK；只有 `accepted` 才创建 Codex turn，`rejected/expired` 直接收敛为对应终态。
 4. app-server 事件经 adapter 变成稳定领域事件；Desktop/Gateway 分别持久化自己的事实。
 5. progress 只下发阶段和短摘要；ACK、Agent 接受、turn 完成和 Task 成功分别显示。
 6. Desktop 生成 `local-detail`、`cloud-summary`、`device-content`。只有最后一级进入展示链路。
@@ -242,17 +244,20 @@ sequenceDiagram
     D->>C: turn/start
     C-->>D: agent/command/file/turn events
     D-->>G: task.started/progress
+    G-->>D: client.ack（已持久化）
     G-->>L: notifications/progress
     L-->>E: task.delta + command.receipt(running)
     C-->>D: turn/completed
     D-->>G: task.completed + 结构化摘要
+    G-->>D: client.ack（终态已持久化）
     G-->>L: tools/call 最终结果
     D-->>G: device-safe content projection
+    G-->>D: client.ack（projection 已持久化）
     G-->>L: task/content delta
     L-->>E: content.page + command.receipt(turn_completed)
 ```
 
-从硬件确认下一轮：进入输入时 Device 冻结 task/turn/image target 并创建本地草稿；ASR 只更新草稿，超时进入确认页不自动发送；用户确认后发送带 `command_id` 和目标快照的请求；Gateway/Desktop 重新授权并去重，列表变化不改变目标；Device 依次显示发送、电脑收到、排队、Agent 接受、运行和本轮结束回执；失败保留草稿，手动重试沿用 command identity，不生成重复 turn。
+从硬件确认下一轮：进入输入时 Device 冻结 task/turn/image target 并创建本地草稿；ASR 只更新草稿，超时进入确认页不自动发送；用户确认后，Presentation Bridge 从已认证设备会话注入可信 `CommandContext`，Gateway 将 `command_id` 确定性映射到幂等身份并随 `task.dispatch` 投递目标快照；Gateway/Desktop 重新授权并去重，列表变化不改变目标；Device 依次显示发送、电脑收到、排队、Agent 接受、运行和本轮结束回执；失败保留草稿，手动重试沿用 command identity，不生成重复 turn。模型不能生成或覆盖 command identity/target。
 
 可选 Hooks observer 可以把其他 Codex 客户端的 Session、Stop、Interrupt 和 Permission 等事件加入只读通知，但不能进入控制链路。LinxBox 管理任务的 start/resume/interrupt 和终态仍由 app-server 提供，详见 [ADR-0005](adr/0005-hooks-observation-app-server-control.md)。
 
@@ -263,19 +268,21 @@ sequenceDiagram
 内部协议不是 MCP。消息族：
 
 ```text
-client.hello / heartbeat / capabilities
+client.hello / server.hello / heartbeat / capabilities
 project.upsert / revoke
 task.dispatch / cancel / ack
 task.started / progress / approval_required
 task.completed / failed / cancelled / interrupted
+client.ack
 protocol.upgrade_required
 ```
 
 交付要求：
 
-- Gateway 为每个 client 维护单调递增 sequence；Task 与 Delivery/Outbox 同事务持久化；
-- Desktop 先持久化 `message_id` 再 ACK；ACK 只表示收到，不表示 started 或 succeeded；
-- 重连携带 `last_acked_sequence`，Gateway 重放未 ACK 消息；Desktop 同一 `message_id` 至多执行一次；
+- Gateway 与 Desktop 为每个 client、每个发送方向分别维护单调 sequence 和持久化 outbox；
+- 接收方先持久化业务事实与 `message_id` disposition 再 ACK；ACK 只表示持久化处理，不表示 started 或 succeeded；
+- 重连分别交换 `last_acked_server_sequence` 与 `last_acked_client_sequence`，双方按原 ID 重放未 ACK 消息；Desktop 同一 `message_id/command_id` 至多产生一次 turn；
+- Task terminal、Presentation 和 command receipt 必须收到 Gateway `client.ack` 后才能从 Desktop outbox 清理，heartbeat 不替代事实对账；
 - 超过 `expires_at` 的任务不得执行；不兼容主版本和未知安全字段 fail closed。
 
 ## 10. Desktop 与 Codex
@@ -296,7 +303,7 @@ turn/completed | failed | interrupted
 
 - app-server 不开放公网端口；
 - Codex 凭据只存在本机安全存储；
-- Desktop 保存 `task_id ↔ thread_id ↔ turn_id ↔ project_id` 所有权映射；
+- Desktop 保存 `task_id ↔ public turn_id ↔ provider thread/turn ID ↔ project_id` 所有权映射；provider ID 不上传；
 - provider 事件先映射为稳定领域事件；
 - 只上传用户可见摘要和执行状态，不上传内部推理；
 - `codex exec --json` 仅为开发或兼容 fallback。
@@ -336,12 +343,13 @@ MVP UI 至少包含：
 | `DesktopClient` | client_id、token_hash、enabled、version、last_seen |
 | `DeviceClientBinding` | installation_id?、device_id、client_id、enabled |
 | `Project` | project_id、client_id、display_name、capabilities、revoked_at |
-| `Task` | task_id、device/session、project、state、policy_snapshot、summary |
-| `Delivery` | message_id、sequence、client_id、ack、attempts、expires_at |
-| `TaskEvent` | task_id、sequence、type、redacted_payload、occurred_at |
+| `Task` | task_id、turn_id、parent_task_id、device/session、project、state、policy_snapshot、summary |
+| `Delivery` | message_id、direction、sequence、client_id、disposition/ack、attempts、expires_at |
+| `TaskEvent` | event_id、task_id、event_sequence、type、redacted_payload、occurred_at |
 | `PresentationDocument` | task/turn、revision、device-safe pages/image manifests、retention |
 | `CommandReceipt` | command/task/turn、receipt_sequence、stage、summary |
-| `AgentSession`（仅 Desktop 本地） | provider、opaque_thread_id、project/task ownership |
+| `CommandExecution` | command/draft、冻结 target/revision、MCP idempotency、task/turn mapping |
+| `AgentSession`（仅 Desktop 本地） | provider、opaque thread/turn ID、公开 turn ID、project/task ownership |
 
 事实归属：身份、binding、云端 Task/Delivery 归 Gateway；本地路径、grant、provider thread/turn 与完整结果归 Desktop；provider 生命周期由 app-server 提供、经 adapter 映射；设备页面、游标、未确认草稿与有界缓存归 Device；自然语言指代只来自灵矽会话，仅作提示。
 

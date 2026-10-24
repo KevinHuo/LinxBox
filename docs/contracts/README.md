@@ -15,9 +15,9 @@ OpenAI Codex app-server 协议不由 LinxBox 重新定义。`codex-adapter` 必�
 
 ## 共享形态
 
-跨实现共享的 schema 与 fixtures 落在仓库根 [`contracts/`](.)：只放纯数据（JSON Schema 与正反例输入），不含运行时代码。Gateway 与 Desktop 各自实现 TypeScript 类型，schema 是唯一事实源，一致性由同一组 fixtures 的 producer/consumer 双向校验保证。见 [ADR-0004](../adr/0004-shared-contracts-as-plain-data.md)。
+本目录中的文档是 schema 落地前的语义事实源。JSON Schema 与正反例 fixtures 是后续实现产物，具体落位由 [`SPEC-0001`](../process/specs/0001-contracts-schema-and-fixtures.md) 在工具链选型时决定；不得预先假设仓库根存在 `contracts/`。Gateway 与 Desktop 各自实现 TypeScript 类型，并用同一组 schema/fixtures 做 producer/consumer 双向校验。见 [ADR-0004](../adr/0004-shared-contracts-as-plain-data.md)。
 
-灵矽 MCP 客户端与 ESP32 固件工程直接消费 `contracts/` 中的 schema 与 fixture，不需要安装本仓库的包。
+灵矽 MCP 客户端与 ESP32 固件工程消费 SPEC-0001 最终确定位置中的纯数据 schema/fixture，不需要安装本仓库运行时代码；在该 Spec 实现前，不声称已有可消费的 schema 包。
 
 ## 单一事实源
 

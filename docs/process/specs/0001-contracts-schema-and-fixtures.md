@@ -50,8 +50,9 @@
 - 权威顺序：`docs/architecture.md` → `docs/contracts/` 与 Accepted ADR → `docs/modules.md` → 本 Spec → Task Issue → 代码与测试。
 - schema 是实现阶段的单一事实源；文档是 schema 落地前的字段与语义基线（[`docs/contracts/README.md`](../../contracts/README.md) §变更规则）。
 - 公共错误 code 集合固定为：`UNAUTHENTICATED`、`PERMISSION_DENIED`、`INVALID_ARGUMENT`、`NOT_FOUND`、`CONFLICT`、`RESOURCE_EXHAUSTED`、`DEPENDENCY_UNAVAILABLE`、`APPROVAL_REQUIRED`、`POLICY_DENIED`、`INTERNAL`；设备侧固定为 `OFFLINE`、`STALE_REVISION`、`TARGET_NOT_FOUND`、`DUPLICATE`、`QUEUE_FULL`、`CONTENT_UNAVAILABLE`、`PERMISSION_DENIED`、`POLICY_DENIED`、`INTERNAL`。
+- MCP fixture 必须区分标准 JSON-RPC protocol error 与 `CallToolResult.isError=true` 的工具执行错误；业务 `PublicError` 放在 `structuredContent.error`，不能全部包装为 JSON-RPC error。
 - 安全请求默认拒绝未知字段；只有显式声明可扩展的 metadata 容器允许未知键。
-- 标识符是不同值对象：`DeviceId`、`ClientId`、`ProjectId`、`TaskId`、`MessageId`、`RequestId`、`ProviderThreadId`、`ProviderTurnId` 禁止互换或退化为裸 string。
+- 标识符是不同值对象：`DeviceId`、`ClientId`、`ProjectId`、`TaskId`、`TurnId`、`CommandId`、`MessageId`、`RequestId`、`ProviderThreadId`、`ProviderTurnId` 禁止互换或退化为裸 string；公开 `TurnId` 与本地 provider ID 不得混用。
 - 公共 MCP 的 `arguments` 禁止出现 `installation_id`、`device_id`、`session_id`、`client_id`、本地路径、cwd 和运行时配置；这些由 Gateway transport 从已验证连接与 Header 注入。
 - MCP 控制通道与 Device Presentation 通道相互隔离；展示消息不能绕过任务授权。
 
@@ -61,7 +62,7 @@
 
 | 产物 | 内容 | 上游契约 |
 | --- | --- | --- |
-| MCP schema | 六个工具的请求/结果 schema、progress payload、`PublicError` | `linxbox.mcp/v1` |
+| MCP schema | 六个工具的请求/结果 schema、`TaskToolResult`、progress payload、`PublicError` | `linxbox.mcp/v1` |
 | Device schema | snapshot/delta、content.page、image manifest、draft、receipt | `device-presentation/v1` |
 | Gateway/Desktop schema | envelope、`client.*`、`project.*`、`task.*`、`presentation.*`、`command.receipt` | `1.0` |
 | Result schema | `task-result-v1` 结构与字段规则 | `task-result-v1` |
@@ -83,8 +84,8 @@
 requested -> rejected | queued
 queued -> waiting_for_client | dispatched
 waiting_for_client -> expired | dispatched
-dispatched -> accepted
-accepted -> running
+dispatched -> accepted | rejected | expired
+accepted -> running | failed | interrupted
 running -> succeeded | failed | interrupted | approval_required
 approval_required -> running | failed | cancelled
 any non-terminal -> cancel_requested -> cancelled | interrupted
@@ -92,8 +93,9 @@ any non-terminal -> cancel_requested -> cancelled | interrupted
 
 - 终态：`rejected | expired | succeeded | failed | cancelled | interrupted`；终态不转回活动态。
 - `acknowledged != accepted != running != succeeded`；无法证明成功或失败时使用 `interrupted`。
+- `task.ack(rejected|expired)` 只能发生在执行副作用前；已接受后的明确准备失败进入 `failed`，副作用或终态不确定进入 `interrupted`，不得虚构 `running`。
 - `approval_required` 不是语音审批通道，MVP 无可信 UI 时转为拒绝或取消。
-- 续接是新 turn / 新执行记录，必须重新授权。
+- 续接创建新的子 Task 与新 turn，记录 `parent_task_id`，必须重新授权；同一 provider thread 不允许并发活动子 Task。
 
 **Receipt 合法转换**（不属于 Task 状态机）：
 
@@ -110,15 +112,15 @@ sending -> desktop_received -> queued -> agent_accepted -> running
 | --- | --- | --- |
 | `request_id` | 单次请求 | 必填，不提供幂等性 |
 | `idempotency_key` | 同一身份 + 工具 | 所有写工具必填；同一作用域重复 key 返回原 `task_id` |
-| `message_id` | 全局 | 唯一；Desktop 先持久化再 ACK；对相同 `message_id` 返回 `duplicate`，不产生第二个 Codex turn |
-| `command_id` | 硬件指令 | 每 Task 最多一条未终结 command；重试复用原 `command_id` |
+| `message_id` | 全局 | 唯一；接收方先持久化 disposition 再 ACK；对相同 `message_id` 返回稳定结果，不产生第二个 Codex turn |
+| `command_id` | 硬件指令 | 每 Task 最多一条未终结 command；由可信 Presentation metadata 注入并确定性映射幂等身份，重试复用原 `command_id` |
 | `draft_id` | 草稿 | `draft.confirm` 必须引用同一 draft/command/target |
 
 **sequence / revision**：
 
 | 序号 | 作用域 | 规则 |
 | --- | --- | --- |
-| `sequence` | Gateway 对单个 client | 单调递增；重连从 `last_acked_sequence + 1` 重放 |
+| `sequence` | 单个 client、单发送方向 | Gateway/Desktop 各自单调递增；重连分别从 `last_acked_server_sequence + 1`、`last_acked_client_sequence + 1` 重放 |
 | `event_sequence` | 单 Task | 单调递增；最终事件只出现一次；重放使用相同 `event_id` |
 | `receipt_sequence` | 单 `command_id` | 单调递增，按序去重 |
 | `revision` | 展示投影 | 不连续时 Device 请求 snapshot，不猜测中间状态 |
@@ -141,6 +143,8 @@ sending -> desktop_received -> queued -> agent_accepted -> running
 | 缺少 `idempotency_key` 的写工具 | 拒绝 | fail closed |
 | 重复 `idempotency_key` | 返回原 `task_id`，不产生第二次执行 | fail closed |
 | 重复 `message_id` | ACK `disposition: duplicate` | fail closed |
+| Desktop 终态/展示事件 ACK 丢失 | 本地 outbox 保留，按原 client sequence/message/event ID 重放 | fail closed |
+| Desktop -> Gateway client sequence 缺口 | Gateway 拒绝越过缺口处理，等待重放/人工恢复 | fail closed |
 | `sequence` 缺口 | 请求 snapshot，不猜测中间状态 | fail closed |
 | `expires_at` 过期 | 不执行该命令 | fail closed |
 | `protocol_version` major 不兼容 | `protocol.upgrade_required` 并关闭连接 | fail closed |

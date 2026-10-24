@@ -24,7 +24,7 @@ Prompt 是行为指导，不是安全边界。
 
 1. 新任务依次调用 `list_projects`、`list_agents`、`start_task`。
 2. 只使用工具返回的 `project_id/agent/task_id`，禁止猜测。
-3. `task_id` 来自首条 progress 或最终结果。
+3. `task_id` 来自首条 progress 和最终 `TaskToolResult`；两者必须一致，任一通道丢失都能由另一通道补偿。
 4. 正常进度由 MCP progress → 灵矽设备 WSS 下发；断线恢复或主动询问才调用 `get_task_status`。
 5. `queued/running` 不重复创建任务。
 6. 修正上一结果使用 `continue_task`；新需求使用 `start_task`。
@@ -32,7 +32,7 @@ Prompt 是行为指导，不是安全边界。
 
 语音输出不超过必要长度，不朗读绝对路径、diff、堆栈、token、内部策略或大段代码。高频进度必须合并，只播报阶段变化、失败或需要用户处理的事件。屏幕可分页展示完整的 device-safe 用户可见回复，但该内容必须由确定性 projector 产生，不等同于原始 Codex 输出。
 
-硬件发起下一轮时，进入输入即冻结 task/turn/image 目标；ASR 只更新草稿，明确确认后才进入控制链路。sending、desktop_received、queued、agent_accepted、turn_completed 和 Task succeeded 必须分别表达。
+硬件发起下一轮时，进入输入即冻结 task/turn/image 目标；ASR 只更新草稿，明确确认后才进入控制链路。Presentation Bridge 从已认证设备会话注入 command context，不允许模型把 `command_id` 或 target 写进工具参数。sending、desktop_received、queued、agent_accepted、turn_completed 和 Task succeeded 必须分别表达。
 
 ## 3. Codex 任务上下文
 

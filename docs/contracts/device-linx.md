@@ -94,6 +94,15 @@
 - 超时等同停留在确认态，不等同 confirm；
 - 每 Task 最多一条未终结 command；重试复用原 `command_id`。
 
+确认进入控制链路时，Presentation Bridge 必须从已认证设备会话生成可信 `CommandContext`，包含原 `command_id/draft_id/target/revision`，并在调用 MCP 时作为 transport metadata 注入，不能放进模型可编辑的工具 `arguments`。Gateway 必须：
+
+1. 校验冻结 target 仍属于当前 device binding，且 task/turn/image/revision 匹配；
+2. 在当前身份和工具作用域内把 `command_id` 确定性映射为同一个幂等身份；重试不得生成新的 idempotency key；
+3. 保存 `command_id -> MCP request -> task_id/turn_id` 映射，并把同一上下文随 `task.dispatch.command_context` 投递给 Desktop；
+4. Desktop 持久化 command 去重事实后才发 `desktop_received`，创建 provider turn 前再次校验目标与本地 grant。
+
+目标校验失败返回 `STALE_REVISION` 或 `TARGET_NOT_FOUND`，保留原草稿供用户重新确认；禁止模型重新生成、猜测或改写 command identity 与 target。
+
 ## 6. 回执
 
 `command.receipt.stage`：
@@ -103,7 +112,7 @@ sending -> desktop_received -> queued -> agent_accepted -> running
         -> turn_completed | failed | cancelled | interrupted
 ```
 
-`turn_completed` 只表示本轮结束；Task 是否 `succeeded` 由 Task 状态字段单独表达。Receipt 必须携带 `command_id/task_id/turn_id/receipt_sequence/summary`，按序去重，不能把网络发送成功映射为 Agent 接受。
+`turn_completed` 只表示本轮结束；Task 是否 `succeeded` 由 Task 状态字段单独表达。Receipt 必须携带 `command_id/task_id/turn_id/receipt_sequence/summary`，其中 `turn_id` 是 LinxBox 公开标识而非 provider ID；按序去重，不能把网络发送成功映射为 Agent 接受。
 
 ## 7. 错误与恢复
 

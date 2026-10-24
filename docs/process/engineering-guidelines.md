@@ -49,7 +49,7 @@
 
 每个 Agent Adapter 必须声明和测试：可用性、start/resume/interrupt、结构化事件、超时、退出码、输出上限、脱敏、session 所有权和进程树终止。领域层的 cancel 请求由 adapter 映射为 provider 支持的 interrupt 操作。
 
-app-server adapter 必须维护 `task_id/thread_id/turn_id/project_id` 映射，使用公开协议事件判断终态，区分用户可见输出、执行元数据和内部推理，并实现版本探测、握手超时、崩溃清理和协议不兼容的 fail-closed 路径。
+app-server adapter 必须维护 `task_id/public_turn_id/provider_thread_id/provider_turn_id/project_id` 映射，使用公开协议事件判断终态，区分用户可见输出、执行元数据和内部推理，并实现版本探测、握手超时、崩溃清理和协议不兼容的 fail-closed 路径。
 
 ## 7. 测试
 

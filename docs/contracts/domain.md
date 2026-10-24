@@ -7,21 +7,18 @@
 
 ## 1. 标识符
 
-`DeviceId`、`ClientId`、`ProjectId`、`TaskId`、`MessageId`、`RequestId`、`ProviderThreadId` 和 `ProviderTurnId` 是不同值对象，禁止互换或使用裸 string 绕过类型。provider ID 只在 Desktop 本地持久化。
+`DeviceId`、`ClientId`、`ProjectId`、`TaskId`、`TurnId`、`CommandId`、`MessageId`、`RequestId`、`ProviderThreadId` 和 `ProviderTurnId` 是不同值对象，禁止互换或使用裸 string 绕过类型。`TurnId` 是 LinxBox 的公开轮次标识；provider ID 只在 Desktop 本地持久化，不能作为 Device/Gateway 的 `turn_id`。
 
 ## 2. Task 状态
 
 ```text
-requested -> rejected
-    |
-    v
-queued -> waiting_for_client -> expired
-  |             |
-  +-------------+-> dispatched -> accepted -> running
-                                                |-> succeeded
-                                                |-> failed
-                                                |-> interrupted
-                                                +-> approval_required -> running/failed/cancelled
+requested -> rejected | queued
+queued -> waiting_for_client | dispatched
+waiting_for_client -> expired | dispatched
+dispatched -> accepted | rejected | expired
+accepted -> running | failed | interrupted
+running -> succeeded | failed | interrupted | approval_required
+approval_required -> running | failed | cancelled
 
 any non-terminal -> cancel_requested -> cancelled | interrupted
 ```
@@ -34,8 +31,19 @@ any non-terminal -> cancel_requested -> cancelled | interrupted
 - `acknowledged != accepted != running != succeeded`；
 - 无法证明成功或失败时使用 `interrupted`；
 - `approval_required` 不是语音审批通道；MVP 无可信 UI 时转为拒绝或取消；
-- 续接是新 turn/新执行记录，必须重新授权；
+- 续接创建新的子 Task 与新 turn，记录 `parent_task_id`，必须重新授权；
 - progress 丢失不改变持久化事实。
+
+投递与执行前失败的映射：
+
+| 事实 | Task 转换 | 责任方 |
+| --- | --- | --- |
+| Desktop 在任何执行副作用前确认过期 | `dispatched -> expired` | Desktop 通过 `task.ack(expired)` 提交，Gateway 持久化终态 |
+| Desktop 在任何执行副作用前发现 grant、目标或策略拒绝 | `dispatched -> rejected` | Desktop 通过 `task.ack(rejected)` 提交脱敏错误，Gateway 持久化终态 |
+| Desktop 已接受投递，但 app-server 启动或本地准备明确失败且没有执行副作用 | `accepted -> failed` | Desktop 发送稳定终态事件 |
+| Desktop 已接受投递，但无法证明 provider 是否已产生副作用或终态 | `accepted/running -> interrupted` | Desktop 发送稳定终态事件；不得自动重试 |
+
+Gateway 不得为了满足状态机而在授权拒绝或启动失败前虚构 `running`。
 
 ## 3. 阶段
 
@@ -102,7 +110,7 @@ MVP 只允许本地 grant 包含的 R0/R1。R2 在无可信本地审批 UI 时�
 
 | 字段 | 规则 |
 | --- | --- |
-| `status` | `succeeded | failed | cancelled | interrupted | rejected` |
+| `status` | `succeeded | failed | cancelled | interrupted | rejected | expired`；必须与 Task 终态一致 |
 | `summary` | 脱敏的用户可见摘要，不声称未完成行为 |
 | `changes[].path` | 相对授权项目根；不允许 `..` 或绝对路径 |
 | `verification[].command` | 用户可见的脱敏命令；必须真实执行 |

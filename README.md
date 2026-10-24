@@ -14,7 +14,7 @@
 
 ## 工程状态
 
-目前已冻结产品范围、逻辑模块、pnpm/TypeScript/Electron/PostgreSQL/SQLite 技术基线、代码树、Desktop UI DOM/组件树、MCP 契约、Gateway/Desktop 协议、任务状态机和 Codex app-server 适配边界，但尚未提供可运行实现。具体框架、adapter 库、UI 渲染库和测试运行器由各 bootstrap Task/ADR 一次性选定并锁版。
+目前已冻结产品范围、逻辑模块、pnpm/TypeScript/Electron/PostgreSQL/SQLite 技术基线、代码树、Desktop 信息与进程边界、MCP 契约、Gateway/Desktop 协议、任务状态机和 Codex app-server 适配边界，但尚未提供可运行实现。Desktop 的具体 DOM、组件树、框架、adapter 库、UI 渲染库和测试运行器尚未冻结，由对应 bootstrap Task/Spec 比较后一次性选定并锁版。
 
 后续业务代码需同时提供可复现的安装、配置、格式检查、静态检查、构建、测试及覆盖率命令，并接入 CI。本阶段只有文档及协作模板，没有业务构建或测试命令，也未启用 CI 或合并保护。
 

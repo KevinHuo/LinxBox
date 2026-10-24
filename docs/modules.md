@@ -54,13 +54,13 @@ gateway <== Gateway/Desktop WSS ==> desktop <== local stdio ==> Codex app-server
 | 子模块 | 目录 | 责任 |
 | --- | --- | --- |
 | `ui` | `src/desktop/main`、`src/desktop/renderer` | token、连接、项目授权、任务、完整 diff、验证、风险和取消 |
-| `gateway-client` | `src/desktop/daemon/gateway-client` | 出站 WSS、hello、heartbeat、sequence、ACK 和恢复 |
+| `gateway-client` | `src/desktop/daemon/gateway-client` | 出站 WSS、hello、heartbeat、双向 sequence/ACK、outbox 重放和恢复 |
 | `project-registry` | `src/desktop/daemon/project-registry` | 本地路径、不透明 project ID、grant 和撤销 |
 | `policy` | `src/desktop/daemon/policy` | realpath、能力交集、风险和本地最终拒绝 |
 | `tasks` | `src/desktop/daemon/tasks` | 去重、执行所有权、状态、取消和崩溃恢复 |
 | `result-projector` | `src/desktop/daemon/result-projector` | 将本地结果投影为 `local-detail`、`cloud-summary`、`device-content` 三级 |
 | `codex-adapter` | `src/desktop/daemon/codex-adapter` | Codex app-server 生命周期到领域事件的唯一转换层 |
-| `local-store` | `src/desktop/daemon/local-store` | project、delivery、task/provider ownership、完整本地结果 |
+| `local-store` | `src/desktop/daemon/local-store` | project、双向 delivery/outbox、task/provider ownership、完整本地结果 |
 
 结果分级：
 
@@ -74,7 +74,7 @@ gateway <== Gateway/Desktop WSS ==> desktop <== local stdio ==> Codex app-server
 
 不变量与门禁：
 
-- 保存 `task_id <-> thread_id <-> turn_id <-> project_id`，provider ID 只在本地；
+- 保存 `task_id <-> public turn_id <-> provider thread/turn ID <-> project_id`，provider ID 只在本地；
 - 接到 device command 后重新检查 binding、grant、目标 task/turn/image 和风险；
 - 同一 `message_id/command_id` 至多产生一次 turn；
 - 路径逃逸、跨项目续接、无可信审批的 R2/R3、app-server 崩溃和恢复不确定性全部 fail closed；
