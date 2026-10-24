@@ -29,7 +29,7 @@ OpenAI Codex app-server 协议不由 LinxBox 重新定义。`codex-adapter` 必�
 | 任务状态机与不变量 | [领域状态与结果](domain.md) §2 |
 | 风险能力分级 R0–R3 | [领域状态与结果](domain.md) §6 |
 | 标识符值对象 | [领域状态与结果](domain.md) §1 |
-| 结果分级三级 | [Desktop 模块](../modules.md#desktop-模块) §结果分级 |
+| 结果分级三级 | [模块规范](../modules.md) §desktop 单元 §结果分级 |
 | 禁传字段清单 | [Gateway/Desktop](gateway-desktop.md) §9 |
 | ACK 与重放语义 | [Gateway/Desktop](gateway-desktop.md) §6 |
 

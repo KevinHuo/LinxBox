@@ -18,17 +18,19 @@
 
 后续业务代码需同时提供可复现的安装、配置、格式检查、静态检查、构建、测试及覆盖率命令，并接入 CI。本阶段只有文档及协作模板，没有业务构建或测试命令，也未启用 CI 或合并保护。
 
-## 模块职责
+## 组成部分
 
-| 模块 | 职责 |
-| --- | --- |
-| `device` 设备接入 | 三键任务阅读、图片、输入确认、回执、恢复和真机验收 |
-| `linx` 灵矽 AI | 意图澄清、MCP 控制、Presentation Bridge 和设备路由 |
-| `gateway` Cloud MCP Gateway | 入口认证、Task/Outbox、Desktop WSS、设备投影、路由和审计 |
-| `desktop` Desktop UI/Daemon | 本地项目授权、去重、策略、任务所有权、UI 和恢复 |
-| `codex` app-server 适配 | app-server 进程、thread/turn、事件映射、取消和终态 |
-| `contracts` 契约与领域 | MCP、Gateway/Desktop、状态机、结果 schema 和 fixtures |
-| `quality` 集成与质量 | 端到端验收、契约测试、CI 和使用文档 |
+仓库内有三个可部署单元，另有不在本仓库的部分：
+
+| 单元 / 部分 | 职责 | 位置 |
+| --- | --- | --- |
+| `gateway` Cloud MCP Gateway | 入口认证、Task/Outbox、Desktop WSS、设备投影、路由和审计 | `src/gateway` |
+| `desktop` Desktop UI/Daemon | 本地项目授权、去重、策略、任务所有权、UI 和恢复 | `src/desktop` |
+| `admin-cli` 运维 CLI | Desktop client、绑定与 token 运维 | `src/admin-cli` |
+| 设备端 AI Passport / ESP32 | 三键任务阅读、图片、输入确认、回执、恢复和真机验收 | 固件工程，见 [Issue #4](https://github.com/KevinHuo/LinxBox/issues/4) |
+| 灵矽 AI | 意图澄清、MCP 控制、Presentation Bridge 和设备路由 | 灵矽平台 |
+| 契约与领域 | MCP、Gateway/Desktop、状态机、结果 schema 和 fixtures | `docs/contracts/` |
+| 集成与质量 | 端到端验收、契约测试、CI 和使用文档 | `docs/process/` |
 
 详细模块边界见 [docs/modules.md](docs/modules.md)；各模块的主负责人、必要 Reviewer 与跨模块 Integration Owner 在对应开发 Issue 中指定。物理代码目录由首个 bootstrap Task 按已接受的目录树创建；客户端操作细节与 MCP 工具契约分离。
 

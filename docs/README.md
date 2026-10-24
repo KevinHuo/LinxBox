@@ -8,7 +8,7 @@
 | --- | --- |
 | [最终技术架构](./architecture.md) | 总体架构、端到端链路、身份、协议、Codex 集成、安全、可靠性和实施路线 |
 | [边界契约索引](./contracts/README.md) | MCP、Device Presentation、Gateway/Desktop、领域状态与结果契约；单一事实源表 |
-| [模块规范](./modules.md) | 七个模块的职责、依赖方向、状态所有权与交付门禁 |
+| [模块规范](./modules.md) | 仓库内三个可部署单元（Gateway、Desktop、admin-cli）的职责、依赖方向与交付门禁 |
 | [灵矽 Agent 行为契约](./agent-behavior.md) | 灵矽 Agent、Gateway、Desktop 和 Codex 的行为边界、任务上下文与输出约束 |
 | [决策记录](./adr/) | 已接受的架构决策（ADR-0001 ~ 0005） |
 
