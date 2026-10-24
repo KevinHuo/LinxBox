@@ -42,6 +42,7 @@ LinxBox/
 │   │           ├── project-registry/
 │   │           ├── policy/
 │   │           ├── tasks/
+│   │           ├── result-projector/        # local-detail/cloud-summary/device-content 三级投影
 │   │           ├── local-store/
 │   │           └── codex-adapter/
 │   └── admin-cli/                      # client/binding/token 运维
