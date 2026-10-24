@@ -65,23 +65,7 @@ interface AgentTaskContext {
 
 ## 5. 输出契约
 
-```json
-{
-  "status": "succeeded",
-  "summary": "修复登录表单空值错误",
-  "changes": [
-    {"path": "src/login.ts", "description": "提交前收窄可空字段"}
-  ],
-  "verification": [
-    {"command": "npm test -- login", "outcome": "passed"}
-  ],
-  "risks": [],
-  "needs_user_action": null,
-  "voice_summary": "登录错误已修复，相关测试通过。"
-}
-```
-
-`voice_summary` 最长 120 个汉字；路径必须相对项目根；验证结果必须来自真实运行；错误必须脱敏；`succeeded` 只代表请求范围完成。
+结果结构与字段规则以 [`task-result-v1`](./contracts/domain.md) §7 为准：`voice_summary` 最长 120 个汉字；路径必须相对项目根；验证结果必须来自真实运行；错误必须脱敏；`succeeded` 只代表请求范围完成。
 
 ## 6. 风险与审批
 

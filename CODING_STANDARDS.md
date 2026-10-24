@@ -6,7 +6,7 @@
 
 - 沿用工程已有目录、模块和命名习惯；命名清楚，函数职责明确。
 - 复用现有接口和公共逻辑，避免重复实现及无必要抽象。
-- device、linx、gateway、desktop、codex adapter 和 contracts 保持 [docs/modules/README.md](docs/modules/README.md) 定义的依赖方向，不把具体业务判断散落到 transport、UI 或 adapter。
+- device、linx、gateway、desktop、codex adapter 和 contracts 保持 [docs/modules.md](docs/modules.md) 定义的依赖方向，不把具体业务判断散落到 transport、UI 或 adapter。
 - 使用工程统一的格式化、lint 和必要类型/静态检查配置；具体命令写在 README.md。
 - 注释解释必要的原因和约束，不重复描述显而易见的代码。
 

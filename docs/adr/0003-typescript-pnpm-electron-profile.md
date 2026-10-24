@@ -9,11 +9,11 @@ Gateway、Desktop、公共契约和测试若各自选择语言与 DTO，会让 A
 
 ## 决策
 
-- 仓库采用 TypeScript strict monorepo，由 pnpm workspace 管理 `apps/*`、`packages/*` 和 `plugins/*`。
+- 仓库采用 TypeScript strict monorepo，由 pnpm workspace 管理 `apps/*`、`packages/*` 和 `plugins/*`。**目录布局部分已由 [ADR-0004](./0004-shared-contracts-as-plain-data.md) 修订**：workspace 成员只保留 `apps/*`，共享契约以仓库根 `contracts/` 纯数据承载，MVP 不建 `packages/` 与 `plugins/`。
 - Node.js 使用开始实现时的 active LTS，并在仓库、CI 和 Desktop 构建中锁定同一版本。
 - Gateway 采用模块化单体并以 PostgreSQL 保存云端事实。
 - Desktop 采用 Electron，将 sandboxed Renderer、Main 和 Daemon 分离；SQLite 保存本地执行事实。
-- 公共运行时输入由共享 JSON Schema 严格校验。协议 schema、领域类型和 fixtures 放在共享 package，不在 producer/consumer 内复制。
+- 公共运行时输入由共享 JSON Schema 严格校验。协议 schema、领域类型和 fixtures 放在共享 package，不在 producer/consumer 内复制。**承载方式已由 [ADR-0004](./0004-shared-contracts-as-plain-data.md) 修订**：共享物落在仓库根 `contracts/` 纯数据目录，两端用同一组 fixtures 做双向一致性校验，"不在 producer/consumer 内复制"的意图不变。
 - Codex app-server 只能由 Desktop Daemon 通过本地 stdio 调用。
 - HTTP、数据库 adapter、UI 渲染、schema 校验和测试库由对应 bootstrap Task 比较后一次性选定并锁版，不得在业务模块中提前形成事实标准。
 

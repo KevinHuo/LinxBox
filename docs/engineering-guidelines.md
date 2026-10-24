@@ -6,6 +6,8 @@
 
 ## 1. 分层
 
+分层方向与目录落位见 [`docs/code-structure.md`](./code-structure.md) §3；本节只补充实现纪律。
+
 1. Domain 是纯业务代码，不依赖 HTTP、MCP SDK、WebSocket、Electron、文件系统、子进程或 Codex。
 2. Application 编排用例并依赖 ports。
 3. Inbound Adapter 负责 DTO、认证上下文、运行时校验和错误映射。
@@ -23,17 +25,7 @@
 
 ## 3. 错误
 
-```ts
-interface PublicError {
-  code: string;
-  message: string;
-  retryable: boolean;
-  requestId: string;
-  details?: Record<string, unknown>;
-}
-```
-
-标准错误：`UNAUTHENTICATED`、`PERMISSION_DENIED`、`INVALID_ARGUMENT`、`NOT_FOUND`、`CONFLICT`、`RESOURCE_EXHAUSTED`、`DEPENDENCY_UNAVAILABLE`、`APPROVAL_REQUIRED`、`POLICY_DENIED`、`INTERNAL`。禁止向公网返回原始异常、绝对路径、命令行或环境变量。
+`PublicError` 结构与标准 code 集合见 [`docs/contracts/domain.md`](./contracts/domain.md) §8 与 [`docs/contracts/mcp.md`](./contracts/mcp.md) §10，不在此复述。禁止向公网返回原始异常、绝对路径、命令行或环境变量。
 
 ## 4. 任务与并发
 

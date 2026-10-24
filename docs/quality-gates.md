@@ -10,7 +10,7 @@
 
 1. `docs/architecture.md`：部署、事实源和跨模块边界；
 2. `docs/contracts/` 与 Accepted ADR：公共行为、不变量和技术决策；
-3. `docs/modules/`：模块责任和禁止项；
+3. `docs/modules.md`：模块责任和禁止项；
 4. Accepted execution Spec：一个可实施 slice；
 5. Task Issue：执行跟踪，不能静默改上层契约；
 6. 代码与测试：已实现事实，不反向覆盖规范。

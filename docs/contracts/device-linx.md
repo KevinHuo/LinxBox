@@ -107,6 +107,6 @@ sending -> desktop_received -> queued -> agent_accepted -> running
 
 ## 7. 错误与恢复
 
-错误使用稳定 code：`OFFLINE`、`STALE_REVISION`、`TARGET_NOT_FOUND`、`DUPLICATE`、`QUEUE_FULL`、`CONTENT_UNAVAILABLE`、`PERMISSION_DENIED`、`POLICY_DENIED`、`INTERNAL`。
+错误使用稳定 code：`OFFLINE`、`STALE_REVISION`、`TARGET_NOT_FOUND`、`DUPLICATE`、`QUEUE_FULL`、`CONTENT_UNAVAILABLE`、`PERMISSION_DENIED`、`POLICY_DENIED`、`INTERNAL`；公共 code 见 [MCP 工具契约](./mcp.md) §10。
 
 恢复在线只请求 snapshot 并重放未 ACK 的读取请求；不得自动重发未确认 draft 或失败 command。恢复初始场景是本地显式操作，必须清理旧 timer/event，不能影响 Gateway 的真实 Task。

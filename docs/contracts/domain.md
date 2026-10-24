@@ -115,24 +115,6 @@ MVP 只允许本地 grant 包含的 R0/R1。R2 在无可信本地审批 UI 时�
 
 ## 8. 公共错误
 
-```ts
-interface PublicError {
-  code:
-    | "UNAUTHENTICATED"
-    | "PERMISSION_DENIED"
-    | "INVALID_ARGUMENT"
-    | "NOT_FOUND"
-    | "CONFLICT"
-    | "RESOURCE_EXHAUSTED"
-    | "DEPENDENCY_UNAVAILABLE"
-    | "APPROVAL_REQUIRED"
-    | "POLICY_DENIED"
-    | "INTERNAL";
-  message: string;
-  retryable: boolean;
-  requestId: string;
-  details?: Record<string, unknown>;
-}
-```
+`PublicError` 结构与标准 code 集合见 [MCP 工具契约](./mcp.md) §10；本模块的领域层只补充 `details` 的额外限制。
 
 `details` 不允许出现 token、cookie、绝对路径、原始 prompt、代码、命令输出、环境变量或 provider 内部错误对象。

@@ -184,17 +184,12 @@ const STATES = [
 ];
 const STOP = new Set(['any', 'non', 'terminal', 'v']);
 
-function stateBlock(file, headingNeedle) {
+// 状态机块可能内嵌在架构里，也可能只以指针形式引用契约。
+// 按哨兵词（状态名）定位代码块，避免抓到同文件里无关的图。
+function stateBlock(file, sentinels) {
   const text = read(file);
-  const idx = text.indexOf(headingNeedle);
-  if (idx < 0) return null;
-  const rest = text.slice(idx);
-  const fence = rest.indexOf('```');
-  if (fence < 0) return null;
-  const bodyStart = rest.indexOf('\n', fence);
-  const end = rest.indexOf('```', fence + 3);
-  if (bodyStart < 0 || end < 0) return null;
-  return rest.slice(bodyStart + 1, end);
+  const blocks = [...text.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => m[1]);
+  return blocks.find((b) => sentinels.every((s) => b.includes(s))) || null;
 }
 
 function statesIn(block) {
@@ -206,21 +201,34 @@ function statesIn(block) {
   return found;
 }
 
-const domainBlock = stateBlock(path.join(REPO, 'docs/contracts/domain.md'), '## 2. Task 状态');
-const archBlock = stateBlock(path.join(REPO, 'docs/architecture.md'), '## 11. 任务状态机');
+const SENTINELS = ['requested', 'succeeded'];
+const domainBlock = stateBlock(path.join(REPO, 'docs/contracts/domain.md'), SENTINELS);
+const archBlock = stateBlock(path.join(REPO, 'docs/architecture.md'), SENTINELS);
 
-if (domainBlock && archBlock) {
+if (!domainBlock) {
+  fail('docs/contracts/domain.md：找不到任务状态机代码块');
+} else {
   const domainStates = statesIn(domainBlock);
-  const archStates = statesIn(archBlock);
   for (const s of STATES) {
     if (!domainStates.has(s)) fail(`docs/contracts/domain.md 状态机缺少 \`${s}\``);
-    if (!archStates.has(s)) fail(`docs/architecture.md 状态机缺少 \`${s}\``);
   }
   for (const s of domainStates) {
     if (!STATES.includes(s)) fail(`docs/contracts/domain.md 状态机出现未登记状态 \`${s}\``);
   }
+}
+
+// 架构可以内嵌状态机图，也可以只引用契约；内嵌时两者必须一致。
+if (archBlock && domainBlock) {
+  const archStates = statesIn(archBlock);
+  const domainStates = statesIn(domainBlock);
+  for (const s of STATES) {
+    if (!archStates.has(s)) fail(`docs/architecture.md 状态机缺少 \`${s}\``);
+  }
   for (const s of archStates) {
     if (!STATES.includes(s)) fail(`docs/architecture.md 状态机出现未登记状态 \`${s}\``);
+  }
+  for (const s of domainStates) {
+    if (!archStates.has(s)) fail(`docs/architecture.md 状态机与领域契约不一致，缺少 \`${s}\``);
   }
 }
 
@@ -243,7 +251,7 @@ if (fs.existsSync(treePath)) {
     expected.add(stack.join('/'));
   }
 
-  const ROOTS = ['apps', 'packages', 'plugins', 'tests'];
+  const ROOTS = ['apps', 'contracts', 'tests'];
   const actual = new Set();
   for (const root of ROOTS) {
     const full = path.join(REPO, root);

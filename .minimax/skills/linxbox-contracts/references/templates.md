@@ -174,7 +174,7 @@ Refs #提案编号          （引用提案，避免合并单项任务时关闭�
 feat(gateway): 支持创建可恢复的编码任务
 fix(codex): 避免续接任务创建新 thread
 docs(contracts): 落地仓库内 MVP 契约基线
-chore(project): 建立 apps/packages/plugins/tests 目录骨架
+chore(project): 建立 apps/contracts/tests 目录骨架
 ```
 
 `type` 取 `feat|fix|refactor|perf|test|docs|style|build|ci|chore|revert`；scope 取 `device|linx|gateway|desktop|codex|contracts|quality|project`。不兼容变化用 `type(scope)!: 简述`，正文写 `BREAKING CHANGE:`、影响及迁移。
