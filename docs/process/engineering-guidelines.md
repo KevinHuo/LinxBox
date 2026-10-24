@@ -6,7 +6,7 @@
 
 ## 1. 分层
 
-分层方向与目录落位见 [`docs/code-structure.md`](../code-structure.md) §3；本节只补充实现纪律。
+分层方向见 [`docs/architecture.md`](../architecture.md) §4.1，目录落位见 [`docs/README.md`](../README.md)；本节只补充实现纪律。
 
 1. Domain 是纯业务代码，不依赖 HTTP、MCP SDK、WebSocket、Electron、文件系统、子进程或 Codex。
 2. Application 编排用例并依赖 ports。

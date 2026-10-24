@@ -10,9 +10,54 @@
 | [端到端串联](./end-to-end.md) | 语音、控制、展示与本地审阅四条链路的完整闭环与事实源划分 |
 | [边界契约索引](./contracts/README.md) | MCP、Device Presentation、Gateway/Desktop、领域状态与结果契约；单一事实源表 |
 | [模块规范](./modules.md) | 七个模块的职责、依赖方向、状态所有权与交付门禁 |
-| [代码与 Desktop UI 结构](./code-structure.md) | 技术基线、目录树、分层规则和 Desktop UI DOM/组件树 |
 | [灵矽 Agent 行为契约](./agent-behavior.md) | 灵矽 Agent、Gateway、Desktop 和 Codex 的行为边界、任务上下文与输出约束 |
 | [决策记录](./adr/) | 已接受的架构决策（ADR-0001 ~ 0005） |
+
+**仓库结构**
+
+```text
+LinxBox/
+├── src/                            # 三个可部署单元
+│   ├── gateway/                    # Cloud MCP Gateway
+│   │   ├── composition/            # 唯一组装根
+│   │   ├── mcp-transport/          # MCP DTO/progress/result
+│   │   ├── identity/               # client/token/binding
+│   │   ├── projects/               # 云端项目投影
+│   │   ├── tasks/                  # use case + state machine
+│   │   ├── presentation/           # 设备安全任务/内容/回执投影
+│   │   ├── broker/                 # Desktop WSS
+│   │   ├── outbox/                 # Delivery worker
+│   │   ├── policy/                 # 云端策略
+│   │   └── audit/                  # 脱敏审计
+│   ├── desktop/                    # LinxBox Desktop
+│   │   ├── main/                   # Electron 主进程与安全 IPC
+│   │   ├── renderer/               # 纯 UI，不直接访问 Node
+│   │   └── daemon/
+│   │       ├── composition/
+│   │       ├── gateway-client/
+│   │       ├── project-registry/
+│   │       ├── policy/
+│   │       ├── tasks/
+│   │       ├── result-projector/   # local-detail/cloud-summary/device-content 三级投影
+│   │       ├── local-store/
+│   │       └── codex-adapter/
+│   └── admin-cli/                  # client/binding/token 运维
+├── scripts/                        # 文档与契约一致性自检，不属于产品代码
+│   └── check-docs.js
+├── docs/                           # 契约与规范
+│   ├── contracts/                  # 边界契约（对外）
+│   ├── adr/                        # 已接受决策
+│   └── process/                    # 执行规范：工程规范、质量门禁、Execution Spec
+│       └── specs/                  # Execution Spec 流程、模板与各 Spec
+└── tests/
+    ├── fixtures/
+    │   └── device/                # Issue #4 UI/状态机与联网契约 fixtures
+    ├── integration/
+    ├── security/
+    └── e2e/
+```
+
+目录骨架已按上表创建，目录内当前为空（仅 `.gitkeep`）。`pnpm-workspace.yaml`、各包 `package.json`、`tsconfig.json`、lockfile 与 CI 属于工具链 bootstrap，由 [`SPEC-0001`](process/specs/0001-contracts-schema-and-fixtures.md) 的 Slice 1 在选型锁定后补入；在此之前不创建，避免未锁定的依赖与版本进入仓库。
 
 **二、执行规范**（给执行者与 AI 看）
 

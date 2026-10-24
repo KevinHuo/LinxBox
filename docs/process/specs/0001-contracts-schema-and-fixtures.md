@@ -19,7 +19,7 @@
 - 被替代内容：无。这是本仓库首次把契约实现为 schema、类型与 fixtures。
 - 接受阻塞项：
   1. DRI、必要 Reviewer、Integration Owner 尚未指派。
-  2. JSON Schema 校验库、类型生成方式、测试运行器与覆盖率工具未锁定。按 [`docs/code-structure.md`](../../code-structure.md) §1，这些由 bootstrap Task/ADR 一次性选定并锁版，锁版前不得开始依赖其 API 的实现。
+  2. JSON Schema 校验库、类型生成方式、测试运行器与覆盖率工具未锁定。按 [ADR-0003](../../adr/0003-typescript-pnpm-electron-profile.md) 与 [ADR-0004](../../adr/0004-shared-contracts-as-plain-data.md)，这些由 bootstrap Task/ADR 一次性选定并锁版，锁版前不得开始依赖其 API 的实现。
   3. `device-presentation/v1` 的 wire encoding 未冻结，需按真实灵矽能力确认。
 
 ## 2. 当前实现事实

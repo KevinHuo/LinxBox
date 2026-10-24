@@ -14,7 +14,7 @@
 - **交接以仓库为准**。换助手或换人继续同一任务时，交接依据是仓库内文件、当前开发 Issue 和 PR，不依赖上一位的对话记录或未提交到仓库的中间结论。
 - **验收与工具无关**。判断交付是否合格，只看开发 Issue 的验收条件、契约引用、门禁证据分级和格式；不因使用了某个助手而放宽或加严。
 - **被控制的目标仓库遵守其自身规则**。在 LinxBox 之外操作他人仓库时，不擅自覆盖其指令、配置和 CI。
-- **交付前跑一致性自检**：`node scripts/check-docs.js .` 校验相对链接与锚点、UTF-8、契约标识与工具名一致性、任务状态机一致性、目录树与 `docs/code-structure.md` 的一致性。本文件与 `docs/` 是唯一契约来源，不另设助手专属的规则副本。
+- **交付前跑一致性自检**：`node scripts/check-docs.js .` 校验相对链接与锚点、UTF-8、契约标识与工具名一致性、任务状态机一致性、目录树与 `docs/README.md` 的一致性。本文件与 `docs/` 是唯一契约来源，不另设助手专属的规则副本。
 
 ## 开发依据
 
@@ -26,7 +26,7 @@
 2. 用户未指定时，从当前 PR 的关联项和分支名中的 Issue 编号定位。
 3. 仍无法唯一确定时，先请用户指定或创建 Task/Bug Issue，不自行选择看似相关的任务。
 
-当前 MVP 的仓库内产品与技术契约是 [docs/architecture.md](docs/architecture.md)，完整链路以 [docs/end-to-end.md](docs/end-to-end.md) 为准，AI 行为以 [docs/agent-behavior.md](docs/agent-behavior.md) 为准，模块功能、代码树、边界契约和门禁分别以 [docs/modules.md](docs/modules.md)、[docs/code-structure.md](docs/code-structure.md)、[docs/contracts/README.md](docs/contracts/README.md) 和 [docs/process/quality-gates.md](docs/process/quality-gates.md) 为准。GitHub Proposal/Issue 提供讨论和任务追踪；除非用户明确要求，不修改其正文。历史 Proposal 与已接受仓库契约不一致时，以仓库契约为实现依据，并在交付说明中指出差异，不擅自改 Issue。
+当前 MVP 的仓库内产品与技术契约是 [docs/architecture.md](docs/architecture.md)（含 §4.1 代码分层），完整链路以 [docs/end-to-end.md](docs/end-to-end.md) 为准，AI 行为以 [docs/agent-behavior.md](docs/agent-behavior.md) 为准，模块功能、边界契约和门禁分别以 [docs/modules.md](docs/modules.md)、[docs/contracts/README.md](docs/contracts/README.md) 和 [docs/process/quality-gates.md](docs/process/quality-gates.md) 为准；仓库目录见 [docs/README.md](docs/README.md)。GitHub Proposal/Issue 提供讨论和任务追踪；除非用户明确要求，不修改其正文。历史 Proposal 与已接受仓库契约不一致时，以仓库契约为实现依据，并在交付说明中指出差异，不擅自改 Issue。
 
 依据的优先级从高到低为：
 

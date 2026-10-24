@@ -93,7 +93,7 @@ LinxBox 使用一个由产品方运营的公共 Gateway。灵矽 Agent 通过 MC
 
 ## 4. 组件职责
 
-模块内部功能、依赖方向和交付标准见[模块规范](modules.md)；四条链路的完整闭环见[端到端串联](end-to-end.md)；实施目录和 Desktop UI DOM/组件树见[代码与 Desktop UI 结构](code-structure.md)。
+模块内部功能、依赖方向和交付标准见[模块规范](modules.md)；四条链路的完整闭环见[端到端串联](end-to-end.md)；实施目录和 Desktop UI DOM/组件树见[文档索引](README.md)。
 
 | 组件 | 核心责任 | 不负责 |
 | --- | --- | --- |
@@ -109,6 +109,34 @@ LinxBox 使用一个由产品方运营的公共 Gateway。灵矽 Agent 通过 MC
 Gateway MVP 采用模块化单体：MCP Transport、Identity/Binding、Task Service、Presentation、Policy、Broker、Outbox 和 Audit 同进程、按模块隔离。
 
 Device Presentation 的语义由 [`device-presentation/v1`](contracts/device-linx.md) 定义。Issue #4 的离线演示是 Device UI 和状态机 fixture；真实联网、图片传输和 Agent 接入必须另有 integration/real-E2E 证据。
+
+### 4.1 代码分层
+
+每个业务子模块内部使用相同方向：
+
+```text
+transport / UI
+      │
+      ▼
+application use case
+      │
+      ▼
+domain + ports
+      ▲
+      │
+adapter implementation
+```
+
+- Domain 只包含类型、不变量和纯状态转换。
+- Application 组合 domain 和 ports，不直接导入 transport、DB 或 Electron。
+- Adapter 实现 ports，不定义新的业务规则。
+- `ports` 是应用内定义的接口（store/broker/agent/clock/ids），不单独成包。
+- Composition root 是唯一可以组装具体 adapter 的位置。
+- Renderer 不持有 token、绝对路径或子进程权限；只能调用有类型、最小化的 IPC facade。
+- UI 状态只源自 Daemon 的已持久化事实投影，不以临时 toast、进程文本或 app-server 原始事件推断任务终态。
+- MVP 没有可信审批 UI；`approval_required` 显示为已拒绝或需要未来客户端升级，不提供语音确认按钮。
+- 固件和灵矽实现可位于各自工程；LinxBox 仍拥有跨边界 schema、sanitized fixtures 和 E2E 证据，不复制外部工程源码。
+- 任何子目录如需更细规则，可新增就近 `AGENTS.md`，但不得放宽根目录规则。
 
 ## 5. 身份与设备绑定
 
@@ -320,7 +348,7 @@ src/
 
 契约的权威表述在 `docs/contracts/`；JSON Schema 与 fixtures 是实现产物，落位由对应实现 Spec 决定。插件能力属于产品化阶段，MVP 不预建目录。
 
-MVP Profile：Gateway 模块化单体 + PostgreSQL；Electron Desktop 分离 UI/Main/Daemon + SQLite + Codex app-server；灵矽包含公共 MCP 和独立 Presentation Bridge；ESP32 实现三键任务阅读与确认状态机。完整的目录、分层和 UI 组件树见[代码与 Desktop UI 结构](code-structure.md)，本节不另建一套实现规范。
+MVP Profile：Gateway 模块化单体 + PostgreSQL；Electron Desktop 分离 UI/Main/Daemon + SQLite + Codex app-server；灵矽包含公共 MCP 和独立 Presentation Bridge；ESP32 实现三键任务阅读与确认状态机。完整目录见[文档索引](README.md)，代码分层见 §4.1，本节不另建一套实现规范。
 
 ## 17. 实施路线
 

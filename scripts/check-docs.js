@@ -13,7 +13,7 @@
  *   2. 全部 .md / .gitattributes 为合法 UTF-8
  *   3. 契约标识版本唯一、六个 MCP 工具名与章节一一对应
  *   4. 任务状态机在架构与领域契约之间不冲突
- *   5. docs/code-structure.md 的目录树与仓库实际目录一致
+ *   5. docs/README.md 的目录树与仓库实际目录一致
  *
  * 退出码：0 全部通过；1 存在失败项。
  */
@@ -233,26 +233,59 @@ if (archBlock && domainBlock) {
 
 // ---------- 5. 目录树一致性 ----------
 
-const treePath = path.join(REPO, 'docs/code-structure.md');
+const treePath = path.join(REPO, 'docs/README.md');
 if (fs.existsSync(treePath)) {
   const text = read(treePath);
-  const fenceStart = text.indexOf('```text');
-  const tree = fenceStart < 0 ? '' : text.slice(fenceStart + 7, text.indexOf('```', fenceStart + 7));
+  // 取包含仓库根结构的那段代码块
+  const tree = [...text.matchAll(/```text\n([\s\S]*?)```/g)]
+    .map((m) => m[1])
+    .find((b) => b.includes('src/') && b.includes('docs/') && b.includes('tests/')) || '';
   const expected = new Set();
+  const expectedDirs = new Set();
+  const expectedFiles = new Set();
   const stack = [];
   for (const line of tree.split('\n')) {
     const m = /^([│ ]*)(├──|└──) (.+)$/.exec(line);
     if (!m) continue;
     const depth = Math.floor(m[1].length / 4);
-    const name = m[3].split('#')[0].trim().replace(/\/$/, '');
+    const raw = m[3].split('#')[0].trim();
+    const isDir = raw.endsWith('/');
+    const name = raw.replace(/\/$/, '');
     stack.length = depth;
     stack.push(name);
-    expected.add(stack.join('/'));
+    const full = stack.join('/');
+    expected.add(full);
+    if (isDir) expectedDirs.add(full);
+    else expectedFiles.add(full);
   }
 
-  const ROOTS = ['src', 'tests'];
+  // 目录树声明的顶层目录：仓库里允许出现的顶层目录集合
+  const declaredRoots = new Set(
+    [...expected].map((d) => d.split('/')[0]).filter((d) => !d.includes('.'))
+  );
+
+  // 仓库实际存在的顶层目录（排除点目录与隐藏目录）
+  const repoTopDirs = fs
+    .readdirSync(REPO, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    .map((e) => e.name);
+
+  for (const dir of repoTopDirs) {
+    if (!declaredRoots.has(dir)) {
+      fail(`仓库顶层存在 ${dir}/，但 docs/README.md 的目录树未声明`);
+    }
+  }
+
+  // 树里声明的顶层目录必须真实存在
+  for (const root of declaredRoots) {
+    if (!fs.existsSync(path.join(REPO, root))) {
+      fail(`目录树声明了 ${root}/，但仓库中不存在`);
+    }
+  }
+
+  // 已声明顶层目录下的每个子目录都必须出现在树里
   const actual = new Set();
-  for (const root of ROOTS) {
+  for (const root of declaredRoots) {
     const full = path.join(REPO, root);
     if (!fs.existsSync(full)) continue;
     actual.add(root);
@@ -260,7 +293,7 @@ if (fs.existsSync(treePath)) {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (entry.name === 'node_modules' || entry.name === '.git') continue;
         if (!entry.isDirectory()) continue;
-        const next = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const next = `${prefix}/${entry.name}`;
         actual.add(next);
         recurse(path.join(dir, entry.name), next);
       }
@@ -268,12 +301,18 @@ if (fs.existsSync(treePath)) {
     recurse(full, root);
   }
 
-  for (const dir of expected) {
-    if (!ROOTS.includes(dir.split('/')[0])) continue;
+  for (const dir of expectedDirs) {
+    if (!declaredRoots.has(dir.split('/')[0])) continue;
     if (!actual.has(dir)) fail(`目录树声明了 ${dir}，但仓库中不存在`);
   }
+  for (const file of expectedFiles) {
+    if (!declaredRoots.has(file.split('/')[0])) continue;
+    if (!fs.existsSync(path.join(REPO, file))) {
+      fail(`目录树声明了 ${file}，但仓库中不存在`);
+    }
+  }
   for (const dir of actual) {
-    if (!expected.has(dir)) fail(`仓库存在 ${dir}，但 docs/code-structure.md 的目录树未声明`);
+    if (!expected.has(dir)) fail(`仓库存在 ${dir}，但 docs/README.md 的目录树未声明`);
   }
 }
 

@@ -17,7 +17,7 @@ Gateway、Desktop、公共契约和测试若各自选择语言与 DTO，会让 A
 - Codex app-server 只能由 Desktop Daemon 通过本地 stdio 调用。
 - HTTP、数据库 adapter、UI 渲染、schema 校验和测试库由对应 bootstrap Task 比较后一次性选定并锁版，不得在业务模块中提前形成事实标准。
 
-完整目录、依赖方向和 UI 组件树见 [`docs/code-structure.md`](../code-structure.md)。
+完整目录见 [`docs/README.md`](../README.md)，代码分层见 [`docs/architecture.md`](../architecture.md) §4.1。
 
 ## 后果
 
