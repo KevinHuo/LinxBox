@@ -41,8 +41,6 @@ LinxBox/
 │   │       ├── local-store/
 │   │       └── codex-adapter/
 │   └── admin-cli/                  # client/binding/token 运维
-├── scripts/                        # 文档与契约一致性自检，不属于产品代码
-│   └── check-docs.js
 ├── docs/                           # 契约与规范
 │   ├── contracts/                  # 边界契约（对外）
 │   ├── adr/                        # 已接受决策
