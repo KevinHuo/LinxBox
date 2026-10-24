@@ -43,3 +43,6 @@ __pycache__/
 .idea/
 *.swp
 *.swo
+
+# Codex capability probe output
+codex-capabilities.json

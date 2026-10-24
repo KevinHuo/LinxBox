@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ACTIVE_TASK_STATES,
+  codexStatusLabel,
+  isCodexTurnRunning,
   connectionStatus,
   diagnosticsRows,
   filterTasks,
@@ -206,5 +208,32 @@ describe('getBridge', () => {
     } finally {
       Reflect.deleteProperty(globalThis, 'window');
     }
+  });
+});
+
+describe('codexStatusLabel', () => {
+  it('labels every provider status', () => {
+    expect(codexStatusLabel('idle')).toBe('空闲');
+    expect(codexStatusLabel('running')).toBe('执行中');
+    expect(codexStatusLabel('completed')).toBe('已完成');
+    expect(codexStatusLabel('failed')).toBe('失败');
+    expect(codexStatusLabel('interrupted')).toBe('已中断');
+  });
+});
+
+describe('isCodexTurnRunning', () => {
+  it('is true only while the turn is in flight', () => {
+    const base = {
+      threadId: null,
+      turnId: null,
+      progress: '',
+      finalText: '',
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    };
+    expect(isCodexTurnRunning({ ...base, status: 'running' })).toBe(true);
+    expect(isCodexTurnRunning({ ...base, status: 'completed' })).toBe(false);
+    expect(isCodexTurnRunning({ ...base, status: 'idle' })).toBe(false);
   });
 });

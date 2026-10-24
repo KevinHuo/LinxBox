@@ -279,6 +279,57 @@
             查看 MCP 指令、Codex Desktop 执行状态和同步回灵矽的对话内容。完整 diff
             与原始日志只留在这台机器上。
           </p>
+          <section class="panel codex-panel" aria-labelledby="codex-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">LOCAL CODEX</p>
+                <h2 id="codex-heading">本机 Codex 实测</h2>
+              </div>
+              <button class="text-button" id="codex-probe" type="button">探测 provider</button>
+            </div>
+            <p class="section-lede">
+              直接驱动本机 Codex app-server
+              跑一个真实任务，拿回真实内容。返回内容只留在这台机器上，不上传。
+            </p>
+            <dl class="telemetry-list">
+              <div>
+                <dt>Codex CLI</dt>
+                <dd id="codex-binary">未探测</dd>
+              </div>
+              <div>
+                <dt>版本</dt>
+                <dd id="codex-version">-</dd>
+              </div>
+              <div>
+                <dt>账号</dt>
+                <dd id="codex-account">-</dd>
+              </div>
+              <div>
+                <dt>状态</dt>
+                <dd id="codex-status">空闲</dd>
+              </div>
+            </dl>
+            <div class="codex-run">
+              <label>
+                <span>任务提示词</span>
+                <textarea id="codex-prompt" rows="3">
+只回答一句话：当前工作目录里能看到什么？不要执行任何命令。</textarea>
+              </label>
+              <label>
+                <span>执行项目</span>
+                <select id="codex-project"></select>
+              </label>
+              <div class="form-actions">
+                <button class="button button-primary" id="codex-run" type="button">
+                  运行真实任务
+                </button>
+                <button class="button button-quiet" id="codex-interrupt" disabled type="button">
+                  中断
+                </button>
+              </div>
+            </div>
+            <div class="codex-output" id="codex-output" aria-live="polite"></div>
+          </section>
           <div class="task-layout">
             <div class="panel task-list-large" id="task-list"></div>
             <aside class="panel task-detail" id="task-detail"></aside>

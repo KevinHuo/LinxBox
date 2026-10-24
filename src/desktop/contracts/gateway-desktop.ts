@@ -66,15 +66,25 @@ export interface Frame<TType extends string, TPayload> {
   readonly payload: TPayload;
 }
 
-export type GatewayFrame<TType extends GatewayMessageType = GatewayMessageType> = Frame<
-  TType,
-  GatewayPayloadByType[TType]
->;
+/**
+ * An inbound frame, correlated by message type.
+ *
+ * The payload type is tied to `type`, so narrowing on `type` narrows the
+ * payload as well.
+ */
+export type GatewayFrame<TType extends GatewayMessageType = GatewayMessageType> = {
+  [K in TType]: Frame<K, GatewayPayloadByType[K]>;
+}[TType];
 
-export type DesktopFrame<TType extends DesktopMessageType = DesktopMessageType> = Frame<
-  TType,
-  DesktopPayloadByType[TType]
->;
+/** An inbound `task.dispatch` frame. */
+export type TaskDispatchFrame = Extract<GatewayFrame, { type: 'task.dispatch' }>;
+
+/** An inbound `task.cancel` frame. */
+export type TaskCancelFrame = Extract<GatewayFrame, { type: 'task.cancel' }>;
+
+export type DesktopFrame<TType extends DesktopMessageType = DesktopMessageType> = {
+  [K in TType]: Frame<K, DesktopPayloadByType[K]>;
+}[TType];
 
 /** `client.hello` payload. */
 export interface ClientHelloPayload {

@@ -49,6 +49,29 @@ export interface DiagnosticsFacts {
   readonly lastError: string | null;
 }
 
+/** What the local Codex app-server reports about itself. */
+export interface CodexProbeFacts {
+  readonly available: boolean;
+  readonly binaryPath: string | null;
+  readonly version: string | null;
+  readonly userAgent: string | null;
+  readonly authMode: string | null;
+  readonly planType: string | null;
+  readonly error: string | null;
+}
+
+/** The state of the turn the Desktop is driving against the local provider. */
+export interface CodexTurnFacts {
+  readonly threadId: string | null;
+  readonly turnId: string | null;
+  readonly status: 'idle' | 'running' | 'completed' | 'failed' | 'interrupted';
+  readonly progress: string;
+  readonly finalText: string;
+  readonly error: string | null;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+}
+
 /** States that still represent work in flight. */
 export const ACTIVE_TASK_STATES: readonly string[] = [
   'dispatched',
@@ -122,8 +145,30 @@ export function projectStateLabel(project: ProjectFacts): string {
   return project.enabled ? '可供灵矽使用' : '当前已停用';
 }
 
-/** Diagnostics rows rendered on the settings page. */
-export function diagnosticsRows(diagnostics: DiagnosticsFacts): { label: string; value: string }[] {
+/** Label for a Codex turn status. */
+export function codexStatusLabel(status: CodexTurnFacts['status']): string {
+  switch (status) {
+    case 'running':
+      return '执行中';
+    case 'completed':
+      return '已完成';
+    case 'failed':
+      return '失败';
+    case 'interrupted':
+      return '已中断';
+    case 'idle':
+      return '空闲';
+  }
+}
+
+/** Whether a Codex turn is still in flight. */
+export function isCodexTurnRunning(turn: CodexTurnFacts): boolean {
+  return turn.status === 'running';
+}
+
+/** Diagnostics rows rendered on the settings page. */ export function diagnosticsRows(
+  diagnostics: DiagnosticsFacts,
+): { label: string; value: string }[] {
   return [
     { label: '客户端版本', value: diagnostics.desktopVersion },
     { label: '协议版本', value: diagnostics.protocolVersions.join(', ') || '-' },
@@ -135,6 +180,10 @@ export function diagnosticsRows(diagnostics: DiagnosticsFacts): { label: string;
 
 /** Bridge exposed by the preload script, when the renderer runs inside Electron. */
 export interface LinxboxBridge {
+  probeCodex(): Promise<unknown>;
+  startCodexTurn(payload: unknown): Promise<unknown>;
+  readCodexTurn(payload?: unknown): Promise<unknown>;
+  interruptCodexTurn(payload: unknown): Promise<unknown>;
   readConnection(): Promise<unknown>;
   saveConnection(payload: unknown): Promise<unknown>;
   testConnection(): Promise<unknown>;

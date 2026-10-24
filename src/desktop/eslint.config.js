@@ -49,10 +49,24 @@ export default tseslint.config(
       globals: {
         Buffer: 'readonly',
         __dirname: 'readonly',
+        clearInterval: 'readonly',
+        clearTimeout: 'readonly',
         console: 'readonly',
         process: 'readonly',
+        setInterval: 'readonly',
+        setTimeout: 'readonly',
         URL: 'readonly',
       },
+    },
+  },
+  {
+    // Development scripts are command line tools: printing to stdout is their
+    // job, not a side effect worth suppressing. They are plain JavaScript, so
+    // the TypeScript-only return type rule does not apply.
+    files: ['scripts/**/*.mjs'],
+    rules: {
+      'no-console': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
   prettier,

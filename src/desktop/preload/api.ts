@@ -12,6 +12,10 @@ export type InvokeFn = (channel: string, payload: unknown) => Promise<unknown>;
 
 /** The methods the preload bridge exposes to the renderer. */
 export interface LinxboxApi {
+  probeCodex(): Promise<unknown>;
+  startCodexTurn(payload: unknown): Promise<unknown>;
+  readCodexTurn(payload?: unknown): Promise<unknown>;
+  interruptCodexTurn(payload: unknown): Promise<unknown>;
   readConnection(): Promise<unknown>;
   saveConnection(payload: unknown): Promise<unknown>;
   testConnection(): Promise<unknown>;
@@ -35,6 +39,10 @@ export function createLinxboxApi(invoke: InvokeFn): LinxboxApi {
     invoke(channelFor(method), payload);
 
   return {
+    probeCodex: () => call('codex.probe'),
+    startCodexTurn: (payload) => call('codex.turn.start', payload),
+    readCodexTurn: (payload = {}) => call('codex.turn.status', payload),
+    interruptCodexTurn: (payload) => call('codex.turn.interrupt', payload),
     readConnection: () => call('connection.read'),
     saveConnection: (payload) => call('connection.save', payload),
     testConnection: () => call('connection.test'),

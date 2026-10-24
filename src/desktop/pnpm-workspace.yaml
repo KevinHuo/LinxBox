@@ -1,13 +1,10 @@
-# pnpm 11 reads build-script allowlists from this file, not from package.json.
+# pnpm 11 reads build-script decisions from this file.
 #
-# electron downloads its prebuilt binary in a postinstall script, so it must be
-# explicitly allowed. esbuild links its platform binary in a postinstall script
-# for the same reason.
-onlyBuiltDependencies:
-  - electron
-  - esbuild
-
-# electron-winstaller is a Windows packaging helper. The Desktop ships a macOS
-# target only, so its install script is intentionally not executed.
-ignoredBuiltDependencies:
-  - electron-winstaller
+# electron downloads its prebuilt binary in a postinstall script and esbuild
+# links its platform binary the same way, so both need their scripts.
+# electron-winstaller is a Windows packaging helper; the Desktop ships a macOS
+# target only, so its install script is explicitly denied.
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: false

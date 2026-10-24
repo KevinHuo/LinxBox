@@ -12,16 +12,20 @@ export const IPC_VERSION = 'v1';
 
 /** Logical methods the renderer may call. */
 export const IPC_METHODS = [
+  'codex.probe',
+  'codex.turn.interrupt',
+  'codex.turn.start',
+  'codex.turn.status',
   'connection.read',
   'connection.save',
   'connection.test',
-  'projects.list',
-  'projects.grant',
-  'projects.revoke',
-  'tasks.list',
-  'tasks.get',
-  'tasks.cancel',
   'diagnostics.read',
+  'projects.grant',
+  'projects.list',
+  'projects.revoke',
+  'tasks.cancel',
+  'tasks.get',
+  'tasks.list',
 ] as const;
 
 export type IpcMethod = (typeof IPC_METHODS)[number];

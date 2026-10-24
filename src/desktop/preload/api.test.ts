@@ -11,6 +11,10 @@ describe('preload bridge', () => {
       return Promise.resolve(null);
     });
 
+    await api.probeCodex();
+    await api.startCodexTurn({ prompt: 'hi', projectId: 'prj_1' });
+    await api.readCodexTurn();
+    await api.interruptCodexTurn({ turnId: 'turn_1' });
     await api.readConnection();
     await api.saveConnection({ gatewayUrl: 'wss://example.com/ws' });
     await api.testConnection();
@@ -23,6 +27,10 @@ describe('preload bridge', () => {
     await api.readDiagnostics();
 
     expect(calls.map((call) => call.channel)).toEqual([
+      'linxbox.v1.codex.probe',
+      'linxbox.v1.codex.turn.start',
+      'linxbox.v1.codex.turn.status',
+      'linxbox.v1.codex.turn.interrupt',
       'linxbox.v1.connection.read',
       'linxbox.v1.connection.save',
       'linxbox.v1.connection.test',
@@ -42,10 +50,14 @@ describe('preload bridge', () => {
       [
         'cancelTask',
         'getTask',
+        'interruptCodexTurn',
+        'probeCodex',
+        'readCodexTurn',
         'grantProject',
         'listProjects',
         'listTasks',
         'readConnection',
+        'startCodexTurn',
         'readDiagnostics',
         'revokeProject',
         'saveConnection',

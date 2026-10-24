@@ -29,7 +29,13 @@ export default defineConfig({
       // `main/index.ts` and `preload/index.ts` are the same kind of file: they
       // only bind Electron's app, dialog, ipcMain and contextBridge APIs to
       // the tested modules, and they cannot run outside an Electron host.
-      exclude: ['**/*.wiring.ts', '**/*.test.ts', 'main/index.ts', 'preload/index.ts'],
+      exclude: [
+        '**/*.wiring.ts',
+        '**/*.test.ts',
+        '**/*.test-support.ts',
+        'main/index.ts',
+        'preload/index.ts',
+      ],
       thresholds: {
         lines: 90,
         branches: 90,

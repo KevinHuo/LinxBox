@@ -80,6 +80,27 @@ const taskListSchema = z
   })
   .strict();
 
+const codexProbeSchema = z.object({}).strict();
+
+const codexTurnStartSchema = z
+  .object({
+    prompt: z.string().min(1).max(20_000),
+    projectId: z.string().min(1).max(128),
+  })
+  .strict();
+
+const codexTurnStatusSchema = z
+  .object({
+    turnId: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+const codexTurnInterruptSchema = z
+  .object({
+    turnId: z.string().min(1).max(128),
+  })
+  .strict();
+
 export type ConnectionSaveInput = z.infer<typeof connectionSaveSchema>;
 export type ProjectGrantInput = z.infer<typeof projectGrantSchema>;
 export type ProjectRevokeInput = z.infer<typeof projectRevokeSchema>;
@@ -88,6 +109,10 @@ export type TaskCancelInput = z.infer<typeof taskCancelSchema>;
 export type TaskListInput = z.infer<typeof taskListSchema>;
 
 export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
+  'codex.probe': codexProbeSchema,
+  'codex.turn.start': codexTurnStartSchema,
+  'codex.turn.status': codexTurnStatusSchema,
+  'codex.turn.interrupt': codexTurnInterruptSchema,
   'connection.read': emptyPayloadSchema,
   'connection.save': connectionSaveSchema,
   'connection.test': emptyPayloadSchema,
@@ -171,6 +196,35 @@ export interface DiagnosticsView {
   readonly databasePath: string | null;
   readonly connected: boolean;
   readonly lastError: string | null;
+}
+
+/**
+ * What the local Codex app-server reports about itself.
+ *
+ * `binaryPath` is a local fact and never leaves the machine.
+ */
+export interface CodexProbeView {
+  readonly available: boolean;
+  readonly binaryPath: string | null;
+  readonly version: string | null;
+  readonly userAgent: string | null;
+  readonly authMode: string | null;
+  readonly planType: string | null;
+  readonly error: string | null;
+}
+
+/** The state of the turn the Desktop is currently driving. */
+export interface CodexTurnView {
+  readonly threadId: string | null;
+  readonly turnId: string | null;
+  readonly status: 'idle' | 'running' | 'completed' | 'failed' | 'interrupted';
+  /** Latest provider commentary. */
+  readonly progress: string;
+  /** The provider's answer. */
+  readonly finalText: string;
+  readonly error: string | null;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
 }
 
 /* ------------------------------------------------------------------ */

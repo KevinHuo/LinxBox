@@ -94,13 +94,104 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - IPC allowlist 与运行时校验（含越权负例）
 - 契约草稿切片：`Gateway/Desktop 1.0` 帧、`task-domain/v1` 状态机、`task-result/v1`
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
+- **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
+- **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + mock Gateway 联调脚本
 
 未实现（属于后续 Slice）：
 
-- 出站 Gateway WSS 客户端、hello/heartbeat/sequence、重连重放
-- Codex app-server stdio adapter、thread/turn 生命周期
-- SQLite 持久化与真实 schema 迁移执行
-- 真实 macOS + 真实 app-server 的端到端验收
+- 真实云端 Gateway（当前只有本地 mock）
+- SQLite 真实持久化与迁移执行
+- 结果投影接入真实任务（`result-projector` 已就绪，尚未接上真实 turn 的产物）
+
+## 真实 Codex 接入
+
+### 探针：Codex 到底能给我们什么
+
+```bash
+pnpm build
+pnpm probe:codex        # 写入 codex-capabilities.json
+```
+
+app-server 没有自描述的 method list，但对一个不存在的方法发请求时，它会在错误信息里回
+`expected one of ...`，把**完整支持的方法集合**吐出来。探针用这个拿权威目录。
+
+本机 `codex-cli 0.164.0-alpha.11.1` 的观测结果：
+
+| 分类 | 方法数 | 代表方法 |
+| --- | --- | --- |
+| 会话与轮次 | 61 | `thread/start`、`thread/resume`、`turn/start`、`turn/interrupt`、`turn/steer`、`thread/turns/list`、`thread/items/list`、`thread/search` |
+| 扩展与插件 | 36 | `plugin/list`、`skills/list`、`mcpServerStatus/list`、`hooks/list` |
+| 文件与进程 | 23 | `fs/readFile`、`fs/readDirectory`、`process/spawn`、`command/exec` |
+| 账号与额度 | 21 | `account/read`、`account/rateLimits/read`、`account/usage/read`、`getAuthStatus` |
+| 模型与配置 | 18 | `model/list`、`config/read`、`permissionProfile/list` |
+| 项目与记忆 | 14 | `project/list`、`threadSection/list`、`memory/status` |
+| 其他 | 6 | `server/diagnostics`、`environment/info` 等 |
+
+通知侧观测到 14 种，包括 `thread/started`、`turn/started`、`item/started`、`item/completed`、
+`turn/completed`、`error`、`warning`、`account/updated`、`account/rateLimits/updated`、
+`thread/status/changed`、`thread/readState/changed`、`mcpServer/startupStatus/updated`、
+`configWarning`、`remoteControl/status/changed`。
+
+`item/completed` 的 `item.type === 'agentMessage'` 时携带真实文本，`phase` 为 `commentary` 是
+过程解说，`final_answer`（或无 phase）是最终回答。
+
+### 远端 WSS 命令如何驱动本地 Codex
+
+链路是真的：真实 WebSocket over TCP，真实本机 Codex app-server 子进程，真实
+Gateway/Desktop 1.0 帧格式。
+
+```bash
+pnpm build
+pnpm e2e:gateway-codex   # mock Gateway(云端) -> Desktop -> 本机 Codex -> 回传
+pnpm mock:gateway        # 单独跑 mock Gateway，供 Electron 客户端联调
+```
+
+**远端下发的帧格式**（`Gateway/Desktop 1.0`）：
+
+```json
+{
+  "protocol_version": "1.0",
+  "message_id": "msg_01H...",
+  "sequence": 1043,
+  "type": "task.dispatch",
+  "sent_at": "2026-10-24T01:00:00Z",
+  "expires_at": "2026-10-24T01:30:00Z",
+  "payload": {
+    "task_id": "tsk_01H...",
+    "project_id": "prj_01H...",
+    "agent": "codex",
+    "capabilities": ["read", "write", "test"],
+    "prompt": "修复登录页错误并运行测试",
+    "acceptance_criteria": ["空值提交不再抛错"],
+    "policy_version": "2026-10-24",
+    "continuation": null
+  }
+}
+```
+
+远端只给 `project_id`，**绝对路径永远由本机解析**。Desktop 回传：
+
+```json
+{ "type": "task.ack",  "payload": { "message_id": "...", "sequence": 1043, "task_id": "...", "disposition": "accepted" } }
+{ "type": "task.started",  "payload": { "task_id": "...", "event_sequence": 1, "state": "running", "stage": "preparing", "...": "" } }
+{ "type": "task.completed", "payload": { "task_id": "...", "event_sequence": 2, "state": "succeeded", "result": { "contract_version": "task-result-v1", "...": "" } } }
+```
+
+`disposition` 取 `accepted | duplicate | expired | rejected`；`accepted` 只表示"已落盘并通过
+初检"，不等于 started 或 succeeded。同一个 `message_id` 重放返回 `duplicate`，绝不创建第二个
+turn。
+
+### 本机接入的安全边界
+
+| 约束 | 实现 |
+| --- | --- |
+| 不读 Codex 私有数据库 | 适配器只走 stdio JSON-RPC，不碰 `~/.codex` 的任何文件 |
+| 不经 shell 启动 | 参数是数组，`shell: false` |
+| 环境白名单 | 子进程只继承 `PATH`/`HOME`/`TMPDIR`/`USER`/`LANG`/`TERM`/`CODEX_HOME`；token、cookie、`LINXBOX_*` 全部剔除 |
+| stderr 不外传 | 只进本地环形缓冲，不进任何上行帧 |
+| 帧大小有上限 | 单帧超过 16 MB 视为协议错误，不做无界缓冲 |
+| 服务端请求一律拒绝 | app-server 的审批请求（`item/*/requestApproval`）回 `-32601`，本客户端没有可信审批面 |
+| 终态不可证明就中断 | 只有 provider 明确 `completed` 才算 succeeded，其余（含未知状态）收敛为 `interrupted` |
 
 ## 已知限制
 

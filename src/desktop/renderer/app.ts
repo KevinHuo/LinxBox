@@ -7,14 +7,18 @@
  * channel.
  */
 import {
+  codexStatusLabel,
   connectionStatus,
   diagnosticsRows,
   filterTasks,
   formatRootPath,
+  isCodexTurnRunning,
   projectLabel,
   projectStateLabel,
   selectTaskId,
   getBridge,
+  type CodexProbeFacts,
+  type CodexTurnFacts,
   type ConnectionFacts,
   type DiagnosticsFacts,
   type LinxboxBridge,
@@ -30,6 +34,25 @@ const state = {
   projects: [...mockProjects],
   tasks: [...mockTasks],
   diagnostics: { ...mockDiagnostics },
+  codexProbe: {
+    available: false,
+    binaryPath: null,
+    version: null,
+    userAgent: null,
+    authMode: null,
+    planType: null,
+    error: null,
+  } as CodexProbeFacts,
+  codexTurn: {
+    threadId: null,
+    turnId: null,
+    status: 'idle',
+    progress: '',
+    finalText: '',
+    error: null,
+    startedAt: null,
+    completedAt: null,
+  } as CodexTurnFacts,
   runningOnly: false,
   selectedTaskId: null as string | null,
 };
@@ -229,6 +252,64 @@ function renderTaskDetail(): void {
     : '<p class="empty-state">选择一个任务查看详情。</p>';
 }
 
+function renderCodexPanel(): void {
+  const set = (id: string, value: string): void => {
+    const element = qs(`#${id}`);
+    if (element) {
+      element.textContent = value;
+    }
+  };
+  set('codex-binary', state.codexProbe.binaryPath ?? '未探测');
+  set('codex-version', state.codexProbe.version ?? '-');
+  set(
+    'codex-account',
+    state.codexProbe.authMode
+      ? `${state.codexProbe.authMode}${state.codexProbe.planType ? ` · ${state.codexProbe.planType}` : ''}`
+      : '-',
+  );
+  set('codex-status', codexStatusLabel(state.codexTurn.status));
+
+  const output = qs('#codex-output');
+  if (output) {
+    const parts: string[] = [];
+    if (state.codexTurn.progress.length > 0) {
+      parts.push(`<span class="codex-progress">${escapeHtml(state.codexTurn.progress)}</span>`);
+    }
+    if (state.codexTurn.finalText.length > 0) {
+      parts.push(escapeHtml(state.codexTurn.finalText));
+    }
+    if (state.codexTurn.error !== null) {
+      parts.push(`<span class="codex-error">${escapeHtml(state.codexTurn.error)}</span>`);
+    }
+    output.innerHTML = parts.join('\n\n');
+  }
+
+  const runButton = qs<HTMLButtonElement>('#codex-run');
+  const interruptButton = qs<HTMLButtonElement>('#codex-interrupt');
+  const running = isCodexTurnRunning(state.codexTurn);
+  if (runButton) {
+    runButton.disabled = running;
+  }
+  if (interruptButton) {
+    interruptButton.disabled = !running;
+  }
+
+  const projectSelect = qs<HTMLSelectElement>('#codex-project');
+  if (projectSelect) {
+    const enabled = state.projects.filter((project) => project.enabled);
+    const signature = enabled.map((project) => project.projectId).join(',');
+    if (projectSelect.dataset['signature'] !== signature) {
+      projectSelect.dataset['signature'] = signature;
+      projectSelect.innerHTML = enabled
+        .map(
+          (project) =>
+            `<option value="${escapeHtml(project.projectId)}">${escapeHtml(project.displayName)}</option>`,
+        )
+        .join('');
+    }
+  }
+}
+
 function renderDiagnostics(): void {
   const rows = diagnosticsRows(state.diagnostics);
   const set = (id: string, value: string): void => {
@@ -253,6 +334,87 @@ function renderAll(): void {
   renderProjects();
   renderTasks();
   renderDiagnostics();
+  renderCodexPanel();
+}
+
+let codexPollTimer: ReturnType<typeof setInterval> | undefined;
+
+function stopCodexPolling(): void {
+  if (codexPollTimer !== undefined) {
+    clearInterval(codexPollTimer);
+    codexPollTimer = undefined;
+  }
+}
+
+async function pollCodexTurn(): Promise<void> {
+  if (bridge === null) {
+    return;
+  }
+  const turn = (await bridge.readCodexTurn()) as CodexTurnFacts;
+  state.codexTurn = turn;
+  renderCodexPanel();
+  if (!isCodexTurnRunning(turn)) {
+    stopCodexPolling();
+  }
+}
+
+function startCodexPolling(): void {
+  stopCodexPolling();
+  codexPollTimer = setInterval(() => {
+    void pollCodexTurn();
+  }, 1200);
+}
+
+async function probeCodex(): Promise<void> {
+  if (bridge === null) {
+    showToast('未接入桌面端桥接，仅本地预览');
+    return;
+  }
+  const probe = (await bridge.probeCodex()) as CodexProbeFacts;
+  state.codexProbe = probe;
+  renderCodexPanel();
+  showToast(probe.available ? '本机 Codex 已就绪' : (probe.error ?? '未找到本机 Codex'));
+}
+
+async function runCodexTurn(): Promise<void> {
+  if (bridge === null) {
+    showToast('未接入桌面端桥接，仅本地预览');
+    return;
+  }
+  const prompt = qs<HTMLTextAreaElement>('#codex-prompt')?.value.trim() ?? '';
+  const projectId = qs<HTMLSelectElement>('#codex-project')?.value ?? '';
+  if (!prompt) {
+    showToast('请填写任务提示词');
+    return;
+  }
+  if (!projectId) {
+    showToast('请先在"本地项目"里授权一个项目');
+    return;
+  }
+  const result = (await bridge.startCodexTurn({ prompt, projectId })) as {
+    ok?: boolean;
+    message?: string;
+    data?: CodexTurnFacts;
+  };
+  if (!result?.ok) {
+    showToast(result?.message ?? '启动失败');
+    return;
+  }
+  state.codexTurn = result.data ?? state.codexTurn;
+  renderCodexPanel();
+  startCodexPolling();
+}
+
+async function interruptCodexTurn(): Promise<void> {
+  if (bridge === null) {
+    return;
+  }
+  const turnId = state.codexTurn.turnId;
+  if (turnId === null) {
+    return;
+  }
+  await bridge.interruptCodexTurn({ turnId });
+  await pollCodexTurn();
 }
 
 async function refreshFromBridge(): Promise<void> {
@@ -352,6 +514,18 @@ function wireEvents(): void {
 
   qs('#refresh-diagnostics')?.addEventListener('click', () => {
     void refreshFromBridge();
+  });
+
+  qs('#codex-probe')?.addEventListener('click', () => {
+    void probeCodex();
+  });
+
+  qs('#codex-run')?.addEventListener('click', () => {
+    void runCodexTurn();
+  });
+
+  qs('#codex-interrupt')?.addEventListener('click', () => {
+    void interruptCodexTurn();
   });
 }
 

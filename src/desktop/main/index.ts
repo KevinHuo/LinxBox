@@ -40,6 +40,7 @@ import {
   type TaskListInput,
 } from '../shared/ipc.js';
 import { createLogger } from '../shared/logger.js';
+import { CodexSession } from './codex-session.js';
 
 const logger = createLogger('desktop.main');
 
@@ -50,6 +51,7 @@ const preloadPath = join(packageRoot, 'dist-preload', 'preload', 'index.js');
 const rendererPath = join(packageRoot, 'dist', 'renderer', 'index.html');
 
 const state: DesktopState = createDesktopState({ desktopVersion: app.getVersion() });
+const codexSession = new CodexSession();
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -153,7 +155,59 @@ function handleDiagnosticsRead(): unknown {
   return readDiagnostics(state);
 }
 
+function handleCodexProbe(): unknown {
+  return codexSession.probe();
+}
+
+function handleCodexTurnStatus(): unknown {
+  return codexSession.status();
+}
+
+async function handleCodexTurnStart(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.turn.start', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { prompt, projectId } = parsed.data as { prompt: string; projectId: string };
+
+  const project = state.projects.get(projectId);
+  if (!project) {
+    return { ok: false, code: 'NOT_FOUND', message: '项目不存在，请先授权本地项目' };
+  }
+  if (!project.enabled) {
+    return { ok: false, code: 'PERMISSION_DENIED', message: '该项目已被停用' };
+  }
+
+  try {
+    const turn = await codexSession.startTurn(prompt, project.rootPath);
+    return { ok: true, data: turn };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '本机 Codex 调用失败';
+    logger.error('启动 Codex turn 失败', { message });
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
+async function handleCodexTurnInterrupt(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('codex.turn.interrupt', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { turnId } = parsed.data as { turnId: string };
+  try {
+    await codexSession.interrupt(turnId);
+    return { ok: true, data: codexSession.status() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '中断失败';
+    return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message };
+  }
+}
+
 const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
+  'codex.probe': () => handleCodexProbe(),
+  'codex.turn.start': (payload) => handleCodexTurnStart(payload),
+  'codex.turn.status': () => handleCodexTurnStatus(),
+  'codex.turn.interrupt': (payload) => handleCodexTurnInterrupt(payload),
   'connection.read': () => handleConnectionRead(),
   'connection.save': (payload) => handleConnectionSave(payload),
   'connection.test': () => handleConnectionTest(),
@@ -242,6 +296,7 @@ void app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  codexSession.close();
   if (process.platform !== 'darwin') {
     app.quit();
   }
