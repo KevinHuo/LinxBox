@@ -1,10 +1,67 @@
 # LinxBox
 
-[![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-97.10%25-brightgreen)](desktop/README.md#测试覆盖率)
+[![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.35%25-brightgreen)](desktop/README.md#测试覆盖率)
+[![Firmware line coverage](https://img.shields.io/badge/Firmware%20line%20coverage-99.30%25-brightgreen)](firmware/README.md#测试覆盖率)
 
-LinxBox 让 AI Passport/ESP32 通过灵矽 AI 发起编码任务，经 Gateway 路由到 macOS 客户端，再由本机 Codex app-server 执行。
+**把 AI 编程会话带到手边。**
 
-当前仓库包含 LinX 0.2 固件、Gateway 服务和 macOS Desktop。Gateway 已提供线上 WSS/MCP 服务，Desktop 已接入 Gateway WSS，并通过本机 Codex app-server 执行任务；真实设备、线上凭据、灵矽服务和长期稳定性仍需在目标环境验收。具体协议、状态机、数据结构和恢复策略以 `contracts/`、对应 Issue 和已合并 PR 为准。
+LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目：希望让你暂时离开键盘后，也能在小屏上查看任务、阅读 Agent 的回复，并用一句话继续沟通。设备负责交互，代码仍由 Mac 上已授权的 Code Agent 执行。
+
+![LinxBox 硬件概念效果图：透明外壳的 AI Passport 展示 LinX 任务列表](assets/readme/linxbox-hardware.png)
+
+*产品示意图：任务列表。*
+
+[产品体验](#产品体验) · [硬件与操作](#硬件与操作) · [当前进展](#当前进展) · [参与开发](#参与开发)
+
+## 产品体验
+
+当 Agent 正在修改代码、运行测试，或者需要你补充要求时，我们希望把“查看进展、读回复、说下一步”这几个动作放到一块随手可用的小屏上，让你减少回到电脑前查看会话的次数。
+
+| 使用场景 | 希望带来的体验 |
+| --- | --- |
+| 等待任务执行 | 浏览任务列表，了解正在运行、等待回复或有新回复的会话 |
+| 查看本轮结果 | 分页阅读 Agent 的文字回复，翻看最近对话，接上之前的思路 |
+| 想到下一步要求 | 选择当前任务，用语音补充“继续优化这个页面”等指令，延续原会话 |
+
+完整体验的目标是：
+
+1. **选任务**：在设备上找到电脑端正在进行的会话，进入概览。
+2. **读回复**：打开“阅读本轮回复”或“最近对话”，用上下键翻页。
+3. **说下一步**：回到概览，选择“继续沟通”；麦克风开启后说话，按一次 OK 结束并发送。
+4. **等新结果**：由电脑上的 Agent 继续执行，再回到设备查看新回复。
+
+这条体验涉及 **AI Passport → 灵矽 AI → Cloud MCP Gateway → macOS 客户端 → 本机 Code Agent**。目前各模块已有部分实现，服务端任务投递尚待实现，真实语音闭环待联调验收；可体验范围见[当前进展](#当前进展)。
+
+## 硬件与操作
+
+![LinxBox 语音交互概念效果图：工作桌面上的 AI Passport 显示录音波形和计时](assets/readme/linxbox-voice.png)
+
+*产品示意图：语音录入。*
+
+当前使用 **FoloToy AI Passport** 硬件，运行本项目的 **LinX 0.2** 界面。透明外壳、顶部挂绳孔和侧边实体键沿用原设备设计。
+
+| 项目 | 当前配置与交互 |
+| --- | --- |
+| 硬件平台 | ESP32-C3，8 MB Flash，无 PSRAM |
+| 显示 | 240 × 320 竖屏；任务列表、文字阅读和语音状态 |
+| 操作 | UP / DOWN / OK 三个实体功能键；上下键选择或翻页，短按 OK 进入或确认 |
+| 返回 | 默认长按 OK；可在设备设置中改为双击，并保存偏好 |
+| 语音 | 选择“继续沟通”才开启麦克风；按 OK 停录并发送，反馈播完后返回概览 |
+| 配网 | 用手机连接设备临时热点，在网页中选择 2.4 GHz Wi-Fi 并保存 |
+
+首版阅读页仅展示文字，阅读时不会开启录音；图片浏览和设备间对讲尚未提供。详细操作见[固件使用说明](firmware/README.md#灵矽配置与操作)。
+
+## 当前进展
+
+| 范围 | 已有能力与验证边界 |
+| --- | --- |
+| 硬件交互 | 已有 LinX 0.2 界面、任务概览、文字分页、最近对话和返回手势设置；默认任务、回复与电量使用演示数据 |
+| 配网与语音 | 已有手机网页配网和灵矽语音入口；直接灵矽路径完成过短流程真机联调，长期稳定性仍待验证 |
+| Gateway 内容接入 | 服务端已实现会话目录、历史与正文读取路由及新回复通知；设备侧接入仍在开发 |
+| macOS 客户端 | 已有本地项目与会话浏览、Codex 接入及 Gateway 客户端实现；真实云端联调和持久化仍待完成 |
+| 完整执行链路 | 服务端任务投递尚待实现；灵矽逐轮语音透传及真实 Gateway／Desktop 联动待完成与验收 |
+
+语音反馈播完只表示本轮录放音结束，不能据此认定电脑已接收或任务已完成。各模块的具体实现与验收记录见[固件](firmware/README.md)、[Gateway](gateway/README.md)和[桌面客户端](desktop/README.md)；功能范围及跨模块协议以对应 Issue、设计与 PR 的评审结果为准。
 
 ## 当前分工
 

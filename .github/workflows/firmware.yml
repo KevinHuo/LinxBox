@@ -51,6 +51,34 @@ jobs:
             apt-get update
             apt-get install -y --no-install-recommends clang-18 llvm-18 libclang-rt-18-dev
             CLANG=/usr/bin/clang-18 CLANGXX=/usr/bin/clang++-18 LLVM_COV=/usr/bin/llvm-cov-18 LLVM_PROFDATA=/usr/bin/llvm-profdata-18 ./tools/validate_coverage.sh
+      - name: 展示固件覆盖率摘要
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          reports = sorted(Path("firmware/build/coverage").glob("run.*/summary.json"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              print("## 固件 C 测试覆盖率\n", file=output)
+              if len(reports) != 1:
+                  print("本次未生成唯一的覆盖率报告，请查看构建与测试日志。", file=output)
+                  raise SystemExit(1)
+              summary = json.loads(reports[0].read_text(encoding="utf-8"))
+              status = "未通过" if summary["errors"] else "通过"
+              print(f"覆盖率门禁：**{status}**；整体及每文件的行、分支、函数覆盖率均须达到 {summary['threshold']}%。\n", file=output)
+              print("| 源码 | 行 | 分支 | 函数 |", file=output)
+              print("| --- | --- | --- | --- |", file=output)
+              rows = [("**整体**", summary["totals"]), *sorted(summary["files"].items())]
+              for name, values in rows:
+                  metrics = " | ".join(f"{values[metric]['percent']:.2f}%" for metric in ("lines", "branches", "functions"))
+                  print(f"| {name} | {metrics} |", file=output)
+              for error in summary["errors"]:
+                  print(f"\n- {error}", file=output)
+              print("\n统计 main/、hardware/ 全部自有 C 源码；不代表真机或真实服务链路验收。", file=output)
+              print("\n完整 HTML、原始 JSON 与门槛摘要见本次运行的 firmware-c-coverage artifact（保留 14 天）。", file=output)
+          PY
       - name: 保存覆盖率报告
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
