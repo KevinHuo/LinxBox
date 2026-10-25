@@ -13,6 +13,17 @@ export const mockConnection: ConnectionFacts = {
   gatewayUrl: null,
   tokenHint: null,
   computerName: null,
+  activeProfile: 'online',
+  profiles: {
+    local: {
+      gatewayUrl: 'ws://127.0.0.1:8787/v1/clients/connect',
+      tokenHint: 'demo…oken',
+    },
+    online: {
+      gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
+      tokenHint: null,
+    },
+  },
 };
 
 export const mockProjects: readonly ProjectFacts[] = [

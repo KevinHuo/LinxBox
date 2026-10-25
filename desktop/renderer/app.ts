@@ -38,6 +38,17 @@ const state = {
     gatewayUrl: null,
     tokenHint: null,
     computerName: null,
+    activeProfile: 'online',
+    profiles: {
+      local: {
+        gatewayUrl: 'ws://127.0.0.1:8787/v1/clients/connect',
+        tokenHint: 'demo…oken',
+      },
+      online: {
+        gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
+        tokenHint: null,
+      },
+    },
   } as ConnectionFacts,
   gateway: {
     configured: false,
@@ -49,7 +60,11 @@ const state = {
   tasks: [] as TaskFacts[],
   appearance: { theme: 'warm' } as AppearanceFacts,
   float: { visible: true, position: null } as FloatFacts,
-  device: { mac: null as string | null, pairedAt: null as string | null, syncedAt: null as string | null },
+  device: {
+    mac: null as string | null,
+    pairedAt: null as string | null,
+    syncedAt: null as string | null,
+  },
 };
 
 const qs = <T extends Element>(selector: string): T | null => document.querySelector<T>(selector);
@@ -179,7 +194,8 @@ function renderDevice(): void {
   const paired = qs('#device-paired-at');
   const mac = qs('#device-mac');
   const synced = qs('#device-synced-at');
-  const format = (value: string | null): string => value === null ? '—' : new Date(value).toLocaleString('zh-CN', { hour12: false });
+  const format = (value: string | null): string =>
+    value === null ? '—' : new Date(value).toLocaleString('zh-CN', { hour12: false });
   if (paired) paired.textContent = format(state.device.pairedAt);
   if (mac) mac.textContent = state.device.mac ?? '—';
   if (synced) synced.textContent = format(state.device.syncedAt);
@@ -206,7 +222,7 @@ function restoreDeviceFacts(): void {
 
 /** Render the settings view from the current preferences. */
 function renderSettings(): void {
-  qsa<HTMLButtonElement>('.seg-btn').forEach((button) => {
+  qsa<HTMLButtonElement>('[data-theme]').forEach((button) => {
     button.classList.toggle('is-active', button.dataset['theme'] === state.appearance.theme);
   });
   qsa<HTMLButtonElement>('[data-switch="float"]').forEach((button) => {
@@ -217,6 +233,7 @@ function renderSettings(): void {
 
 /** Render the Gateway connection block on the settings view. */
 function renderConnection(): void {
+  const activeProfile = state.connection.activeProfile ?? 'online';
   const pill = qs('#conn-status');
   const text = qs('#conn-status-text');
   const online = state.gateway.connected;
@@ -234,13 +251,20 @@ function renderConnection(): void {
 
   // The url and the stored token hint are shown; the token itself stays in
   // the main process and is never handed back to the renderer.
+  qsa<HTMLButtonElement>('[data-gateway-profile]').forEach((button) => {
+    button.classList.toggle('is-active', button.dataset['gatewayProfile'] === activeProfile);
+  });
+  const selected = state.connection.profiles?.[activeProfile] ?? {
+    gatewayUrl: state.connection.gatewayUrl ?? '',
+    tokenHint: state.connection.tokenHint,
+  };
   const url = qs<HTMLInputElement>('#conn-url');
-  if (url && document.activeElement !== url && state.connection.gatewayUrl !== null) {
-    url.value = state.connection.gatewayUrl;
+  if (url && document.activeElement !== url) {
+    url.value = selected.gatewayUrl;
   }
   const token = qs<HTMLInputElement>('#conn-token');
-  if (token && document.activeElement !== token && state.connection.tokenHint !== null) {
-    token.placeholder = state.connection.tokenHint;
+  if (token && document.activeElement !== token) {
+    token.placeholder = selected.tokenHint ?? '请输入 access_token';
   }
   const name = qs<HTMLInputElement>('#conn-name');
   if (name && document.activeElement !== name && state.connection.computerName !== null) {
@@ -329,7 +353,10 @@ async function startPairing(): Promise<void> {
   }
 
   if (!bridge) return;
-  const result = (await bridge.bindDevice({ macAddress: mac })) as { ok?: boolean; message?: string };
+  const result = (await bridge.bindDevice({ macAddress: mac })) as {
+    ok?: boolean;
+    message?: string;
+  };
   if (!result?.ok) {
     showToast(result?.message ?? '设备配对失败');
     return;
@@ -339,7 +366,7 @@ async function startPairing(): Promise<void> {
   renderDevice();
   const note = qs('#pairing-note');
   if (note) note.textContent = `设备 ${mac} 已配对成功`;
-      go(state.device.mac !== null ? 'home' : 'pair');
+  go(state.device.mac !== null ? 'home' : 'pair');
   showToast('设备配对成功');
 }
 
@@ -398,7 +425,8 @@ async function saveConnection(): Promise<void> {
     showToast('请填写 Gateway 地址和电脑名称');
     return;
   }
-  if (token === '' && state.connection.tokenHint === null) {
+  const profile = state.connection.activeProfile ?? 'online';
+  if (token === '' && (state.connection.profiles?.[profile].tokenHint ?? null) === null) {
     showToast('请填写 access_token');
     return;
   }
@@ -409,6 +437,7 @@ async function saveConnection(): Promise<void> {
   }
 
   const result = await bridge.saveConnection({
+    profile,
     gatewayUrl: url,
     accessToken: token,
     computerName: name,
@@ -442,7 +471,13 @@ async function testConnection(): Promise<void> {
 function wireEvents(): void {
   qsa<HTMLButtonElement>('.rail-item').forEach((button) => {
     button.addEventListener('click', () => {
-      go(button.dataset['app'] === 'settings' ? 'settings' : state.device.mac !== null ? 'home' : 'pair');
+      go(
+        button.dataset['app'] === 'settings'
+          ? 'settings'
+          : state.device.mac !== null
+            ? 'home'
+            : 'pair',
+      );
     });
   });
 
@@ -472,6 +507,17 @@ function wireEvents(): void {
   qs('#btn-unpair')?.addEventListener('click', unpair);
   qs('#btn-conn-save')?.addEventListener('click', () => {
     void saveConnection();
+  });
+  qsa<HTMLButtonElement>('[data-gateway-profile]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const profile = button.dataset['gatewayProfile'];
+      if (profile !== 'local' && profile !== 'online') return;
+      state.connection = { ...state.connection, activeProfile: profile };
+      const token = qs<HTMLInputElement>('#conn-token');
+      if (token) token.value = '';
+      renderConnection();
+      void saveConnection();
+    });
   });
   qs('#btn-conn-test')?.addEventListener('click', () => {
     void testConnection();
@@ -517,12 +563,14 @@ async function refreshFromBridge(): Promise<void> {
   if (projects && typeof projects === 'object' && 'ok' in projects) {
     const result = projects as { ok: boolean; data?: unknown };
     if (result.ok && Array.isArray(result.data)) {
-      state.projects = (result.data as Array<{
-        projectId: string;
-        name: string;
-        roots: readonly string[];
-        position: number;
-      }>).map((project) => ({
+      state.projects = (
+        result.data as Array<{
+          projectId: string;
+          name: string;
+          roots: readonly string[];
+          position: number;
+        }>
+      ).map((project) => ({
         projectId: project.projectId,
         displayName: project.name,
         rootPath: project.roots[0] ?? '',

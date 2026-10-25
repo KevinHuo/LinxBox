@@ -92,3 +92,17 @@ HTTPS 和 WSS 使用证书与主机名校验；网络时间无法满足校验条
 静态检查新增灵矽协议与设备运行测试，协议解析使用 ESP-IDF 中的真实 cJSON，因此 `--static` 也需要 ESP-IDF 环境。覆盖率另需同版本的 Clang、LLVM 工具，以及 CMake、Ninja；先完成固件构建以解析锁定的 LVGL 组件。验证合并逻辑单测、真实 LVGL 场景、设备入口和灵矽运行模拟测试，检查 `main/`、`hardware/` 内全部自有 C 源码的行、分支及函数覆盖率，不遗漏未命中文件；整体及每个文件三项均要求至少 90%。第三方 BSP、LVGL、cJSON、音频解码库与生成资源不计入自有代码指标。报告保存在 `build/coverage/run.*/`，打开其中 `html/index.html` 查看未覆盖位置。CI 会执行同一门槛，并保存 `firmware-c-coverage` 报告供下载。
 
 `build/`、`managed_components/`、本地 `sdkconfig`、Python 缓存和上游缓存均可按配置重新生成，不属于保留的源码目录。重新获取尚未缓存的组件可能需要联网。升级上游必须明确修改锁定提交、审查差异，并运行完整门禁和截图比较；不要直接编辑缓存。
+
+## 测试覆盖率
+
+根目录的 Firmware line coverage 徽章是最近记录的**行覆盖率快照**，不会随 CI 自动改写。下表来自 2026-10-25 主线提交 `53f73185a10db549e013dd1f70b1d8942d9c8f64` 的 [GitHub Actions 成功运行](https://github.com/KevinHuo/LinxBox/actions/runs/40168389839)，使用 ESP-IDF 5.5.3、Clang／LLVM 18：
+
+| 指标 | 覆盖率 | 已覆盖 / 总数 |
+| --- | --- | --- |
+| 行 | 99.30% | 3988 / 4016 |
+| 分支 | 93.65% | 3409 / 3640 |
+| 函数 | 100.00% | 242 / 242 |
+
+该次采样包含 12 个自有 C 文件，整体及每文件的行、分支、函数覆盖率均达到 90% 门槛。统计范围为 `main/`、`hardware/` 的全部自有 C 源码，排除第三方依赖、生成资源和测试代码；主机模拟覆盖率不代表真机、真实灵矽或完整任务链路验收。
+
+查看最新数据：打开 [Firmware checks](https://github.com/KevinHuo/LinxBox/actions/workflows/firmware.yml) 中对应提交的运行，在摘要查看整体及每文件覆盖率，在 Artifacts 下载 `firmware-c-coverage`（保留 14 天），解压后进入 `run.*` 目录，打开其中的 `html/index.html` 查看未覆盖位置。门禁失败时摘要仍展示已生成的数据；未生成报告时会明确提示查看构建与测试日志。本地复现命令与工具要求见上方[构建与验证](#构建与验证)。

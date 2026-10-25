@@ -72,10 +72,15 @@
             <div class="hero">
               <h1 id="pair-title">设置 WSS 连接</h1>
               <p class="lede">
-                先在「设置」中填写 Gateway WSS 地址、访问令牌和电脑名称并连接；设备 MAC 绑定是后续独立步骤，不与 WSS 配置混用。
+                先在「设置」中填写 Gateway WSS 地址、访问令牌和电脑名称并连接；设备 MAC
+                绑定是后续独立步骤，不与 WSS 配置混用。
               </p>
             </div>
-            <div id="box-settings" class="box-settings" aria-label="Linx Box WSS 连接与项目设置"></div>
+            <div
+              id="box-settings"
+              class="box-settings"
+              aria-label="Linx Box WSS 连接与项目设置"
+            ></div>
             <div class="pair-layout">
               <div class="device-card">
                 <ol class="steps">
@@ -112,7 +117,7 @@
                     autocomplete="off"
                     spellcheck="false"
                     maxlength="17"
-                    value="34:00:00:00:00:01"
+                    value="4C:11:AE:32:D2:38"
                     placeholder="如 A4:C1:38:5B:2A:9E"
                     aria-label="设备 MAC 地址"
                   />
@@ -199,6 +204,17 @@
                 <span class="pill" id="conn-status">
                   <i class="dot" aria-hidden="true"></i><span id="conn-status-text">未连接</span>
                 </span>
+              </div>
+              <div class="field">
+                <label>Gateway 环境</label>
+                <div class="seg" role="group" aria-label="Gateway 环境">
+                  <button class="seg-btn" type="button" data-gateway-profile="local">
+                    本地 mock
+                  </button>
+                  <button class="seg-btn is-active" type="button" data-gateway-profile="online">
+                    线上
+                  </button>
+                </div>
               </div>
               <div class="field-row">
                 <div class="field">

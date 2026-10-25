@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { GatewayClient, buildConnectUrl, type SocketLike } from './client.js';
+import type { LogRecord } from '../../shared/logger.js';
+import { createLogger } from '../../shared/logger.js';
 
 class FakeSocket implements SocketLike {
   readyState = 1;
@@ -90,6 +92,28 @@ describe('buildConnectUrl', () => {
 });
 
 describe('GatewayClient', () => {
+  it('logs malformed inbound data by size without logging its content', () => {
+    const records: LogRecord[] = [];
+    const socket = new FakeSocket();
+    const client = new GatewayClient({
+      url: 'ws://127.0.0.1:8787',
+      token: 'demo-token',
+      desktopVersion: '0.1.0',
+      capabilities: [],
+      socketFactory: () => socket,
+      logger: createLogger('test.gateway', { sink: (record) => records.push(record) }),
+    });
+
+    client.connect();
+    socket.open();
+    socket.fire('message', { data: 'private malformed content' });
+    client.close();
+
+    const warning = records.find((record) => record.message === 'WSS 收到非法 JSON');
+    expect(warning?.fields).toMatchObject({ direction: 'gateway->desktop', bytes: 25 });
+    expect(JSON.stringify(records)).not.toContain('private malformed content');
+  });
+
   it('uses the platform WebSocket implementation when no factory is supplied', () => {
     const connected: { url: string; protocols: string[] }[] = [];
     class StubWebSocket extends FakeSocket {
