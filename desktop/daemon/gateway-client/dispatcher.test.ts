@@ -614,6 +614,21 @@ describe('TaskDispatcher', () => {
 
     const terminal = harness.events.find((event) => event.type === 'task.completed');
     expect(terminal?.payload.state).toBe('succeeded');
+    expect(terminal?.payload.result).toMatchObject({
+      contract_version: 'task-result-v1',
+      status: 'succeeded',
+      summary: '本轮追问已完成',
+      changes: [],
+      verification: [],
+      risks: [
+        {
+          code: 'EXECUTION_DETAILS_NOT_PROJECTED',
+          summary: '文件改动和验证详情尚未汇总',
+        },
+      ],
+      needs_user_action: null,
+      voice_summary: '本轮追问已完成',
+    });
   });
 
   it('maps an unprovable outcome to task.interrupted', async () => {

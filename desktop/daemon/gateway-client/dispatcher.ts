@@ -15,7 +15,7 @@
  */
 import type { CodexDomainEvent } from '../codex-adapter/events.js';
 import type { CodexTurnState } from '../codex-adapter/client.js';
-import { sanitizeVoiceSummary } from '../result-projector/projection.js';
+import { buildTaskResult, sanitizeVoiceSummary } from '../result-projector/projection.js';
 import { publicError } from './frames.js';
 import type {
   Disposition,
@@ -117,6 +117,7 @@ interface ActiveDispatchContext {
   readonly taskId: string;
   threadId: string | null;
   turnId: string | null;
+  projectRoot: string;
 }
 
 export class TaskDispatcher {
@@ -204,6 +205,7 @@ export class TaskDispatcher {
       taskId,
       threadId: continuation.threadId,
       turnId: null,
+      projectRoot: executionCwd,
     };
     this.active = context;
     this.eventCounter = 0;
@@ -337,11 +339,27 @@ export class TaskDispatcher {
         return;
       case 'terminal':
         if (event.outcome === 'completed') {
+          const result = buildTaskResult({
+            taskId,
+            status: 'succeeded',
+            summary: '本轮追问已完成',
+            projectRoot: active.projectRoot,
+            changes: [],
+            verifications: [],
+            risks: [
+              {
+                code: 'EXECUTION_DETAILS_NOT_PROJECTED',
+                summary: '文件改动和验证详情尚未汇总',
+              },
+            ],
+            needsUserAction: null,
+            voiceSummary: '本轮追问已完成',
+          });
           this.emit(taskId, 'task.completed', {
             state: 'succeeded',
             stage: 'finished',
-            summary: '本机任务已完成',
-            result: null,
+            summary: result.summary,
+            result,
             error: null,
           });
         } else if (event.outcome === 'failed') {
