@@ -78,6 +78,30 @@ export function buildCancelFrame(taskId, reason = '用户在控制台取消') {
   };
 }
 
+/** Acknowledge one replace-all session catalogue from the Desktop. */
+export function buildAgentSessionsSyncResult(syncFrame, ok = true, message = '') {
+  const now = Date.now();
+  return {
+    protocol_version: '1.0',
+    message_id: `msg_gateway_${now.toString(36)}_sync`,
+    sequence: now,
+    type: 'agent_sessions.sync.result',
+    sent_at: new Date(now).toISOString(),
+    payload: {
+      reply_to_message_id: syncFrame.message_id,
+      ok,
+      ...(ok
+        ? {}
+        : {
+            error: {
+              code: 'INVALID_ARGUMENT',
+              message,
+            },
+          }),
+    },
+  };
+}
+
 /**
  * Summarise a frame for the console list.
  *
@@ -91,6 +115,10 @@ export function summarizeFrame(frame) {
       return `desktop ${payload.desktop_version ?? '-'} · 协议 ${JSON.stringify(payload.protocol_versions ?? [])} · lastAcked ${payload.last_acked_sequence ?? 0}`;
     case 'client.heartbeat':
       return `client_time ${payload.client_time ?? '-'}`;
+    case 'agent_sessions.sync':
+      return `会话目录 ${Array.isArray(payload.items) ? payload.items.length : 0} 项`;
+    case 'agent_sessions.sync.result':
+      return `会话目录保存${payload.ok ? '成功' : '失败'}`;
     case 'task.ack':
       return `task ${payload.task_id ?? '-'} · disposition=${payload.disposition ?? '-'}${payload.error ? ` · ${payload.error.message ?? ''}` : ''}`;
     case 'task.started':
@@ -150,6 +178,8 @@ export async function startMockGatewayConsole(options = {}) {
   const subscribers = new Set();
   /** Currently connected Desktop sockets. */
   const sockets = new Set();
+  /** Latest full session catalogue published by the connected Desktop. */
+  let agentSessions = [];
   let connectionCount = 0;
 
   /** Push an event to every console subscriber. */
@@ -218,6 +248,7 @@ export async function startMockGatewayConsole(options = {}) {
           port,
           connections: sockets.size,
           totalConnections: connectionCount,
+          agentSessions,
           received: received
             .slice(-100)
             .reverse()
@@ -254,10 +285,40 @@ export async function startMockGatewayConsole(options = {}) {
         }
 
         const kind = payload.kind === 'cancel' ? 'cancel' : 'dispatch';
-        const frame =
-          kind === 'cancel'
-            ? buildCancelFrame(payload.task_id ?? '', payload.reason ?? '用户在控制台取消')
-            : buildDispatchFrame(payload.payload ?? {});
+        let frame;
+        if (kind === 'cancel') {
+          frame = buildCancelFrame(payload.task_id ?? '', payload.reason ?? '用户在控制台取消');
+        } else {
+          const requested = payload.agent_session_id;
+          const selected =
+            typeof requested === 'string'
+              ? agentSessions.find((item) => item.agent_session_id === requested)
+              : null;
+          if (typeof requested === 'string' && selected === undefined) {
+            response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+            response.end(JSON.stringify({ ok: false, message: '目标 Codex 会话不存在' }));
+            return;
+          }
+          if (
+            selected &&
+            (payload.project_id !== selected.project_id ||
+              (typeof payload.title === 'string' && payload.title !== selected.title))
+          ) {
+            response.writeHead(409, { 'content-type': 'application/json; charset=utf-8' });
+            response.end(JSON.stringify({ ok: false, message: '项目与对话标题已变化，请重新选择' }));
+            return;
+          }
+          const overrides = { ...(payload.payload ?? {}) };
+          if (selected) {
+            overrides.project_id = selected.project_id;
+            overrides.agent = selected.agent;
+            overrides.continuation = {
+              agent_session_id: selected.agent_session_id,
+              thread_id: selected.thread_id,
+            };
+          }
+          frame = buildDispatchFrame(overrides);
+        }
 
         for (const socket of sockets) {
           socket.send(JSON.stringify(frame));
@@ -317,6 +378,26 @@ export async function startMockGatewayConsole(options = {}) {
       }
       record(frame, 'inbound');
       onFrame(frame);
+      if (frame.type === 'agent_sessions.sync') {
+        const items = frame?.payload?.items;
+        const valid =
+          Array.isArray(items) &&
+          items.every(
+            (item) =>
+              item &&
+              typeof item.agent_session_id === 'string' &&
+              typeof item.thread_id === 'string' &&
+              typeof item.project_id === 'string' &&
+              typeof item.title === 'string',
+          );
+        const reply = buildAgentSessionsSyncResult(frame, valid, valid ? '' : '会话目录格式不合法');
+        if (valid) {
+          agentSessions = items.map((item) => ({ ...item }));
+          publish({ kind: 'sessions', items: agentSessions });
+        }
+        socket.send(JSON.stringify(reply));
+        record(reply, 'outbound');
+      }
       if (verbose) {
         console.log(`[gateway] 收到 ${frame.type} ${summarizeFrame(frame)}`);
       }
@@ -345,6 +426,9 @@ export async function startMockGatewayConsole(options = {}) {
     port: boundPort,
     received,
     sent,
+    get agentSessions() {
+      return agentSessions;
+    },
     close: () =>
       new Promise((resolve) => {
         for (const client of sockets) {

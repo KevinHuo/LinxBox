@@ -36,6 +36,7 @@ function createHarness(
   options: {
     projects?: Record<string, { rootPath: string; enabled: boolean }>;
     sessionCwd?: string | null | ((threadId: string) => string | null);
+    agentSessions?: Record<string, { threadId: string; projectId: string; rootPath: string }>;
   } = {},
 ): Harness {
   const events: DispatchedTaskEvent[] = [];
@@ -81,6 +82,11 @@ function createHarness(
 
   const dispatcher = new TaskDispatcher({
     resolveProject: (projectId) => projects[projectId] ?? null,
+    defaultCwd: '/tmp/app',
+    resolveAgentSession: (agentSessionId) => {
+      const target = options.agentSessions?.[agentSessionId];
+      return target === undefined ? null : { agentSessionId, ...target };
+    },
     runner,
     onEvent: (event) => events.push(event),
   });
@@ -105,6 +111,14 @@ function createHarness(
 }
 
 describe('TaskDispatcher', () => {
+  it('forwards a WSS dispatch without an Electron project grant', async () => {
+    const harness = createHarness();
+    const outcome = await harness.dispatcher.handle(dispatchFrame);
+
+    expect(outcome.disposition).toBe('accepted');
+    expect(harness.started).toEqual([{ prompt: '做点事', cwd: '/tmp/app' }]);
+  });
+
   it('accepts a dispatch for an authorised project and starts a turn', async () => {
     const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
 
@@ -123,6 +137,55 @@ describe('TaskDispatcher', () => {
     const started = harness.events.find((event) => event.type === 'task.started');
     expect(started?.payload.thread_id).toBe('th_1');
     expect(started?.payload.turn_id).toBe('tn_1');
+  });
+
+  it('continues a locally published Codex session selected by the device', async () => {
+    const harness = createHarness({
+      projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+      agentSessions: {
+        codex_th_existing: {
+          threadId: 'th_existing',
+          projectId: 'prj_1',
+          rootPath: '/tmp/app',
+        },
+      },
+    });
+    const frame = {
+      ...dispatchFrame,
+      payload: {
+        ...dispatchFrame.payload,
+        continuation: {
+          agent_session_id: 'codex_th_existing',
+          thread_id: 'th_existing',
+        },
+      },
+    } as unknown as GatewayFrame;
+
+    const outcome = await harness.dispatcher.handle(frame);
+
+    expect(outcome.disposition).toBe('accepted');
+    expect(harness.started).toHaveLength(0);
+    expect(harness.continued).toEqual([
+      { threadId: 'th_existing', prompt: '做点事', cwd: '/tmp/app' },
+    ]);
+  });
+
+  it('rejects a remote thread that was not published by this Desktop', async () => {
+    const harness = createHarness({
+      projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+    });
+    const frame = {
+      ...dispatchFrame,
+      payload: {
+        ...dispatchFrame.payload,
+        continuation: { agent_session_id: 'unknown', thread_id: 'th_injected' },
+      },
+    } as unknown as GatewayFrame;
+
+    const outcome = await harness.dispatcher.handle(frame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(harness.continued).toHaveLength(0);
   });
 
   it('refuses a continuation with an unknown parent instead of starting a new session', async () => {

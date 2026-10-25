@@ -216,7 +216,7 @@ function renderProjects(): void {
     return;
   }
   if (state.projects.length === 0) {
-    list.innerHTML = '<li class="empty-row">尚未授权任何目录</li>';
+    list.innerHTML = '<li class="empty-row">尚未发现 Codex 项目</li>';
     return;
   }
   list.innerHTML = state.projects
@@ -232,9 +232,6 @@ function renderProjects(): void {
             .map((capability) => `<span class="cap-tag">${escapeHtml(capability)}</span>`)
             .join('')}
         </div>
-        <button class="btn btn-quiet" type="button" data-revoke="${escapeHtml(project.projectId)}">
-          撤销
-        </button>
       </li>`,
     )
     .join('');
@@ -497,11 +494,23 @@ async function refreshFromBridge(): Promise<void> {
     }
   }
 
-  const projects = await bridge.listProjects();
+  const projects = await bridge.listCodexProjects();
   if (projects && typeof projects === 'object' && 'ok' in projects) {
     const result = projects as { ok: boolean; data?: unknown };
     if (result.ok && Array.isArray(result.data)) {
-      state.projects = result.data as ProjectFacts[];
+      state.projects = (result.data as Array<{
+        projectId: string;
+        name: string;
+        roots: readonly string[];
+        position: number;
+      }>).map((project) => ({
+        projectId: project.projectId,
+        displayName: project.name,
+        rootPath: project.roots[0] ?? '',
+        capabilities: ['codex'],
+        grantVersion: 0,
+        enabled: true,
+      }));
     }
   }
 

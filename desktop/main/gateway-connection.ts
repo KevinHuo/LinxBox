@@ -13,9 +13,14 @@
  */
 import { GatewayClient, type SocketFactory } from '../daemon/gateway-client/client.js';
 import { TaskDispatcher, type CodexRunner } from '../daemon/gateway-client/dispatcher.js';
-import { buildTaskEventFrame, publicError } from '../daemon/gateway-client/frames.js';
+import { homedir } from 'node:os';
+import {
+  buildAgentSessionsSyncFrame,
+  buildTaskEventFrame,
+  publicError,
+} from '../daemon/gateway-client/frames.js';
 import type { CodexDomainEvent } from '../daemon/codex-adapter/events.js';
-import type { Disposition, GatewayFrame } from '../contracts/index.js';
+import type { AgentSessionCatalogItem, Disposition, GatewayFrame } from '../contracts/index.js';
 import type { CodexSession } from './codex-session.js';
 
 /** The local facts the manager needs from the desktop state. */
@@ -27,6 +32,13 @@ export interface GatewayConnectionConfig {
 
 /** How the manager finds the locally authorised project for a `project_id`. */
 export type ProjectResolver = (projectId: string) => { rootPath: string; enabled: boolean } | null;
+
+export interface PublishedProject {
+  readonly projectId: string;
+  readonly displayName: string;
+  readonly rootPath: string;
+  readonly enabled: boolean;
+}
 
 /** What the manager reports back to the app. */
 export interface GatewayConnectionStatus {
@@ -41,6 +53,8 @@ export interface GatewayConnectionManagerOptions {
   readonly session: CodexSession;
   /** Resolve a remote `project_id` to a locally authorised project. */
   readonly resolveProject: ProjectResolver;
+  /** Enumerate projects that may contribute device-visible Codex sessions. */
+  readonly listProjects?: () => readonly PublishedProject[];
   /** Called whenever the connection status changes. */
   readonly onStatusChange?: (status: GatewayConnectionStatus) => void;
   /** Desktop version reported in the hello frame. */
@@ -71,7 +85,7 @@ export function createCodexRunner(session: CodexSession): CodexRunner {
         .then((turn) => ({ threadId: turn.threadId ?? '', turnId: turn.turnId ?? '' })),
     continueTurn: (input) =>
       session
-        .continueSession(input.threadId, input.prompt)
+        .continueSession(input.threadId, input.prompt, input.cwd)
         .then((turn) => ({ threadId: turn.threadId ?? '', turnId: turn.turnId ?? '' })),
     sessionCwd: async (threadId) => {
       const detail = await session.readSession(threadId);
@@ -92,6 +106,14 @@ export class GatewayConnectionManager {
   private lastActivityAt: string | null = null;
   private eventCounter = 0;
   private messageCounter = 0;
+  private readonly agentSessions = new Map<
+    string,
+    { threadId: string; projectId: string; rootPath: string }
+  >();
+  private readonly managedThreads = new Map<string, string>();
+  private syncInFlight: Promise<void> | null = null;
+  private publishedProjects = new Map<string, PublishedProject>();
+  private readonly blockedThreads = new Set<string>();
 
   constructor(options: GatewayConnectionManagerOptions) {
     this.options = options;
@@ -131,7 +153,17 @@ export class GatewayConnectionManager {
     });
 
     const dispatcher = new TaskDispatcher({
-      resolveProject: (projectId) => this.options.resolveProject(projectId),
+      resolveProject: (projectId) =>
+        this.options.resolveProject(projectId) ??
+        (() => {
+          const project = this.publishedProjects.get(projectId);
+          return project === undefined ? null : { rootPath: project.rootPath, enabled: project.enabled };
+        })(),
+      defaultCwd: homedir(),
+      resolveAgentSession: (agentSessionId) => {
+        const target = this.agentSessions.get(agentSessionId);
+        return target === undefined ? null : { agentSessionId, ...target };
+      },
       runner: createCodexRunner(this.options.session),
       onEvent: (event) => {
         client.send(
@@ -143,6 +175,28 @@ export class GatewayConnectionManager {
             sentAt: new Date().toISOString(),
           }),
         );
+        if (event.type !== 'task.started' && event.type !== 'task.progress') {
+          void this.syncAgentSessions();
+        }
+        if (
+          event.type === 'task.failed' &&
+          event.payload.error?.message?.includes('active writer') &&
+          event.payload.thread_id !== null
+        ) {
+          this.blockedThreads.add(event.payload.thread_id);
+          void this.syncAgentSessions();
+        }
+        if (
+          event.type === 'task.completed' ||
+          event.type === 'task.failed' ||
+          event.type === 'task.interrupted' ||
+          event.type === 'task.cancelled'
+        ) {
+          // Codex Desktop must be able to open the same thread after the
+          // Gateway task finishes; the stdio app-server otherwise keeps it
+          // locked as if another client were editing the conversation.
+          setTimeout(() => this.options.session.close(), 0);
+        }
       },
     });
 
@@ -152,6 +206,7 @@ export class GatewayConnectionManager {
         this.lastError = null;
         this.touch();
         this.publishStatus();
+        void this.syncAgentSessions();
         return;
       }
       if (event.type === 'disconnected') {
@@ -167,6 +222,13 @@ export class GatewayConnectionManager {
         return;
       }
       if (event.type === 'frame') {
+        if (event.frame.type === 'agent_sessions.sync.result') {
+          if (!event.frame.payload.ok) {
+            this.lastError = event.frame.payload.error?.message ?? 'Gateway 未保存会话目录';
+            this.publishStatus();
+          }
+          return;
+        }
         this.handleFrame(event.frame);
       }
     });
@@ -183,9 +245,143 @@ export class GatewayConnectionManager {
     this.client = null;
     this.dispatcher = null;
     this.connected = false;
+    this.agentSessions.clear();
     if (this.config !== null) {
       this.publishStatus();
     }
+  }
+
+  /** Publish all authorised Codex conversations as one replace-all catalogue. */
+  syncAgentSessions(): Promise<void> {
+    if (this.syncInFlight !== null) {
+      return this.syncInFlight;
+    }
+    this.syncInFlight = this.performAgentSessionSync().finally(() => {
+      this.syncInFlight = null;
+    });
+    return this.syncInFlight;
+  }
+
+  private async performAgentSessionSync(): Promise<void> {
+    const client = this.client;
+    if (!this.connected || client === null) {
+      return;
+    }
+    const configured = (this.options.listProjects?.() ?? []).filter((project) => project.enabled);
+    const projects = configured.length > 0
+      ? configured
+      : (await this.withTimeout(this.options.session.listProjects(), 2000, [])).flatMap((project) =>
+          project.roots[0]
+            ? [{ projectId: project.projectId, displayName: project.name, rootPath: project.roots[0], enabled: true }]
+            : [],
+        );
+    const effectiveProjects = projects.length > 0
+      ? projects
+      : [{ projectId: 'codex-default', displayName: 'Codex 默认项目', rootPath: homedir(), enabled: true }];
+    this.publishedProjects = new Map(effectiveProjects.map((project) => [project.projectId, project]));
+
+    try {
+      for (const project of effectiveProjects) {
+        if (!this.managedThreads.has(project.projectId)) {
+          let threadId = '';
+          try {
+            threadId = await this.withTimeout(
+              this.options.session.createSession(project.rootPath),
+              2000,
+              '',
+            );
+          } catch {
+            // A project can still receive a new task when Codex has no
+            // browsable session yet; thread creation happens when dispatching.
+          }
+          this.managedThreads.set(project.projectId, threadId);
+        }
+      }
+      if (!this.connected || this.client !== client) {
+        return;
+      }
+      const items: AgentSessionCatalogItem[] = [];
+      const next = new Map<string, { threadId: string; projectId: string; rootPath: string }>();
+      const existingSessions = await this.withTimeout(
+        this.options.session.listSessions(100),
+        2000,
+        [],
+      );
+      for (const session of existingSessions) {
+        const sessionCwd = session.cwd;
+        if (sessionCwd === null) continue;
+        if (this.blockedThreads.has(session.threadId)) continue;
+        const project = effectiveProjects
+          .filter(
+            (candidate) =>
+              sessionCwd === candidate.rootPath || sessionCwd.startsWith(`${candidate.rootPath}/`),
+          )
+          .sort((left, right) => right.rootPath.length - left.rootPath.length)[0];
+        if (project === undefined) continue;
+        const agentSessionId = `codex_${session.threadId}`;
+        items.push({
+          agent_session_id: agentSessionId,
+          thread_id: session.threadId,
+          project_id: project.projectId,
+          project_name: project.displayName,
+          agent: 'codex',
+          title: session.title,
+          status: session.status === 'running' || session.status === 'completed' || session.status === 'failed'
+            ? session.status
+            : 'idle',
+          summary: '本机 Codex 已有对话',
+        });
+        next.set(agentSessionId, {
+          threadId: session.threadId,
+          projectId: project.projectId,
+          rootPath: sessionCwd,
+        });
+      }
+      for (const project of effectiveProjects) {
+        const threadId = this.managedThreads.get(project.projectId);
+        if (threadId === undefined) {
+          continue;
+        }
+        const agentSessionId = `codex_${project.projectId}`;
+        items.push({
+          agent_session_id: agentSessionId,
+          thread_id: threadId,
+          project_id: project.projectId,
+          project_name: project.displayName,
+          agent: 'codex',
+          title: `${project.displayName} · LinxBox`,
+          status: 'idle',
+          summary: '由 LinxBox 管理的 Codex 会话',
+        });
+        next.set(agentSessionId, {
+          threadId,
+          projectId: project.projectId,
+          rootPath: project.rootPath,
+        });
+      }
+      this.agentSessions.clear();
+      for (const [id, target] of next) {
+        this.agentSessions.set(id, target);
+      }
+      client.send(
+        buildAgentSessionsSyncFrame({
+          messageId: this.nextMessageId(),
+          sequence: this.nextSequence(),
+          items,
+          sentAt: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      this.lastError = '读取本机 Codex 会话目录失败';
+      this.publishStatus();
+    }
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+    ]);
   }
 
   /** Handle one inbound frame and answer it with an ack. */

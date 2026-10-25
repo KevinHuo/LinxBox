@@ -238,6 +238,20 @@ export class CodexProcess {
     }
     this.closed = true;
     this.child.kill();
+    // Codex keeps the thread writer lock until the app-server exits. A
+    // graceful signal can take a moment, so force termination is scheduled as
+    // a bounded cleanup rather than leaving a stale writer behind.
+    const child = this.child;
+    let exited = false;
+    const forceKill = setTimeout(() => {
+      if (!exited) {
+        child.kill('SIGKILL');
+      }
+    }, 500);
+    child.once('exit', () => {
+      exited = true;
+      clearTimeout(forceKill);
+    });
     this.failAll(new CodexAdapterError('CODEX_DISCONNECTED', '本机 Codex 连接已停止'));
   }
 
@@ -297,7 +311,8 @@ export class CodexProcess {
     this.pending.delete(response.id);
     clearTimeout(pending.timer);
     if ('error' in response) {
-      pending.reject(new CodexAdapterError('CODEX_RPC', `本机 Codex 调用失败：${pending.method}`));
+      const detail = response.error.message ?? `本机 Codex 调用失败：${pending.method}`;
+      pending.reject(new CodexAdapterError('CODEX_RPC', detail));
       return;
     }
     pending.resolve(response.result);

@@ -89,6 +89,7 @@ const gateway = new GatewayConnectionManager({
     }
     return { rootPath: project.rootPath, enabled: project.enabled };
   },
+  listProjects: () => [...state.projects.values()],
   onStatusChange: (status) => {
     state.connection = {
       configured: status.configured,
@@ -237,7 +238,9 @@ async function handleProjectsGrant(payload: unknown): Promise<unknown> {
     return { ok: false, code: 'INVALID_ARGUMENT', message: '所选目录不可用' };
   }
 
-  return { ok: true, data: grantProject(state, input, rootPath) };
+  const project = grantProject(state, input, rootPath);
+  void gateway.syncAgentSessions();
+  return { ok: true, data: project };
 }
 
 function handleProjectsRevoke(payload: unknown): unknown {
@@ -247,6 +250,9 @@ function handleProjectsRevoke(payload: unknown): unknown {
   }
   const { projectId } = parsed.data as { projectId: string };
   const revoked = revokeProject(state, projectId);
+  if (revoked) {
+    void gateway.syncAgentSessions();
+  }
   return revoked
     ? { ok: true, data: listProjects(state) }
     : { ok: false, code: 'NOT_FOUND', message: '项目不存在' };

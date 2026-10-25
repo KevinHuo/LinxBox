@@ -47,12 +47,23 @@ function createSessionStub(
   overrides: {
     readSession?: () => Promise<{ cwd: string | null } | null>;
     on?: (listener: (event: unknown) => void) => () => void;
+    listSessions?: () => Promise<
+      { threadId: string; title: string; cwd: string | null; status: string }[]
+    >;
+    createSession?: (cwd: string) => Promise<string>;
+    continueSession?: (
+      threadId: string,
+      prompt: string,
+    ) => Promise<{ threadId: string | null; turnId: string | null }>;
   } = {},
 ): CodexSession {
   return {
     startTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' }),
-    continueSession: () => Promise.resolve({ threadId: 'th_2', turnId: 'tn_2' }),
+    continueSession:
+      overrides.continueSession ?? (() => Promise.resolve({ threadId: 'th_2', turnId: 'tn_2' })),
     readSession: overrides.readSession ?? (() => Promise.resolve(null)),
+    listSessions: overrides.listSessions ?? (() => Promise.resolve([])),
+    createSession: overrides.createSession ?? (() => Promise.resolve('th_managed')),
     on: overrides.on ?? (() => () => {}),
     status: () => ({ status: 'idle' }),
   } as unknown as CodexSession;
@@ -68,12 +79,20 @@ function createManager(
       lastError: string | null;
       lastActivityAt: string | null;
     }) => void;
+    listProjects?: () => readonly {
+      projectId: string;
+      displayName: string;
+      rootPath: string;
+      enabled: boolean;
+    }[];
+    session?: CodexSession;
   } = {},
 ): { manager: GatewayConnectionManager; socket: FakeSocket } {
   let socket: FakeSocket | null = null;
   const manager = new GatewayConnectionManager({
-    session: createSessionStub(),
+    session: options.session ?? createSessionStub(),
     resolveProject: options.resolveProject ?? (() => null),
+    ...(options.listProjects === undefined ? {} : { listProjects: options.listProjects }),
     desktopVersion: '0.1.0',
     socketFactory: () => {
       socket = new FakeSocket();
@@ -196,6 +215,90 @@ describe('GatewayConnectionManager', () => {
     expect(manager.status().connected).toBe(true);
     expect(manager.status().configured).toBe(true);
     expect(manager.status().lastActivityAt).not.toBeNull();
+  });
+
+  it('publishes authorised Codex sessions after connecting', async () => {
+    const { socket } = createManager({
+      resolveProject: () => ({ rootPath: '/tmp/work', enabled: true }),
+      listProjects: () => [
+        {
+          projectId: 'prj_1',
+          displayName: 'LinxBox',
+          rootPath: '/tmp/work',
+          enabled: true,
+        },
+      ],
+      session: createSessionStub({
+        createSession: (cwd) => Promise.resolve(cwd === '/tmp/work' ? 'th_managed' : 'unexpected'),
+      }),
+    });
+
+    socket.emit('open', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const sync = socket.frames().find((frame) => frame.type === 'agent_sessions.sync');
+    const items = sync?.payload['items'] as { agent_session_id: string; project_id: string }[];
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      agent_session_id: 'codex_th_managed',
+      project_id: 'prj_1',
+      title: 'LinxBox · LinxBox',
+    });
+    expect(JSON.stringify(sync)).not.toContain('/tmp/work');
+  });
+
+  it('continues the existing thread selected from the published catalogue', async () => {
+    const continued: string[] = [];
+    const session = createSessionStub({
+      createSession: () => Promise.resolve('th_managed'),
+      readSession: () => Promise.resolve({ cwd: '/tmp/work' }),
+      continueSession: (threadId) => {
+        continued.push(threadId);
+        return Promise.resolve({ threadId, turnId: 'tn_2' });
+      },
+    });
+    const { socket } = createManager({
+      session,
+      resolveProject: () => ({ rootPath: '/tmp/work', enabled: true }),
+      listProjects: () => [
+        {
+          projectId: 'prj_1',
+          displayName: 'LinxBox',
+          rootPath: '/tmp/work',
+          enabled: true,
+        },
+      ],
+    });
+    socket.emit('open', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        protocol_version: '1.0',
+        message_id: 'msg_device_1',
+        sequence: 20,
+        type: 'task.dispatch',
+        sent_at: new Date().toISOString(),
+        payload: {
+          task_id: 'tsk_device_1',
+          project_id: 'prj_1',
+          agent: 'codex',
+          capabilities: ['read'],
+          prompt: '继续检查',
+          acceptance_criteria: [],
+          policy_version: '2026-10-25',
+          continuation: {
+            agent_session_id: 'codex_th_managed',
+            thread_id: 'th_managed',
+          },
+        },
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(continued).toEqual(['th_managed']);
+    const ack = socket.frames().find((frame) => frame.type === 'task.ack');
+    expect(ack?.payload['disposition']).toBe('accepted');
   });
 
   it('reports the connection as down when the socket closes', () => {

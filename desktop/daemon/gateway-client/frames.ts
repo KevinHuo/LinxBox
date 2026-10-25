@@ -37,6 +37,7 @@ import {
   type DesktopFrame,
   type DesktopMessageType,
   type Disposition,
+  type AgentSessionCatalogItem,
   type GatewayFrame,
   type GatewayMessageType,
   type ProjectCapability,
@@ -70,13 +71,45 @@ export const taskDispatchSchema = z.strictObject({
   prompt: z.string(),
   acceptance_criteria: z.array(z.string()),
   policy_version: z.string().min(1),
-  continuation: z.union([z.strictObject({ parent_task_id: z.string().min(1) }), z.null()]),
+  continuation: z.union([
+    z.strictObject({ parent_task_id: z.string().min(1) }),
+    z.strictObject({
+      agent_session_id: z.string().min(1),
+      thread_id: z.string().min(1),
+    }),
+    z.null(),
+  ]),
 });
 
 export const taskCancelSchema = z.strictObject({
   task_id: z.string().min(1),
   reason: z.string(),
 });
+
+const agentSessionsSyncResultSchema = z
+  .strictObject({
+    reply_to_message_id: z.string().min(1),
+    ok: z.literal(true),
+  })
+  .or(
+    z.strictObject({
+      reply_to_message_id: z.string().min(1),
+      ok: z.literal(false),
+      error: z.strictObject({
+        code: z.enum([
+          'INVALID_ARGUMENT',
+          'UNAUTHENTICATED',
+          'PERMISSION_DENIED',
+          'NOT_FOUND',
+          'CONFLICT',
+          'DEPENDENCY_UNAVAILABLE',
+          'RESOURCE_EXHAUSTED',
+          'INTERNAL',
+        ]),
+        message: z.string().min(1),
+      }),
+    }),
+  );
 
 /**
  * Parse an inbound frame from the Gateway.
@@ -127,6 +160,27 @@ export function parseInboundFrame(
     return {
       ok: true,
       frame: { ...value, type: 'task.cancel', payload: payload.data } as GatewayFrame,
+    };
+  }
+  if (value.type === 'agent_sessions.sync.result') {
+    const payload = agentSessionsSyncResultSchema.safeParse(value.payload);
+    if (!payload.success) {
+      return {
+        ok: false,
+        error: publicError(
+          INVALID_FRAME,
+          'agent_sessions.sync.result 负载不合法',
+          value.message_id,
+        ),
+      };
+    }
+    return {
+      ok: true,
+      frame: {
+        ...value,
+        type: 'agent_sessions.sync.result',
+        payload: payload.data,
+      } as GatewayFrame,
     };
   }
   return {
@@ -228,6 +282,23 @@ export function buildHeartbeatFrame(input: {
       client_time: input.clientTime,
       ...(input.summary === undefined ? {} : { summary: input.summary }),
     },
+  };
+}
+
+/** Build a full replacement of the device-visible Codex session directory. */
+export function buildAgentSessionsSyncFrame(input: {
+  messageId: string;
+  sequence: number;
+  items: readonly AgentSessionCatalogItem[];
+  sentAt: string;
+}): DesktopFrame<'agent_sessions.sync'> {
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    message_id: input.messageId,
+    sequence: input.sequence,
+    type: 'agent_sessions.sync',
+    sent_at: input.sentAt,
+    payload: { items: input.items },
   };
 }
 

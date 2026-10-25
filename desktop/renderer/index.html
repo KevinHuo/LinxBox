@@ -285,14 +285,13 @@
               </li>
             </ul>
 
-            <!-- 本地项目：授权这台 Mac 上允许灵矽访问的目录 -->
+            <!-- Codex 项目：由本机 Codex 管理，Electron 不重复授权 -->
             <div class="settings-block">
               <div class="block-head">
-                <h2>本地项目</h2>
-                <button class="btn" id="btn-project-add" type="button">授权目录</button>
+                <h2>Codex 项目</h2>
               </div>
               <p class="hint" style="margin-top: 0; margin-bottom: 12px">
-                只有在这里授权过的目录，灵矽下发的任务才能在本机执行。绝对路径不会离开这台 Mac。
+                项目和工作目录由本机 Codex 管理；Electron 收到 WSS 指令后直接交给 Codex，不需要重复授权。
               </p>
               <ul class="project-list" id="project-list">
                 <li class="empty-row">尚未授权任何目录</li>

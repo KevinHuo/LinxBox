@@ -461,8 +461,16 @@
                 <input id="in-task" type="text" placeholder="留空自动生成" />
               </div>
               <div class="field">
-                <label for="in-project">project_id</label>
-                <input id="in-project" type="text" value="prj_demo_0001" />
+                <label for="in-project">项目</label>
+                <select id="in-project">
+                  <option value="">等待 Codex 项目…</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="in-session">对话标题</label>
+                <select id="in-session">
+                  <option value="">先选择项目…</option>
+                </select>
               </div>
             </div>
             <div class="field-row">
@@ -513,6 +521,7 @@
         filter: 'all',
         selectedId: null,
         connected: false,
+        agentSessions: [],
       };
 
       const $ = (selector) => document.querySelector(selector);
@@ -574,6 +583,35 @@
           : '选择左侧的一条消息查看完整帧。';
       }
 
+      function renderSessions() {
+        const projectSelect = $('#in-project');
+        const select = $('#in-session');
+        const previousProject = projectSelect.value;
+        const previous = select.value;
+        const projects = [...new Map(state.agentSessions.map((item) => [item.project_id, item.project_name])).entries()];
+        projectSelect.innerHTML = projects.length
+          ? projects.map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('')
+          : '<option value="">暂无 Codex 项目</option>';
+        if (projects.some(([id]) => id === previousProject)) projectSelect.value = previousProject;
+        const projectId = projectSelect.value;
+        const sessions = state.agentSessions.filter((item) => item.project_id === projectId);
+        if (sessions.length === 0) {
+          select.innerHTML = '<option value="">暂无该项目的对话</option>';
+          return;
+        }
+        select.innerHTML = sessions
+          .map(
+            (session) =>
+              `<option value="${escapeHtml(session.agent_session_id)}">${escapeHtml(session.title)}</option>`,
+          )
+          .join('');
+        if (sessions.some((session) => session.agent_session_id === previous)) {
+          select.value = previous;
+        }
+      }
+
+      $('#in-project').addEventListener('change', renderSessions);
+
       log.addEventListener('click', (event) => {
         const row = event.target.closest('.row');
         if (!row) return;
@@ -631,6 +669,12 @@
           .map((item) => item.trim())
           .filter(Boolean);
         const taskId = $('#in-task').value.trim();
+        const agentSessionId = $('#in-session').value;
+        const projectId = $('#in-project').value;
+        if (!agentSessionId) {
+          toast('请先选择 Codex 项目和对话标题');
+          return;
+        }
 
         const payload = {
           prompt: $('#in-prompt').value,
@@ -646,7 +690,10 @@
 
         const result = await post('/api/dispatch', {
           kind: 'dispatch',
-          payload: { ...payload, project_id: $('#in-project').value.trim() || 'prj_demo_0001' },
+          agent_session_id: agentSessionId,
+          project_id: projectId,
+          title: $('#in-session').selectedOptions[0]?.textContent ?? '',
+          payload,
         });
         toast(result.ok ? '已下达 task.dispatch' : result.message || '下达失败');
       });
@@ -693,6 +740,10 @@
         if (data.kind === 'status') {
           setConnected(data.connections > 0);
         }
+        if (data.kind === 'sessions') {
+          state.agentSessions = data.items ?? [];
+          renderSessions();
+        }
         if (data.kind === 'invalid') {
           toast('收到非法 JSON 帧');
         }
@@ -710,7 +761,9 @@
           // The server already returns console entries in the same shape the
           // live stream sends, so both paths render identically.
           state.entries = [...(data.sent ?? []), ...(data.received ?? [])];
+          state.agentSessions = data.agentSessions ?? [];
           render();
+          renderSessions();
         })
         .catch(() => {});
     </script>
