@@ -134,6 +134,19 @@ function validateDeviceBindFrame(frame) {
   return keys.length === 1 && keys[0] === 'mac_address' && typeof frame.payload.mac_address === 'string';
 }
 
+const DESKTOP_TYPES = new Set([
+  'client.hello', 'client.heartbeat', 'device.bind', 'task.ack', 'task.started',
+  'task.progress', 'task.approval_required', 'task.completed', 'task.failed',
+  'task.cancelled', 'task.interrupted', 'agent_sessions.sync', 'message.available', 'query.result',
+]);
+
+function validateDesktopFrame(frame) {
+  return Boolean(frame && typeof frame === 'object' && frame.protocol_version === '1.0' &&
+    typeof frame.message_id === 'string' && frame.message_id.length > 0 && frame.message_id.length <= 128 &&
+    Number.isInteger(frame.sequence) && frame.sequence >= 0 && DESKTOP_TYPES.has(frame.type) &&
+    typeof frame.sent_at === 'string' && frame.payload && typeof frame.payload === 'object' && !Array.isArray(frame.payload));
+}
+
 /**
  * Summarise a frame for the console list.
  *
@@ -418,6 +431,10 @@ export async function startMockGatewayConsole(options = {}) {
         frame = JSON.parse(data.toString());
       } catch {
         publish({ kind: 'invalid', raw: String(data).slice(0, 500) });
+        return;
+      }
+      if (!validateDesktopFrame(frame)) {
+        publish({ kind: 'invalid', raw: '不符合 desktop-gateway.schema.json 的 Desktop 帧' });
         return;
       }
       record(frame, 'inbound');

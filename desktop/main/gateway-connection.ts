@@ -25,6 +25,7 @@ import {
 import type { CodexDomainEvent } from '../daemon/codex-adapter/events.js';
 import type { AgentSessionCatalogItem, Disposition, GatewayFrame } from '../contracts/index.js';
 import type { CodexSession } from './codex-session.js';
+import { readUtf8Chunk } from '../daemon/gateway-client/content-chunks.js';
 
 /** The local facts the manager needs from the desktop state. */
 export interface GatewayConnectionConfig {
@@ -275,6 +276,7 @@ export class GatewayConnectionManager {
     const client = this.client;
     if (!client) return;
     try {
+      if (!this.agentSessions.has(frame.payload.agent_session_id)) throw new Error('会话不属于当前 Desktop');
       const session = await this.options.session.readSession(frame.payload.agent_session_id);
       if (!session) throw new Error('会话不存在');
       if (frame.type === 'messages.list') {
@@ -287,9 +289,8 @@ export class GatewayConnectionManager {
         const message = session.turns.flatMap((turn) => turn.messages).find((item) => item.id === frame.payload.message_id);
         if (!message) throw new Error('消息不存在');
         const offset = frame.payload.offset ?? 0;
-        const text = Array.from(message.text).slice(offset, offset + 1024).join('');
-        const next = offset + text.length < Array.from(message.text).length ? offset + text.length : null;
-        client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), data: { text, next_offset: next } }));
+        const chunk = readUtf8Chunk(message.text, offset);
+        client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), data: { text: chunk.text, next_offset: chunk.nextOffset } }));
       }
     } catch (error) {
       client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), error: { code: 'NOT_FOUND', message: error instanceof Error ? error.message : '查询失败' } }));
