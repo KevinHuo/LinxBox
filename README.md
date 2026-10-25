@@ -9,7 +9,7 @@ LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目�
 
 ![LinxBox 硬件概念效果图：透明外壳的 AI Passport 展示 LinX 任务列表](assets/readme/linxbox-hardware.png)
 
-> AI 生成的产品效果图，依据 AI Passport 硬件外观和 LinX 界面制作；屏幕任务、状态与电量为示例，不是实物照片或真实任务执行记录。项目处于开发与联调阶段，完整语音执行链路尚未验收。
+*产品示意图：任务列表。*
 
 [产品体验](#产品体验) · [硬件与操作](#硬件与操作) · [当前进展](#当前进展) · [参与开发](#参与开发)
 
@@ -36,7 +36,7 @@ LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目�
 
 ![LinxBox 语音交互概念效果图：工作桌面上的 AI Passport 显示录音波形和计时](assets/readme/linxbox-voice.png)
 
-> AI 生成的场景效果图。录音界面参考 LinX 主机渲染，计时为示意；背景电脑仅表达使用场景，不代表已完成端到端联调。图片来源与生成提示词见[素材说明](assets/readme/README.md)。
+*产品示意图：语音录入。*
 
 当前使用 **FoloToy AI Passport** 硬件，运行本项目的 **LinX 0.2** 界面。透明外壳、顶部挂绳孔和侧边实体键沿用原设备设计。
 
