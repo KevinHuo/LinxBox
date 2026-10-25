@@ -349,18 +349,25 @@ function handleFloatSetVisible(payload: unknown): unknown {
   floatState.visible = visible;
 
   if (visible) {
-    const window = ensureFloatWindow();
-    if (floatState.position === null) {
-      const workArea = screen.getPrimaryDisplay().workArea;
-      floatState.position = defaultFloatPosition(workArea);
-    }
-    applyFloatPosition();
-    window.show();
+    showFloatWindow();
   } else if (floatWindow !== null && !floatWindow.isDestroyed()) {
     floatWindow.hide();
   }
 
   return { ok: true, data: readFloatView(floatState) };
+}
+
+/** Create and show the single floating window after Electron is ready. */
+function showFloatWindow(): void {
+  const window = ensureFloatWindow();
+  if (floatState.position === null) {
+    const workArea = screen.getPrimaryDisplay().workArea;
+    floatState.position = defaultFloatPosition(workArea);
+  }
+  applyFloatPosition();
+  if (!window.isVisible()) {
+    window.showInactive();
+  }
 }
 
 /**
@@ -664,6 +671,11 @@ function ensureFloatWindow(): BrowserWindow {
   });
 
   void window.loadFile(floatRendererPath);
+  window.once('closed', () => {
+    if (floatWindow === window) {
+      floatWindow = null;
+    }
+  });
   floatWindow = window;
   return window;
 }
@@ -671,6 +683,9 @@ function ensureFloatWindow(): BrowserWindow {
 void app.whenReady().then(() => {
   registerIpcHandlers();
   mainWindow = createMainWindow();
+  if (floatState.visible) {
+    showFloatWindow();
+  }
   restoreSavedConnection();
 
   app.on('activate', () => {
