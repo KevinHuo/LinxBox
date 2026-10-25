@@ -29,38 +29,6 @@ wss://gateway.example.com/v1/clients/connect
 
 Desktop 会主动连接 Gateway，Mac 不需要开放监听端口。会话目录按本地项目配置、Codex 项目或默认目录组织；“本地项目”用于配置目录，不是 WSS 任务执行前再次弹出授权的入口。已有会话沿用本机 Codex 记录的工作目录，固定会话无法续接时明确报错，不创建新会话兜底。连接配置保存在 Electron user-data 中，凭据不要写入共享说明或日志。
 
-## 本地运行 Gateway（可选）
-
-只有需要修改 Gateway 或离线运行时才需要启动本地实例。
-
-环境要求：Go `1.25+`。
-
-```sh
-cd gateway
-go mod download
-make generate
-cp config.example.json config.local.json
-```
-
-编辑 `config.local.json`，填写监听地址、可写数据库路径和独立的设备/Desktop 凭据。两端使用同一账号，token 不同；设备连接后自动登记身份，Desktop 再完成绑定，无需配置设备 ID 或 MAC 白名单。
-
-接入 MCP 时另外配置独立凭据，并按所用版本限定设备及灵矽智能体范围。设备 WS 自动登记不等于 MCP 授权范围自动扩大；具体配置由部署方按 [MCP 接入](../gateway/docs/mcp.md)设置，不向普通使用者分发服务器配置正文。配置完成后启动：
-
-```sh
-go run ./cmd/linxbox-gateway --config ./config.local.json
-```
-
-再将 Desktop 的 Gateway 地址切换为本地实例的 `/v1/clients/connect`，并填入对应 Desktop token。
-
-本地 Gateway 检查：
-
-```sh
-cd gateway
-make check
-make test
-make smoke-local
-```
-
 ## 编译 Gateway
 
 从仓库根目录开始，准备 Go `1.25+` 和 Make，执行：
