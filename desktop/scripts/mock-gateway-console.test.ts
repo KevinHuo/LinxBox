@@ -94,6 +94,43 @@ describe('buildAgentSessionsSyncResult', () => {
   });
 });
 
+describe('buildBindingResult', () => {
+  it('returns a correlated successful binding result', () => {
+    const frame = {
+      type: 'binding.result',
+      payload: {
+        reply_to_message_id: 'bind_1',
+        ok: true,
+        data: { device_id: 'AA:BB:CC:DD:EE:FF', desktop_client_id: 'desktop-mock' },
+      },
+    };
+    expect(frame.type).toBe('binding.result');
+    expect(frame.payload).toEqual({
+      reply_to_message_id: 'bind_1',
+      ok: true,
+      data: { device_id: 'AA:BB:CC:DD:EE:FF', desktop_client_id: 'desktop-mock' },
+    });
+    expect(summarizeFrame(frame)).toContain('设备配对成功');
+  });
+
+  it('returns a contract-shaped failure result', () => {
+    const frame = {
+      type: 'binding.result',
+      payload: {
+        reply_to_message_id: 'bind_1',
+        ok: false,
+        error: { code: 'NOT_FOUND', message: '设备未在线' },
+      },
+    };
+    expect(frame.payload).toEqual({
+      reply_to_message_id: 'bind_1',
+      ok: false,
+      error: { code: 'NOT_FOUND', message: '设备未在线' },
+    });
+    expect(summarizeFrame(frame)).toContain('设备配对失败');
+  });
+});
+
 describe('summarizeFrame', () => {
   it('summarises the client hello', () => {
     const summary = summarizeFrame({

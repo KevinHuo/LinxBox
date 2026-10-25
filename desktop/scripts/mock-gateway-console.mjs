@@ -151,6 +151,10 @@ export function summarizeFrame(frame) {
       return `会话目录 ${Array.isArray(payload.items) ? payload.items.length : 0} 项`;
     case 'agent_sessions.sync.result':
       return `会话目录保存${payload.ok ? '成功' : '失败'}`;
+    case 'binding.result':
+      return payload.ok
+        ? `设备配对成功 · ${payload.data?.device_id ?? '-'}`
+        : `设备配对失败 · ${payload.error?.code ?? '-'} · ${payload.error?.message ?? ''}`;
     case 'task.ack':
       return `task ${payload.task_id ?? '-'} · disposition=${payload.disposition ?? '-'}${payload.error ? ` · ${payload.error.message ?? ''}` : ''}`;
     case 'task.started':
