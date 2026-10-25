@@ -111,7 +111,7 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 
 // Propose 原样保存最终 ASR；显式 request_id 无论联调开关如何均精确定位，不回退其他请求。
 func (s *RequestService) Propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string) (contracts.Request, error) {
-	return s.propose(ctx, device, id, agent, voiceSession, text, false)
+	return s.propose(ctx, device, id, agent, voiceSession, text, false, "")
 }
 
 // ProposeImplicit 在明确开启的联调模式中，事务内定位唯一待处理请求；不新建或改投目标。
@@ -119,10 +119,29 @@ func (s *RequestService) ProposeImplicit(ctx context.Context, device domain.Devi
 	if !s.cfg.MCP.AllowImplicitRequestID {
 		return contracts.Request{}, domain.ErrPermissionDenied("MCP 请求自动关联未开启")
 	}
-	return s.propose(ctx, device, "", agent, voiceSession, text, true)
+	return s.propose(ctx, device, "", agent, voiceSession, text, true, "")
 }
 
-func (s *RequestService) propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string, implicit bool) (contracts.Request, error) {
+// ProposeForSubject 对账号范围的 MCP 凭据，在保存原文的同一事务内核对设备账号。
+func (s *RequestService) ProposeForSubject(ctx context.Context, device domain.DeviceID, subject domain.Subject, id, agent, voiceSession, text string) (contracts.Request, error) {
+	if !domain.ValidateSubject(string(subject)) {
+		return contracts.Request{}, domain.ErrPermissionDenied("MCP 账号范围无效")
+	}
+	return s.propose(ctx, device, id, agent, voiceSession, text, false, subject)
+}
+
+// ProposeImplicitForSubject 仅在已有演示开关开启时，关联该账号设备的唯一请求。
+func (s *RequestService) ProposeImplicitForSubject(ctx context.Context, device domain.DeviceID, subject domain.Subject, agent, voiceSession, text string) (contracts.Request, error) {
+	if !s.cfg.MCP.AllowImplicitRequestID {
+		return contracts.Request{}, domain.ErrPermissionDenied("MCP 请求自动关联未开启")
+	}
+	if !domain.ValidateSubject(string(subject)) {
+		return contracts.Request{}, domain.ErrPermissionDenied("MCP 账号范围无效")
+	}
+	return s.propose(ctx, device, "", agent, voiceSession, text, true, subject)
+}
+
+func (s *RequestService) propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string, implicit bool, subject domain.Subject) (contracts.Request, error) {
 	if (!implicit && !domain.ValidateID(id)) || !domain.ValidateID(agent) || !domain.ValidateID(voiceSession) {
 		return contracts.Request{}, domain.ErrInvalidArgument("缺少本轮请求或灵矽上下文")
 	}
@@ -132,6 +151,19 @@ func (s *RequestService) propose(ctx context.Context, device domain.DeviceID, id
 		return contracts.Request{}, domain.ErrInvalidArgument("最终识别文字为空、无效或超过长度限制")
 	}
 	selectRequest := func(tx *sql.Tx) (*storage.RequestRow, error) {
+		if subject != "" {
+			registered, err := s.repos.Devices.Get(ctx, tx, string(device))
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, domain.ErrPermissionDenied("MCP 设备尚未登记")
+			}
+			if err != nil {
+				return nil, err
+			}
+			current, valid := s.cfg.DeviceSubjectForCredential(registered.CredentialKey)
+			if !valid || current != subject || registered.Subject != string(subject) {
+				return nil, domain.ErrPermissionDenied("设备与 MCP 凭据不属于同一账号")
+			}
+		}
 		if !implicit {
 			return s.requests.Get(ctx, tx, id)
 		}

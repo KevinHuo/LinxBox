@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMCPCredentials(t *testing.T) {
 	for _, tc := range []struct {
@@ -14,6 +17,10 @@ func TestMCPCredentials(t *testing.T) {
 		{"设备可在之后登记", MCPCredential{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:02", AgentID: "agent"}, true},
 		{"非法设备", MCPCredential{Token: "mcp-token", DeviceID: "invalid", AgentID: "agent"}, false},
 		{"缺少智能体", MCPCredential{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:01"}, false},
+		{"账号动态设备", MCPCredential{Token: "mcp-token", Subject: "alice", AgentID: "agent"}, true},
+		{"缺少范围", MCPCredential{Token: "mcp-token", AgentID: "agent"}, false},
+		{"双重范围", MCPCredential{Token: "mcp-token", Subject: "alice", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "agent"}, false},
+		{"账号过长", MCPCredential{Token: "mcp-token", Subject: strings.Repeat("a", 129), AgentID: "agent"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := validConfig()

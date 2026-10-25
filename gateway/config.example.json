@@ -17,7 +17,7 @@
     "mcp": [
       {
         "token": "<独立 MCP 凭据，不能复用设备或 Desktop token>",
-        "device_id": "AA:BB:CC:DD:EE:01",
+        "subject": "<账号主体，与设备及 Desktop 一致>",
         "agent_id": "<灵矽智能体 ID>"
       }
     ],

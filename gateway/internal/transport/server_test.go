@@ -429,9 +429,9 @@ func TestFullFirmwareDesktopFlow(t *testing.T) {
 		t.Fatalf("推送 Desktop 错误: %+v", push.Payload)
 	}
 
-	// Desktop 同步目录；固件收到 updated 推送。
+	// Desktop 按非 ID 顺序同步目录；固件收到 updated 推送。
 	items := make([]any, 0, 6)
-	for i := 1; i <= 6; i++ {
+	for _, i := range []int{6, 2, 5, 1, 4, 3} {
 		items = append(items, sessionPayload(i))
 	}
 	syncResp := dt.dtReq(t, "agent_sessions.sync", map[string]any{"items": items})
@@ -465,6 +465,11 @@ func TestFullFirmwareDesktopFlow(t *testing.T) {
 	}
 	if len(p2.Items) != 1 || p2.NextCursor != nil {
 		t.Fatalf("第二页错误: %d 项, next=%v", len(p2.Items), p2.NextCursor)
+	}
+	for i, item := range append(p1.Items, p2.Items...) {
+		if want := items[i].(map[string]any)["agent_session_id"]; item.AgentSessionID != want {
+			t.Fatalf("固件目录未保留 Desktop 顺序：第 %d 项 got=%s want=%s", i, item.AgentSessionID, want)
+		}
 	}
 
 	// 单条会话。
