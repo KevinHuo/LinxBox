@@ -80,6 +80,7 @@ describe('preload bridge', () => {
         'moveFloatWindow',
         'focusMainWindow',
         'onConnectionChanged',
+        'onTaskChanged',
         'readAppearance',
         'readCodexConversation',
         'probeCodex',
@@ -107,7 +108,7 @@ describe('preload bridge', () => {
     const api = createLinxboxApi(() => Promise.resolve(null));
     // The event subscription is not an invocable method, so the bridge holds
     // one method more than the invocable channel list.
-    expect(Object.keys(api)).toHaveLength(IPC_METHODS.length + 1);
+    expect(Object.keys(api)).toHaveLength(IPC_METHODS.length + 2);
   });
 
   it('subscribes to the connection event on the named channel', () => {

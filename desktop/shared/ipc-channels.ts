@@ -60,6 +60,7 @@ const CHANNEL_SET: ReadonlySet<string> = new Set(IPC_CHANNELS);
 export const IPC_EVENT_CHANNELS = {
   /** The Gateway connection status changed. */
   connectionChanged: `${IPC_NAMESPACE}.${IPC_VERSION}.connection.changed`,
+  taskChanged: `${IPC_NAMESPACE}.${IPC_VERSION}.task.changed`,
 } as const;
 
 export type IpcEventChannel = (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS];

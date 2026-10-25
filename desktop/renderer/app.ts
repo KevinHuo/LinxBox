@@ -578,6 +578,9 @@ async function main(): Promise<void> {
   placeBoxSettings();
   wireEvents();
   bridge?.onConnectionChanged((payload) => applyGatewayStatus(payload));
+  bridge?.onTaskChanged(() => {
+    void refreshFromBridge();
+  });
   await refreshFromBridge();
   startConnectionPolling();
 }

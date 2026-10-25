@@ -271,6 +271,7 @@ export interface LinxboxBridge {
   focusMainWindow(): Promise<unknown>;
   /** Subscribe to the Gateway connection status changes. */
   onConnectionChanged(listener: (payload: unknown) => void): () => void;
+  onTaskChanged(listener: (payload: unknown) => void): () => void;
 }
 
 /**

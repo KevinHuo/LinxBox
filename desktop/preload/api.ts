@@ -51,6 +51,7 @@ export interface LinxboxApi {
   focusMainWindow(): Promise<unknown>;
   /** Subscribe to the Gateway connection status changes. */
   onConnectionChanged(listener: EventListener): () => void;
+  onTaskChanged(listener: EventListener): () => void;
 }
 
 /**
@@ -95,6 +96,7 @@ export function createLinxboxApi(
     moveFloatWindow: (payload) => call('window.float.move', payload),
     focusMainWindow: () => call('window.main.focus'),
     onConnectionChanged: (listener) => subscribe(IPC_EVENT_CHANNELS.connectionChanged, listener),
+    onTaskChanged: (listener) => subscribe(IPC_EVENT_CHANNELS.taskChanged, listener),
   };
 }
 

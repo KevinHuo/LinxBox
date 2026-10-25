@@ -106,6 +106,11 @@ const gateway = new GatewayConnectionManager({
   },
   onTaskEvent: (event) => {
     recordTaskEvent(state, event.payload);
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(IPC_EVENT_CHANNELS.taskChanged, event.payload);
+      }
+    }
   },
   onProjectChange: (frame) => {
     if (frame.type === 'project.revoke') {
