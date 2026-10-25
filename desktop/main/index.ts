@@ -606,6 +606,10 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'window.float.setVisible': (payload) => handleFloatSetVisible(payload),
   'window.float.move': (payload) => handleFloatMove(payload),
   'window.main.focus': () => handleMainWindowFocus(),
+  'app.quit': () => {
+    app.quit();
+    return { ok: true };
+  },
 };
 
 /** Register one handler per allowlisted channel. */

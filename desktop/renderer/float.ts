@@ -203,16 +203,9 @@ async function reportPosition(x: number, y: number): Promise<void> {
   await bridge.moveFloatWindow({ x, y });
 }
 
-/** Toggle the reminder pause. */
-function togglePause(): void {
-  state.paused = !state.paused;
-  const button = qs('#btn-pause');
-  if (button) {
-    button.textContent = state.paused ? '恢复提醒' : '暂停提醒';
-  }
-  qs('#float-ball')?.classList.toggle('is-paused', state.paused);
-  renderStatus();
-  showToast(state.paused ? '已暂停提醒 · 设备动态不再弹出' : '已恢复提醒');
+/** Quit the whole Electron application, including the floating window. */
+function quitApp(): void {
+  void bridge?.quitApp();
 }
 
 /** Wire the panel controls. */
@@ -222,7 +215,7 @@ function wireEvents(): void {
     void bridge?.focusMainWindow();
   });
 
-  qs('#btn-pause')?.addEventListener('click', togglePause);
+  qs('#btn-quit')?.addEventListener('click', quitApp);
 
   const appButton = qs('#fc-app');
   const appList = qs('#fc-app-list');

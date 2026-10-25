@@ -841,7 +841,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   </div>
   <div class="fc-actions">
     <button class="btn btn-primary" id="btn-open-main" type="button">打开主界面</button>
-    <button class="btn btn-quiet" id="btn-pause" type="button">暂停提醒</button>
+    <button class="btn btn-quiet" id="btn-quit" type="button">关闭应用</button>
   </div>
 </aside>
 <button class="float-ball" id="float-ball" type="button" aria-label="Linx AI 悬浮窗" aria-expanded="false">
@@ -990,15 +990,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     go(state.paired ? "home" : "pair");
   }
 
-  function togglePause() {
-    state.paused = !state.paused;
-    var btn = document.getElementById("btn-pause");
-    btn.textContent = state.paused ? "恢复提醒" : "暂停提醒";
-    floatBall.classList.toggle("is-paused", state.paused);
-    document.getElementById("fc-last").textContent = state.paused
-      ? "已暂停 · 不再提醒动态"
-      : "登录校验修复 · 运行中";
-    toast(state.paused ? "已暂停提醒 · 设备动态不再弹出" : "已恢复提醒");
+  function quitApp() {
+    toast("已关闭 Linx AI");
   }
 
   /* 悬浮球拖拽（指针事件，区分点击与拖动） */
@@ -1045,7 +1038,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   document.getElementById("btn-cancel").addEventListener("click", cancelPair);
   document.getElementById("btn-unpair").addEventListener("click", unpair);
   document.getElementById("btn-open-main").addEventListener("click", openMain);
-  document.getElementById("btn-pause").addEventListener("click", togglePause);
+  document.getElementById("btn-quit").addEventListener("click", quitApp);
 
   /* 悬浮卡：应用选择器 */
   var fcApp = document.getElementById("fc-app");

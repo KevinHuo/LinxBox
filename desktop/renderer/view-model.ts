@@ -269,6 +269,7 @@ export interface LinxboxBridge {
   setFloatWindowVisible(payload: unknown): Promise<unknown>;
   moveFloatWindow(payload: unknown): Promise<unknown>;
   focusMainWindow(): Promise<unknown>;
+  quitApp(): Promise<unknown>;
   /** Subscribe to the Gateway connection status changes. */
   onConnectionChanged(listener: (payload: unknown) => void): () => void;
   onTaskChanged(listener: (payload: unknown) => void): () => void;

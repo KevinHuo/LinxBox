@@ -49,6 +49,7 @@ export interface LinxboxApi {
   setFloatWindowVisible(payload: unknown): Promise<unknown>;
   moveFloatWindow(payload: unknown): Promise<unknown>;
   focusMainWindow(): Promise<unknown>;
+  quitApp(): Promise<unknown>;
   /** Subscribe to the Gateway connection status changes. */
   onConnectionChanged(listener: EventListener): () => void;
   onTaskChanged(listener: EventListener): () => void;
@@ -95,6 +96,7 @@ export function createLinxboxApi(
     setFloatWindowVisible: (payload) => call('window.float.setVisible', payload),
     moveFloatWindow: (payload) => call('window.float.move', payload),
     focusMainWindow: () => call('window.main.focus'),
+    quitApp: () => call('app.quit'),
     onConnectionChanged: (listener) => subscribe(IPC_EVENT_CHANNELS.connectionChanged, listener),
     onTaskChanged: (listener) => subscribe(IPC_EVENT_CHANNELS.taskChanged, listener),
   };

@@ -38,6 +38,7 @@ export const IPC_METHODS = [
   'window.float.read',
   'window.float.setVisible',
   'window.main.focus',
+  'app.quit',
 ] as const;
 
 export type IpcMethod = (typeof IPC_METHODS)[number];
