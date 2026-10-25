@@ -683,6 +683,16 @@ function ensureFloatWindow(): BrowserWindow {
     callback(isPermissionRequestAllowed());
   });
 
+  // Closing the floating panel means hiding it, not shutting down LinxBox or
+  // destroying the main window. It can be shown again from the main settings.
+  window.on('close', (event) => {
+    if (!window.isDestroyed()) {
+      event.preventDefault();
+      floatState.visible = false;
+      window.hide();
+    }
+  });
+
   void window.loadFile(floatRendererPath);
   window.once('closed', () => {
     if (floatWindow === window) {
