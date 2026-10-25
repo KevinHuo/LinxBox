@@ -442,7 +442,7 @@ async function testConnection(): Promise<void> {
 function wireEvents(): void {
   qsa<HTMLButtonElement>('.rail-item').forEach((button) => {
     button.addEventListener('click', () => {
-      go(button.dataset['app'] === 'settings' ? 'settings' : 'home');
+      go(button.dataset['app'] === 'settings' ? 'settings' : state.device.mac !== null ? 'home' : 'pair');
     });
   });
 
