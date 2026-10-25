@@ -23,7 +23,7 @@ import {
   publicError,
 } from '../daemon/gateway-client/frames.js';
 import type { CodexDomainEvent } from '../daemon/codex-adapter/events.js';
-import type { AgentSessionCatalogItem, Disposition, GatewayFrame } from '../contracts/index.js';
+import type { AgentSessionCatalogItem, Disposition, GatewayFrame, ProjectCapability } from '../contracts/index.js';
 import type { CodexSession } from './codex-session.js';
 import { readUtf8Chunk } from '../daemon/gateway-client/content-chunks.js';
 
@@ -120,6 +120,7 @@ export class GatewayConnectionManager {
   private readonly managedThreads = new Map<string, string>();
   private syncInFlight: Promise<void> | null = null;
   private publishedProjects = new Map<string, PublishedProject>();
+  private readonly gatewayProjectMetadata = new Map<string, { displayName: string; capabilities: readonly ProjectCapability[]; availability: 'online' | 'offline'; grantVersion: number }>();
   private readonly blockedThreads = new Set<string>();
   private readonly bindingWaiters = new Map<string, { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
 
@@ -162,6 +163,9 @@ export class GatewayConnectionManager {
 
     const dispatcher = new TaskDispatcher({
       resolveProject: (projectId) =>
+        this.gatewayProjectMetadata.get(projectId)?.availability === 'offline'
+          ? null
+          :
         this.options.resolveProject(projectId) ??
         (() => {
           const project = this.publishedProjects.get(projectId);
@@ -255,6 +259,27 @@ export class GatewayConnectionManager {
           return;
         }
         if (event.frame.type === 'project.upsert' || event.frame.type === 'project.revoke') {
+          if (event.frame.type === 'project.upsert') {
+            const current = this.gatewayProjectMetadata.get(event.frame.payload.project_id);
+            if (current === undefined || event.frame.payload.grant_version >= current.grantVersion) {
+              this.gatewayProjectMetadata.set(event.frame.payload.project_id, {
+                displayName: event.frame.payload.display_name,
+                capabilities: event.frame.payload.capabilities,
+                availability: event.frame.payload.availability,
+                grantVersion: event.frame.payload.grant_version,
+              });
+            }
+          } else {
+            const current = this.gatewayProjectMetadata.get(event.frame.payload.project_id);
+            if (current === undefined || event.frame.payload.grant_version >= current.grantVersion) {
+              this.gatewayProjectMetadata.set(event.frame.payload.project_id, {
+                displayName: current?.displayName ?? event.frame.payload.project_id,
+                capabilities: current?.capabilities ?? [],
+                availability: 'offline',
+                grantVersion: event.frame.payload.grant_version,
+              });
+            }
+          }
           this.options.onProjectChange?.(event.frame);
           return;
         }
