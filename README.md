@@ -4,7 +4,7 @@
 
 LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任务，经 Cloud MCP Gateway 路由到 macOS 客户端，再由本机已授权的 Code Agent 执行。
 
-当前仓库提供 FoloToy AI Passport 上的 LinX 0.2 界面、手机网页 Wi-Fi 配网及灵矽语音入口。任务和回复仍为离线演示数据；设备每次只录入一条指令，反馈播完后返回概览，阅读页只读文字，首版不支持图片浏览。概览后台准备语音，同目标连接在本条结束后空闲保留 30 秒；返回默认长按，也可在设置中切换双击并保存。此前已完成短流程真机联调，长期稳定性和完整异常场景仍待验收。Gateway、macOS 客户端和远程编码链路尚未形成可发布的完整实现。具体协议、状态机、数据结构和恢复策略必须由相关模块负责人通过独立 Issue、设计评审和 PR 确认；讨论稿不代表已经实现或验收通过。
+当前仓库提供 FoloToy AI Passport 上的 LinX 0.2 界面、手机网页 Wi-Fi 配网及灵矽语音入口。默认任务与回复使用演示数据；可选 Gateway 模式读取服务端会话、历史及正文，并按通知刷新，本轮以 TLS mock 验证。每次只录入一条指令，按一次 OK 结束录音并发送，灵矽播报结果后返回概览；录音页保留波形和读秒，不再二次确认文字。阅读页只读文字，首版不看图。返回默认长按，可在设置切换双击并保存。此前直接灵矽路径完成过短流程真机联调；真实 Gateway／Desktop、逐轮语音透传及长期稳定性仍待验收。具体协议与模块实现通过独立 Issue、设计和 PR 确认，不把讨论稿或模拟测试当成完整链路验收。
 
 ## 当前分工
 
@@ -67,4 +67,4 @@ cd firmware
 
 ## 共享协议契约
 
-固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由及 [MCP 文字提案接收](gateway/docs/mcp.md)；固件和 Desktop 的新增消息接线、灵矽逐轮透传及完整执行链路仍待实现和联调，不代表真实语音闭环已经完成。
+固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由及 [MCP 文字提案接收](gateway/docs/mcp.md)。固件按正式契约读取内容、处理通知，并在录音前固定目标；灵矽原会话负责 MCP 调用及自然语音反馈，不使用设备直传识别文字或独立播报。接入与限制见[固件接入说明](firmware/docs/gateway-client.md)。服务端任务投递、灵矽逐轮透传及真实执行链路仍待部署和联调，不代表完整语音闭环已完成。

@@ -68,7 +68,8 @@ static void audit_objects(lv_obj_t *object)
         const lv_font_t *font = lv_obj_get_style_text_font(object, LV_PART_MAIN);
         assert(font == &linx_font_12 || font == &linx_font_14 || font == &linx_font_16 ||
                font == &linx_font_20 || font == &linx_font_16_bold ||
-               font == &linx_font_20_bold || font == &linx_font_24_bold || font == &linx_font_28_bold);
+               font == &linx_font_20_bold || font == &linx_font_24_bold || font == &linx_font_28_bold ||
+               font == &linx_font_remote_16);
         check_string(font, text);
         lv_area_t area;
         lv_obj_get_coords(object, &area);
@@ -413,6 +414,42 @@ static void check_inventory(void)
     assert(!covered(&linx_font_28_bold, 0x9F98U));
     printf("Fonts: %zu inventory codepoints × %zu CJK variants; %zu ASCII at28px bold; U+9F98 negative controls PASS\n",
            count, font_count, ascii_count);
+}
+
+static void check_remote_readability(void)
+{
+    /* 在线字体须与已验证的 UI 粗体同源，避免退回细体或二值字形。 */
+    const char *sample = "我的任务继续沟通确认指令完整消息连接状态未知校验边界";
+    const lv_font_fmt_txt_dsc_t *remote = linx_font_remote_16.dsc;
+    const lv_font_fmt_txt_dsc_t *bold = linx_font_16_bold.dsc;
+    const lv_font_fmt_txt_dsc_t *regular = linx_font_16.dsc;
+    assert(remote->bpp == 4U && linx_font_remote_16.line_height == 20);
+    size_t offset = 0U, bytes = strlen(sample);
+    unsigned remote_ink = 0U, regular_ink = 0U, shades = 0U;
+    while (offset < bytes) {
+        uint32_t cp = decode(sample, bytes, &offset);
+        lv_font_glyph_dsc_t actual = {0}, expected = {0}, thin = {0};
+        assert(lv_font_get_glyph_dsc(&linx_font_remote_16, &actual, cp, 0U));
+        assert(lv_font_get_glyph_dsc(&linx_font_16_bold, &expected, cp, 0U));
+        assert(lv_font_get_glyph_dsc(&linx_font_16, &thin, cp, 0U));
+        assert(actual.format == LV_FONT_GLYPH_FORMAT_A4 && !actual.is_placeholder);
+        assert(actual.box_w == expected.box_w && actual.box_h == expected.box_h &&
+               actual.adv_w == expected.adv_w && actual.ofs_x == expected.ofs_x && actual.ofs_y == expected.ofs_y);
+        const uint8_t *pixels = remote->glyph_bitmap + remote->glyph_dsc[actual.gid.index].bitmap_index;
+        const uint8_t *expected_pixels = bold->glyph_bitmap + bold->glyph_dsc[expected.gid.index].bitmap_index;
+        assert(memcmp(pixels, expected_pixels, ((size_t)actual.box_w * actual.box_h + 1U) / 2U) == 0);
+        for (size_t i = 0U; i < (size_t)actual.box_w * actual.box_h; ++i) {
+            unsigned alpha = (pixels[i / 2U] >> (i & 1U ? 0U : 4U)) & 15U;
+            remote_ink += alpha;
+            shades |= 1U << alpha;
+        }
+        pixels = regular->glyph_bitmap + regular->glyph_dsc[thin.gid.index].bitmap_index;
+        for (size_t i = 0U; i < (size_t)thin.box_w * thin.box_h; ++i)
+            regular_ink += (pixels[i / 2U] >> (i & 1U ? 0U : 4U)) & 15U;
+    }
+    assert(remote_ink > regular_ink * 13U / 10U);
+    assert((shades & 0x7ffeU) != 0U);
+    puts("在线文字：实际粗体像素匹配、灰度平滑和笔画覆盖回归通过");
 }
 
 static int32_t measure(const char *value, size_t bytes, void *context)
@@ -2397,6 +2434,7 @@ int main(int argc, char **argv)
     assert(LV_MEM_SIZE == 40U * 1024U);
     lv_init();
     check_inventory();
+    check_remote_readability();
     test_template_reader_layouts();
     s_display = lv_display_create(WIDTH, HEIGHT);
     assert(s_display != NULL);

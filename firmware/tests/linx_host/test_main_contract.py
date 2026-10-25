@@ -7,15 +7,18 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def validate_contract(source: str) -> None:
+    assert "linx_device_transcript_poll" not in source and "linx_gateway_client_propose" not in source, "Device pump must not upload STT or submit Agent tasks"
     load = source.index("linx_input_settings_init(&loaded_mode)")
     initial_lock = source.index("if (!bsp_lvgl_lock(1000))")
     ui_init = source.index("linx_ui_init(lv_screen_active()")
     initial_mode = source.index("linx_ui_set_back_mode(loaded_mode);")
     bind = source.index("linx_ui_set_back_mode_handler(linx_input_settings_request, NULL);")
     assert load < initial_lock < ui_init < initial_mode < bind, "NVS load must run outside the UI lock before binding settings"
+    assert source.index("linx_device_init()") < initial_lock, "Device initialization must run outside the UI lock"
     loop = source[source.index("for (;;) {"):]
     action = loop.index("linx_input_action_t action =")
     lock = loop.index("if (!bsp_lvgl_lock(100)) continue;")
+    assert loop.index("gateway_poll(") < lock, "Gateway parsing and socket handoff must run outside the UI lock"
     reduce = loop.index("action = input_action(&input, &event);")
     before = loop.index("const linx_ui_page_t before_tick = linx_ui_page();")
     poll = loop.index("linx_input_settings_poll(&settings_event)")
@@ -59,6 +62,8 @@ class MainPumpContract(unittest.TestCase):
     def test_negative_controls_detect_missing_barrier_and_discard(self):
         source = (ROOT / "main/main.c").read_text()
         for stale in (
+            source + "\nlinx_device_transcript_poll();",
+            source + "\nlinx_gateway_client_propose();",
             source.replace("linx_input_barrier(&input, now_ms);", "", 1),
             source.replace("linx_input_barrier(&input, now_ms);\n            action = LINX_INPUT_NONE;",
                            "linx_input_barrier(&input, now_ms);", 1),

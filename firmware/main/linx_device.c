@@ -52,6 +52,16 @@ static QueueHandle_t events;
 static atomic_uint active_generation;
 static atomic_bool active;
 static atomic_bool listening;
+/* Gateway 的网络租约不经过语音单槽，不改变录音代号或采集意图。 */
+static atomic_bool network_wanted;
+static atomic_bool network_ready;
+static atomic_bool network_provisioning;
+static atomic_uint network_epoch;
+static atomic_uint network_close_ack;
+static atomic_int network_error;
+static char network_mac[18];
+static int64_t network_retry_at;
+
 static atomic_bool finish_pending;
 /* 软取消与硬释放都不能被随后的 PREPARE 快照覆盖。 */
 static atomic_bool discard_transport;
@@ -61,6 +71,8 @@ typedef struct {
     linx_voice_command_t command;
     uint32_t generation;
     linx_reply_context_t context;
+    char gateway_request_id[513];
+    char gateway_agent_session_id[513];
 } voice_target_t;
 /* 只保留最新目标，不含密码；预热中的同目标请求可直接接管原握手。 */
 static voice_target_t requested_target;
@@ -119,6 +131,9 @@ typedef struct {
     bool completed;
     bool turn_active;
     bool voice;
+    bool network_only;
+    char gateway_request_id[513];
+    char gateway_agent_session_id[513];
     bool preparing;
     bool draining;
     bool drain_stopped;
@@ -154,9 +169,17 @@ static bool same_context(const linx_reply_context_t *left, const linx_reply_cont
            left->source_turn_id == right->source_turn_id && left->image_id == right->image_id;
 }
 
+static bool same_voice_target(const linx_reply_context_t *left, const char *left_session,
+                              const linx_reply_context_t *right, const char *right_session)
+{
+    if (left_session[0] || right_session[0]) return strcmp(left_session, right_session) == 0;
+    return same_context(left, right);
+}
+
 /* 连接生命期独立于页面代号；代号只限制事件发布及本条采集/播放。 */
 static bool session_current(voice_session_t *session)
 {
+    if (session->network_only) return atomic_load(&network_wanted) && !atomic_load(&network_provisioning);
     if (!session->voice) return current(session->generation);
     if (atomic_load(&discard_transport)) return false;
     if (session->preparing) {
@@ -164,9 +187,12 @@ static bool session_current(voice_session_t *session)
         voice_target_t target = requested_target;
         taskEXIT_CRITICAL(&command_state_lock);
         if (target.command != LINX_VOICE_PREPARE && target.command != LINX_VOICE_START) return false;
-        if (target.generation == atomic_load(&active_generation) && same_context(&session->context, &target.context)) {
+        if (target.generation == atomic_load(&active_generation) &&
+            same_voice_target(&session->context, session->gateway_agent_session_id,
+                              &target.context, target.gateway_agent_session_id)) {
             session->generation = target.generation;
             session->requested_command = target.command;
+            memcpy(session->gateway_request_id, target.gateway_request_id, sizeof(session->gateway_request_id));
         }
     }
     return true;
@@ -184,6 +210,27 @@ static void publish(uint32_t generation, linx_voice_state_t state, linx_voice_er
 static linx_voice_error_t sdk_error(esp_err_t error, linx_voice_error_t fallback)
 {
     return error == ESP_ERR_NO_MEM ? LINX_VOICE_NO_MEMORY : fallback;
+}
+
+/* 在唯一 Wi-Fi owner 内调用；先公布失效再等业务 WSS 确认关闭。 */
+static void network_invalidate(void)
+{
+    if (atomic_exchange(&network_ready, false)) atomic_fetch_add(&network_epoch, 1U);
+}
+
+static bool network_close_wait(void)
+{
+    network_invalidate();
+    uint32_t epoch = atomic_load(&network_epoch);
+    int64_t deadline = esp_timer_get_time() + CONNECT_TIMEOUT_MS * 1000LL;
+    while (atomic_load(&network_wanted) && atomic_load(&network_close_ack) != epoch) {
+        if (esp_timer_get_time() >= deadline) {
+            atomic_store(&network_error, LINX_VOICE_TIMEOUT);
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
+    }
+    return true;
 }
 
 static void wifi_event(void *user, esp_event_base_t base, int32_t id, void *data)
@@ -219,6 +266,7 @@ static void wifi_event(void *user, esp_event_base_t base, int32_t id, void *data
             atomic_store(&session->connect_pending, false);
             atomic_store(&session->trial_associated, false);
             atomic_store(&session->disconnected, true);
+            network_invalidate();
         }
     }
     taskEXIT_CRITICAL(&wifi_state_lock);
@@ -701,6 +749,7 @@ static linx_voice_error_t gateway(voice_session_t *session)
     if (result == ESP_OK) result = esp_http_client_set_post_field(client, session->scratch, (int)strlen(session->scratch));
     if (result == ESP_OK && session_current(session)) result = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
+    ESP_LOGI("linx_voice", "gateway_http result=%d status=%d", (int)result, status);
     /* HTTPS 与 WebSocket 的 TLS 内存不同时驻留。令牌只留在当前会话内存。 */
     esp_http_client_cleanup(client);
     if (session->http_overflow) return LINX_VOICE_PROTOCOL_FAILED;
@@ -744,7 +793,8 @@ static linx_voice_error_t send_frame(voice_session_t *session, unsigned opcode, 
 static linx_voice_error_t listen_start(voice_session_t *session)
 {
     atomic_store(&finish_pending, false);
-    if (!linx_build_listen(session->scratch, sizeof(session->scratch), session->session_id, true))
+    if (!linx_build_listen_request(session->scratch, sizeof(session->scratch), session->session_id,
+                                   session->gateway_request_id))
         return LINX_VOICE_PROTOCOL_FAILED;
     linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
     if (result == LINX_VOICE_OK && current(session->generation)) {
@@ -1021,6 +1071,7 @@ static linx_voice_error_t transport_reset(voice_session_t *session)
 static linx_voice_error_t cleanup(voice_session_t *session)
 {
     linx_voice_error_t result = LINX_VOICE_OK;
+    if (retained == session && !network_close_wait()) return LINX_VOICE_TIMEOUT;
     /* 先关闭 HTTP 及其请求，再释放无线接口。 */
     if (session->portal) {
         esp_err_t stopped = linx_wifi_portal_stop(session->portal);
@@ -1166,9 +1217,19 @@ static linx_voice_error_t wait_drain(voice_session_t *session)
 static void run(const linx_voice_request_t *request)
 {
     bool voice = request->command == LINX_VOICE_START || request->command == LINX_VOICE_PREPARE;
+    if (!voice) {
+        atomic_store(&network_provisioning, true);
+        /* 配网前收拢业务连接；普通语音不拆除业务 TLS 或已有语音租约。 */
+        if (!network_close_wait()) {
+            atomic_store(&network_provisioning, false);
+            publish(request->generation, LINX_VOICE_ERROR, LINX_VOICE_TIMEOUT, NULL);
+            return;
+        }
+    }
     if (retained && (!voice || atomic_load(&retained->disconnected) || !atomic_load(&retained->connected))) {
         linx_voice_error_t cleaned = cleanup(retained);
         if (cleaned != LINX_VOICE_OK) {
+            if (!voice) atomic_store(&network_provisioning, false);
             publish(request->generation, LINX_VOICE_ERROR, cleaned, NULL);
             return;
         }
@@ -1177,6 +1238,7 @@ static void run(const linx_voice_request_t *request)
     if (!session) {
         session = calloc(1, sizeof(*session));
         if (!session) {
+            if (!voice) atomic_store(&network_provisioning, false);
             publish(request->generation, LINX_VOICE_ERROR, LINX_VOICE_NO_MEMORY, NULL);
             return;
         }
@@ -1184,8 +1246,11 @@ static void run(const linx_voice_request_t *request)
     session->generation = request->generation;
     session->requested_command = request->command;
     session->voice = voice;
+    session->network_only = false;
+    memcpy(session->gateway_request_id, request->gateway_request_id, sizeof(session->gateway_request_id));
     bool discard = atomic_exchange(&discard_transport, false);
-    bool same_target = same_context(&session->context, &request->context);
+    bool same_target = same_voice_target(&session->context, session->gateway_agent_session_id,
+                                         &request->context, request->gateway_agent_session_id);
     bool reused = voice && session->hello && !session->turn_active && !session->audio_awake && !discard && same_target &&
                   esp_timer_get_time() < session->idle_deadline;
     linx_voice_error_t result = LINX_VOICE_OK;
@@ -1194,6 +1259,7 @@ static void run(const linx_voice_request_t *request)
     if (voice) {
         retained = session;
         session->context = request->context;
+        memcpy(session->gateway_agent_session_id, request->gateway_agent_session_id, sizeof(session->gateway_agent_session_id));
         session->preparing = !reused;
         if (!reused) publish(session->generation, LINX_VOICE_CONNECTING, LINX_VOICE_OK, NULL);
         int64_t phase_start = esp_timer_get_time();
@@ -1206,8 +1272,8 @@ static void run(const linx_voice_request_t *request)
         session->own_sntp = false;
         phase_start = esp_timer_get_time();
         if (!reused && result == LINX_VOICE_OK && session_current(session)) result = gateway(session);
-        ESP_LOGI("linx_voice", "phase=gateway ms=%lld reused=%d",
-                 (long long)((esp_timer_get_time() - phase_start) / 1000), reused);
+        ESP_LOGI("linx_voice", "phase=gateway ms=%lld reused=%d result=%d",
+                 (long long)((esp_timer_get_time() - phase_start) / 1000), reused, (int)result);
         phase_start = esp_timer_get_time();
         if (!reused && result == LINX_VOICE_OK && session_current(session) && !session->gateway.activation_code[0])
             result = websocket_start(session, &session->context);
@@ -1278,6 +1344,7 @@ static void run(const linx_voice_request_t *request)
     }
     linx_voice_error_t cleaned = cleanup(session);
     if (result == LINX_VOICE_OK) result = cleaned;
+    atomic_store(&network_provisioning, false);
     if (result != LINX_VOICE_OK) publish(request->generation, LINX_VOICE_ERROR, result, NULL);
 }
 
@@ -1305,6 +1372,49 @@ static void idle_poll(void)
     if (atomic_load(&session->disconnected)) cleanup(session);
 }
 
+/* 与语音共用 retained 的唯一 owner；Gateway 只能读取独立快照。 */
+static void network_tick(void)
+{
+    if (pending_cleanup || atomic_load(&network_provisioning)) return;
+    if (!atomic_load(&network_wanted)) {
+        if (retained && retained->network_only) cleanup(retained);
+        return;
+    }
+    if (esp_timer_get_time() < network_retry_at) return;
+    linx_voice_error_t error = LINX_VOICE_OK;
+    if (retained && (atomic_load(&retained->disconnected) || !atomic_load(&retained->connected))) {
+        error = cleanup(retained);
+        if (retained || pending_cleanup) return;
+    }
+    if (!retained) {
+        retained = calloc(1, sizeof(*retained));
+        if (!retained) error = LINX_VOICE_NO_MEMORY;
+        else {
+            retained->network_only = true;
+            error = wifi_start(retained);
+        }
+    }
+    if (error == LINX_VOICE_OK && retained && !atomic_load(&network_ready)) {
+        if (atomic_load(&network_close_ack) != atomic_load(&network_epoch)) return;
+        error = trusted_time(retained);
+        if (retained->own_sntp) esp_sntp_stop();
+        retained->own_sntp = false;
+        if (error == LINX_VOICE_OK && atomic_load(&retained->connected) &&
+            !atomic_load(&retained->disconnected) && !retained->trial && !retained->portal &&
+            atomic_load(&network_wanted)) {
+            taskENTER_CRITICAL(&wifi_state_lock);
+            memcpy(network_mac, retained->device_id, sizeof(network_mac));
+            taskEXIT_CRITICAL(&wifi_state_lock);
+            atomic_store(&network_ready, true);
+        }
+    }
+    atomic_store(&network_error, error);
+    if (error != LINX_VOICE_OK) {
+        if (retained) cleanup(retained);
+        network_retry_at = esp_timer_get_time() + 1000000LL;
+    }
+}
+
 static void worker(void *user)
 {
     (void)user;
@@ -1318,14 +1428,17 @@ static void worker(void *user)
                 continue;
             }
         }
-        TickType_t wait = retained && (retained->ws || retained->audio_awake) ? pdMS_TO_TICKS(READ_TIMEOUT_MS) : portMAX_DELAY;
+        network_tick();
+        /* 有界等待也允许稍后 acquire 唤醒网络，无需占用 START 单槽。 */
+        TickType_t wait = pdMS_TO_TICKS(READ_TIMEOUT_MS);
         if (xQueueReceive(commands, &request, wait) == pdTRUE) {
             bool starts = request.command == LINX_VOICE_START || request.command == LINX_VOICE_PREPARE ||
                           request.command == LINX_VOICE_WIFI_SCAN || request.command == LINX_VOICE_WIFI_SAVE ||
                           request.command == LINX_VOICE_WIFI_SETUP;
             bool adopted = retained && retained->voice && retained->handled_generation == request.generation &&
                            (request.command == LINX_VOICE_START || request.command == LINX_VOICE_PREPARE) &&
-                           same_context(&retained->context, &request.context);
+                           same_voice_target(&retained->context, retained->gateway_agent_session_id,
+                                             &request.context, request.gateway_agent_session_id);
             if (starts && current(request.generation) && !adopted) run(&request);
             clear_sensitive(&request, sizeof(request));
         } else idle_poll();
@@ -1362,6 +1475,15 @@ bool linx_device_request(const linx_voice_request_t *request, void *user)
     bool starts = request->command == LINX_VOICE_START || request->command == LINX_VOICE_WIFI_SCAN ||
                   request->command == LINX_VOICE_WIFI_SAVE || request->command == LINX_VOICE_WIFI_SETUP ||
                   request->command == LINX_VOICE_PREPARE;
+    if (starts) {
+        if (!memchr(request->gateway_agent_session_id, 0, sizeof(request->gateway_agent_session_id)) ||
+            !memchr(request->gateway_request_id, 0, sizeof(request->gateway_request_id))) return false;
+        bool gateway = request->gateway_agent_session_id[0] != 0;
+        if ((gateway && !linx_protocol_id_valid(request->gateway_agent_session_id)) ||
+            (request->gateway_request_id[0] && !linx_protocol_id_valid(request->gateway_request_id)) ||
+            (!gateway && request->gateway_request_id[0]) ||
+            (gateway && request->command == LINX_VOICE_START && !request->gateway_request_id[0])) return false;
+    }
     if (!commands && (!starts || !linx_device_init())) return false;
     if (starts) {
         atomic_store(&listening, false);
@@ -1371,6 +1493,8 @@ bool linx_device_request(const linx_voice_request_t *request, void *user)
         taskENTER_CRITICAL(&command_state_lock);
         requested_target = (voice_target_t){.command = request->command, .generation = request->generation,
                                             .context = request->context};
+        memcpy(requested_target.gateway_request_id, request->gateway_request_id, sizeof(requested_target.gateway_request_id));
+        memcpy(requested_target.gateway_agent_session_id, request->gateway_agent_session_id, sizeof(requested_target.gateway_agent_session_id));
         taskEXIT_CRITICAL(&command_state_lock);
         atomic_store(&active, true);
         return xQueueOverwrite(commands, request) == pdTRUE;
@@ -1396,4 +1520,34 @@ bool linx_device_poll(linx_voice_event_t *event)
     if (!event || !events || xQueueReceive(events, event, 0) != pdTRUE) return false;
     return event->generation == atomic_load(&active_generation) &&
            (atomic_load(&active) || event->state == LINX_VOICE_CLOSED);
+}
+
+bool linx_device_network_acquire(void)
+{
+    if (!linx_device_init()) return false;
+    atomic_store(&network_wanted, true);
+    return true;
+}
+
+void linx_device_network_release(void)
+{
+    atomic_store(&network_wanted, false);
+    network_invalidate();
+}
+
+bool linx_device_network_poll(linx_device_network_state_t *state)
+{
+    if (!state) return false;
+    taskENTER_CRITICAL(&wifi_state_lock);
+    *state = (linx_device_network_state_t){.ready = atomic_load(&network_ready),
+        .epoch = atomic_load(&network_epoch), .provisioning = atomic_load(&network_provisioning),
+        .error = (linx_voice_error_t)atomic_load(&network_error)};
+    memcpy(state->mac_address, network_mac, sizeof(state->mac_address));
+    taskEXIT_CRITICAL(&wifi_state_lock);
+    return true;
+}
+
+void linx_device_network_closed(uint32_t epoch)
+{
+    if (epoch == atomic_load(&network_epoch)) atomic_store(&network_close_ack, epoch);
 }

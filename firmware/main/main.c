@@ -1,6 +1,42 @@
 #include "sdkconfig.h"
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
 #include "linx_device.h"
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+#include "linx_gateway_client.h"
+#include "linx_gateway_transport.h"
+#include "esp_random.h"
+#include <string.h>
+static linx_gateway_client_t s_gateway;
+
+/* 收帧、JSON 解析与超时均在取得 LVGL 锁前完成。 */
+static void gateway_poll(uint32_t now_ms)
+{
+    linx_gateway_transport_event_t event;
+    for (unsigned i = 0U; i < 4U && linx_gateway_transport_poll(&event); ++i) {
+        switch (event.type) {
+        case LINX_GATEWAY_TRANSPORT_CONNECTED:
+            linx_gateway_client_connected(&s_gateway, event.generation, event.mac_address, now_ms);
+            break;
+        case LINX_GATEWAY_TRANSPORT_FRAME:
+            linx_gateway_client_receive(&s_gateway, event.generation, event.data, event.size, now_ms);
+            linx_gateway_transport_release();
+            break;
+        case LINX_GATEWAY_TRANSPORT_NOT_CONFIGURED:
+            s_gateway.view.configured = false;
+            s_gateway.view.error = LINX_GATEWAY_ERROR_UNCONFIGURED;
+            ++s_gateway.view.revision;
+            break;
+        case LINX_GATEWAY_TRANSPORT_ERROR:
+            linx_gateway_client_transport_error(&s_gateway, event.generation);
+            break;
+        default:
+            linx_gateway_client_disconnected(&s_gateway, event.generation);
+            break;
+        }
+    }
+    linx_gateway_client_tick(&s_gateway, now_ms);
+}
 #endif
 #include "bsp_button.h"
 #include "bsp_display.h"
@@ -63,7 +99,9 @@ static linx_ui_key_t ui_key(linx_input_action_t action)
 
 void app_main(void)
 {
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_GATEWAY_ENABLE
+    ESP_LOGI(TAG, "LinX connects to the configured Gateway");
+#elif CONFIG_LINX_VOICE_ENABLE
     ESP_LOGI(TAG, "LinX voice connects on demand");
 #else
     ESP_LOGI(TAG, "LinX warm-white offline demo; no radio, audio or battery initialization");
@@ -93,6 +131,21 @@ void app_main(void)
     linx_back_mode_t loaded_mode = LINX_BACK_LONG_PRESS;
     if (!linx_input_settings_init(&loaded_mode))
         ESP_LOGW(TAG, "Input settings worker unavailable; using loaded return mode");
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
+    if (!linx_device_init()) ESP_LOGE(TAG, "Voice worker allocation failed");
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+    uint64_t instance_id = ((uint64_t)esp_random() << 32U) | esp_random();
+    if (instance_id == 0U) instance_id = 1U;
+    const linx_gateway_client_config_t gateway_config = {
+        .configured = true, .instance_id = instance_id, .send = linx_gateway_transport_send, .user = NULL};
+    linx_gateway_client_init(&s_gateway, &gateway_config);
+    if (!linx_gateway_transport_init()) {
+        ESP_LOGE(TAG, "Gateway worker allocation failed");
+        s_gateway.view.error = LINX_GATEWAY_ERROR_MEMORY;
+        ++s_gateway.view.revision;
+    }
+#endif
     if (!bsp_lvgl_lock(1000)) {
         ESP_LOGE(TAG, "Display lock unavailable");
         return;
@@ -101,9 +154,11 @@ void app_main(void)
     linx_ui_set_back_mode(loaded_mode);
     linx_ui_set_back_mode_handler(linx_input_settings_request, NULL);
     const linx_back_mode_t initial_mode = linx_ui_back_mode();
-#if CONFIG_LINX_VOICE_ENABLE
-    if (!linx_device_init()) ESP_LOGE(TAG, "Voice worker allocation failed");
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
     linx_ui_set_voice_handler(linx_device_request, NULL);
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+    linx_ui_set_gateway_client(&s_gateway);
 #endif
     bsp_lvgl_unlock();
     s_input_ready = true;
@@ -123,12 +178,15 @@ void app_main(void)
             pending_event = false;
             ESP_LOGW(TAG, "Input overflow recovered; discarded stale taps");
         }
+#if CONFIG_LINX_GATEWAY_ENABLE
+        gateway_poll((uint32_t)((uint64_t)esp_timer_get_time() / 1000U));
+#endif
         if (!bsp_lvgl_lock(100)) continue;
         if (pending_event) action = input_action(&input, &event);
         pending_event = false;
         const uint64_t now_ms = (uint64_t)esp_timer_get_time() / 1000;
         const linx_ui_page_t before_tick = linx_ui_page();
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
         linx_voice_event_t voice_event;
         if (linx_device_poll(&voice_event)) linx_ui_voice_event(&voice_event);
 #endif

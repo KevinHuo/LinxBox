@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../../main/linx_ui.c"
@@ -443,6 +444,826 @@ static void test_phone_secret_and_render_boundaries(void)
     puts("手机配网私有边界：凭据全量擦除、语音恢复、绘制容量及无后端/编号回绕通过");
 }
 
+
+static linx_gateway_client_t remote;
+static unsigned gateway_sends, gateway_captures, gateway_cancels, gateway_finishes, gateway_setups;
+static unsigned gateway_confirms;
+static unsigned gateway_prepares, gateway_request_cancels;
+static linx_voice_request_t gateway_last_prepare, gateway_last_start;
+static linx_voice_request_t gateway_last_release;
+static unsigned gateway_releases;
+static bool reject_capture;
+static bool reject_finish;
+static char gateway_last_send[4096];
+
+static bool gateway_send(uint32_t generation, const char *json, size_t size, void *user)
+{
+    (void)generation; (void)user;
+    assert(json && size);
+    assert(size < sizeof(gateway_last_send));
+    memcpy(gateway_last_send, json, size);
+    gateway_last_send[size] = '\0';
+    ++gateway_sends;
+    gateway_confirms += strstr(json, "\"type\":\"request.confirm\"") != NULL;
+    gateway_request_cancels += strstr(json, "\"type\":\"request.cancel\"") != NULL;
+    assert(!strstr(json, "request.propose") && !strstr(json, "request.confirm"));
+    return true;
+}
+
+static bool gateway_voice(const linx_voice_request_t *request, void *user)
+{
+    (void)user;
+    gateway_cancels += request->command == LINX_VOICE_CANCEL;
+    gateway_finishes += request->command == LINX_VOICE_FINISH;
+    if (request->command == LINX_VOICE_FINISH) return !reject_finish;
+    gateway_setups += request->command == LINX_VOICE_WIFI_SETUP;
+    if (request->command == LINX_VOICE_PREPARE) { ++gateway_prepares; gateway_last_prepare = *request; }
+    if (request->command == LINX_VOICE_RELEASE) { ++gateway_releases; gateway_last_release = *request; }
+    if (request->command == LINX_VOICE_START) {
+        ++gateway_captures;
+        assert(strcmp(request->gateway_request_id, remote.view.request.valid ? remote.view.request.request_id : "") == 0);
+        assert(strcmp(request->gateway_agent_session_id, remote.view.request.valid ? remote.view.request.agent_session_id : "") == 0);
+        gateway_last_start = *request;
+        return !reject_capture;
+    }
+    return true;
+}
+
+static void remote_setup(void)
+{
+    linx_ui_deinit();
+    linx_ui_init(lv_screen_active(), 0U);
+    const linx_gateway_client_config_t config = {.configured = true, .instance_id = 1U, .send = gateway_send};
+    linx_gateway_client_deinit(&remote);
+    linx_gateway_client_init(&remote, &config);
+    remote.view.connected = remote.view.bound = true;
+    strcpy(remote.view.device_id, "AA:BB:CC:DD:EE:FF");
+    strcpy(remote.view.selected_session_id, "session-真实");
+    strcpy(remote.view.detail.agent_session_id, "session-真实");
+    strcpy(remote.view.detail.title, "量子鹦鹉检查工作台");
+    strcpy(remote.view.detail.project_name, "星际仓库");
+    strcpy(remote.view.detail.agent, "Codex");
+    strcpy(remote.view.detail.status, "running");
+    remote.view.detail_valid = true;
+    linx_ui_set_voice_handler(gateway_voice, NULL);
+    linx_ui_set_gateway_client(&remote);
+}
+
+static bool has_remote_label(const char *value)
+{
+    for (size_t i = 0U; i < ui.labels_used; ++i)
+        if (strcmp(lv_label_get_text(ui.labels[i]), value) == 0) return true;
+    return false;
+}
+
+static void capture_session_status(const char *native, const char *last, bool detail)
+{
+    const char *directory = getenv("LINX_STATUS_SCREEN_DIR");
+    if (!directory) return;
+    char path[512];
+    int length = snprintf(path, sizeof(path), "%s/%s-%s-%s.ppm", directory,
+        detail ? "detail" : "list", native, *last ? last : "legacy");
+    assert(length > 0 && (size_t)length < sizeof(path));
+    lv_obj_invalidate(ui.root); lv_refr_now(display);
+    FILE *file = fopen(path, "wb"); assert(file);
+    fprintf(file, "P6\n%d %d\n255\n", WIDTH, HEIGHT);
+    for (int y = 0; y < HEIGHT; ++y) for (int x = 0; x < WIDTH; ++x) {
+        uint16_t pixel = frame[y][x];
+        const unsigned char rgb[] = {(unsigned char)(((pixel >> 11) & 31U) * 255U / 31U),
+            (unsigned char)(((pixel >> 5) & 63U) * 255U / 63U), (unsigned char)((pixel & 31U) * 255U / 31U)};
+        assert(fwrite(rgb, 1, sizeof(rgb), file) == sizeof(rgb));
+    }
+    assert(fclose(file) == 0);
+}
+
+static void assert_status_label_fits(const char *expected)
+{
+    lv_obj_update_layout(ui.root);
+    bool found = false;
+    for (size_t i = 0; i < ui.labels_used; ++i) {
+        lv_obj_t *label = ui.labels[i];
+        if (strcmp(lv_label_get_text(label), expected) != 0) continue;
+        found = true;
+        assert(lv_obj_get_style_text_font(label, LV_PART_MAIN) == &linx_font_remote_16);
+        assert(lv_obj_get_width(label) == 68 && lv_obj_get_height(label) == 20);
+        lv_point_t natural;
+        lv_text_get_size(&natural, expected, &linx_font_remote_16, 0, 0, 1000, LV_TEXT_FLAG_NONE);
+        assert(natural.x <= 68 && natural.y <= 20);
+        lv_area_t area; lv_obj_get_coords(label, &area);
+        assert(area.x1 == 145 && area.x2 == 212 && area.y2 < 270);
+    }
+    assert(found && !ui.render_overflow && lv_mem_test() == LV_RESULT_OK);
+}
+
+static void test_remote_live_and_saved_status(void)
+{
+    remote_setup();
+    const char *states[] = {"idle", "running", "waiting", "completed", "failed", "unknown", "invalid"};
+    const char *labels[] = {"待命", "运行中", "状态未知", "已完成", "失败", "状态未知", "状态未知"};
+    for (unsigned i = 0; i < 7U; ++i) {
+        strcpy(remote.view.detail.status, states[i]);
+        remote.view.sessions[0] = remote.view.detail; remote.view.session_count = 1U;
+        ui.at.page = LINX_UI_TASKS; render(); assert_status_label_fits(labels[i]);
+        ui.at.page = LINX_UI_OVERVIEW; render(); assert_status_label_fits(labels[i]);
+    }
+    assert(!strcmp(gateway_session_status(NULL), "状态未知"));
+}
+
+static void test_remote_project_context(void)
+{
+    remote_setup();
+    remote.view.session_count = 2U;
+    for (size_t i = 0U; i < 2U; ++i) {
+        remote.view.sessions[i] = remote.view.detail;
+        snprintf(remote.view.sessions[i].agent_session_id, LINX_GATEWAY_ID_CAPACITY, "project-session-%zu", i);
+    }
+    strcpy(remote.view.sessions[0].project_name, "LinxBox");
+    strcpy(remote.view.sessions[1].project_name, "演示项目");
+    strcpy(remote.view.sessions[1].status, "completed");
+    render();
+    lv_obj_update_layout(ui.root);
+    assert(has_remote_label("LinxBox") && has_remote_label("演示项目"));
+    assert(has_remote_label("运行中") && has_remote_label("已完成"));
+    assert(!ui.render_overflow);
+
+    for (size_t i = 0U; i < 510U; i += 3U) memcpy(remote.view.sessions[0].project_name + i, "鹦", 3U);
+    remote.view.sessions[0].project_name[510] = '\0';
+    strcpy(remote.view.sessions[0].status, "unknown");
+    render();
+    lv_obj_update_layout(ui.root);
+    assert(strlen(remote.view.sessions[0].project_name) == 510U);
+    assert(has_remote_label("状态未知") && !ui.render_overflow);
+
+    ui.at.page = LINX_UI_HISTORY;
+    strcpy(remote.view.history_session_id, remote.view.detail.agent_session_id);
+    render();
+    assert(has_remote_label(remote.view.detail.project_name));
+    assert(!has_remote_label(gateway_connection()));
+    remote.view.connected = false; render();
+    assert(has_remote_label(gateway_connection()));
+    remote.view.connected = true; remote.view.bound = false; render();
+    assert(has_remote_label(gateway_connection()));
+    remote.view.bound = true; remote.view.error = LINX_GATEWAY_ERROR_MEMORY; render();
+    assert(has_remote_label(gateway_connection()));
+    remote.view.error = LINX_GATEWAY_ERROR_NONE; remote.view.detail_valid = false; render();
+    assert(has_remote_label(gateway_connection()));
+    remote.view.detail_valid = true;
+    strcpy(remote.view.history_session_id, "other-project-session"); render();
+    assert(!has_remote_label(remote.view.detail.project_name));
+    assert(has_remote_label(gateway_connection()));
+    puts("工程归属：同名任务分别显示真实工程与状态，长名称不挤占状态，历史页不误用其他工程且保留连接错误通过");
+}
+
+static void test_remote_render_and_navigation(void)
+{
+    remote_setup();
+    assert(linx_ui_debug().gateway_online);
+    assert(strcmp(gateway_connection(), "工作电脑 · 已连接") == 0);
+    remote.view.configured = false; render();
+    assert(strcmp(gateway_connection(), "网关未配置") == 0);
+    remote.view.configured = true; remote.view.connected = false; render();
+    remote.view.error = LINX_GATEWAY_ERROR_MEMORY; render();
+    assert(strstr(gateway_connection(), "连接失败"));
+    remote.view.bound = false; render();
+    strcpy(remote.view.error_message, "内存不足"); render();
+    remote.view.error = LINX_GATEWAY_ERROR_DISCONNECTED; render();
+    remote.view.error = LINX_GATEWAY_ERROR_NONE;
+    remote.view.bound = true;
+    remote.view.session_count = 1U; render();
+    assert(strstr(gateway_connection(), "快照"));
+    remote.view.connected = true; remote.view.bound = false; render();
+    assert(strstr(gateway_connection(), "尚未绑定"));
+    remote.view.bound = true; remote.view.error = LINX_GATEWAY_ERROR_REMOTE;
+    strcpy(remote.view.error_message, "服务正在恢复"); render();
+    assert(strstr(gateway_connection(), "服务错误"));
+    remote.view.error = LINX_GATEWAY_ERROR_NONE; remote.view.loading = true; render();
+    assert(strcmp(gateway_connection(), "正在加载") == 0);
+    remote.view.loading = false; remote.view.session_count = 0U; render();
+    for (size_t i = 0U; i < LINX_GATEWAY_SESSION_MAX; ++i) {
+        remote.view.sessions[i] = remote.view.detail;
+        snprintf(remote.view.sessions[i].agent_session_id, LINX_GATEWAY_ID_CAPACITY, "session-%zu", i);
+    }
+    remote.view.session_count = LINX_GATEWAY_SESSION_MAX;
+    strcpy(remote.view.sessions_next_cursor, "next-cursor");
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_tick(1U);
+    assert(ui.at.selected == 1U);
+    for (unsigned i = 1U; i < LINX_GATEWAY_SESSION_MAX; ++i) linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    assert(ui.at.selected == LINX_GATEWAY_SESSION_MAX);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(remote.sessions_depth == 1U);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    ui.at.selected = LINX_GATEWAY_SESSION_MAX; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(remote.sessions_depth == 0U);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    ui.at.selected = 0U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_OVERVIEW);
+    remote.view.target_unavailable = true; render();
+    remote.view.target_unavailable = false; remote.view.detail_valid = false; render();
+    remote.view.detail_valid = true; remote.view.new_reply = true; render();
+    ui.at.selected = 2U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_HISTORY);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    for (size_t i = 0U; i < LINX_GATEWAY_HISTORY_MAX; ++i) {
+        snprintf(remote.view.messages[i].message_id, LINX_GATEWAY_ID_CAPACITY, "message-%zu", i);
+        strcpy(remote.view.messages[i].role, i & 1U ? "user" : "assistant");
+    }
+    remote.view.message_count = LINX_GATEWAY_HISTORY_MAX;
+    render();
+    bool assistant_label = false, user_label = false;
+    for (size_t i = 0U; i < ui.labels_used; ++i) {
+        assistant_label |= strcmp(lv_label_get_text(ui.labels[i]), "AI回复") == 0;
+        user_label |= strcmp(lv_label_get_text(ui.labels[i]), "我的指令") == 0;
+    }
+    assert(assistant_label && user_label);
+    assert(strcmp(remote.view.messages[0].role, "assistant") == 0);
+    assert(strcmp(remote.view.messages[1].role, "user") == 0);
+    strcpy(remote.view.history_next_cursor, "older");
+    for (unsigned i = 0U; i < LINX_GATEWAY_HISTORY_MAX; ++i) linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(remote.history_depth == 1U);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    ui.at.selected = LINX_GATEWAY_HISTORY_MAX; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(remote.history_depth == 0U);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    ui.at.selected = 1U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_READER && strcmp(ui.gateway_message, "message-1") == 0);
+    assert(gateway_captures == 0U);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(gateway_captures == 0U);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_TASKS);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_SETTINGS);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN); linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_ABOUT);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    ui.at.selected = 0U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_WIFI);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    remote.view.message_count = 0U; ui.at.page = LINX_UI_HISTORY; render();
+    remote.view.history_next_cursor[0] = '\0'; remote.history_depth = 0U; render();
+    ui.at.page = LINX_UI_BOOT; render(); linx_ui_handle_key(LINX_UI_KEY_BACK);
+    ui.at.page = LINX_UI_BOOT; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_TASKS);
+    assert(remote_measure("𠀀鹦A", strlen("𠀀鹦A"), LINX_READER_HEADING, NULL) > 0);
+    lv_obj_t *fallback = remote_text("𠀀鹦", 16, 120, 208, 22, COLOR_INK);
+    assert(fallback && strcmp(lv_label_get_text(fallback), "�鹦") == 0);
+    remote.view.bound = false; ui.at.selected = 10U;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_ui_set_gateway_client(NULL);
+    assert(!linx_ui_debug().gateway_online);
+}
+
+static void test_remote_body_and_full_draft(void)
+{
+    remote_setup();
+    ui.at.page = LINX_UI_READER;
+    strcpy(ui.gateway_message, "body");
+    strcpy(remote.view.content_message_id, "body");
+    strcpy(remote.view.content_session_id, remote.view.selected_session_id);
+    remote.view.content_valid = true;
+    for (size_t i = 0U; i < 900U; i += 3U) memcpy(remote.view.content + i, "鹦", 3U);
+    remote.view.content[900] = '\0';
+    remote.view.content_has_next = true; remote.view.content_next_offset = 900U;
+    remote.block_count = 1U;
+    render(); assert(ui.pages.count > 1U);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN); assert(ui.at.read_page == 1U);
+    linx_ui_handle_key(LINX_UI_KEY_UP); assert(ui.at.read_page == 0U);
+    ui.at.read_page = ui.pages.count - 1U;
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    size_t old_page = ui.at.read_page;
+    assert(remote.view.loading && old_page > 0U);
+    remote.view.new_reply = true; ++remote.view.revision; linx_ui_tick(2U);
+    assert(ui.at.read_page == old_page && remote.view.content_offset == 0U);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    remote.view.content_offset = 900U; remote.block_offsets[1] = 900U;
+    remote.block_count = 2U; remote.block_index = 1U;
+    ++remote.view.revision; linx_ui_tick(3U);
+    assert(ui.at.read_page == 0U);
+    linx_ui_handle_key(LINX_UI_KEY_UP);
+    assert(remote.view.loading && ui.at.read_page == 0U);
+    remote.pending.operation = 0U; remote.view.loading = false; remote.view.content_offset = 0U;
+    remote.block_index = 0U; ++remote.view.revision; linx_ui_tick(4U);
+    assert(ui.at.read_page == ui.pages.count - 1U);
+    remote.view.content_valid = false; remote.view.loading = true; render();
+    remote.view.loading = false; remote.view.error = LINX_GATEWAY_ERROR_REMOTE; render();
+    remote.view.error = LINX_GATEWAY_ERROR_NONE; render();
+    puts("真实Gateway正文跨块等待与后台刷新通过");
+}
+
+
+static void test_remote_user_intents(void)
+{
+    remote_setup();
+    ui.at.page = LINX_UI_OVERVIEW;
+    linx_ui_handle_key(LINX_UI_KEY_UP);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    ui.at.selected = 1U;
+    unsigned captures = gateway_captures;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_VOICE && remote.view.request.valid && gateway_captures == captures);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_OVERVIEW && remote.view.request.cancel_requested);
+    assert(gateway_captures == captures);
+    for (int status = LINX_GATEWAY_REQUEST_AWAITING_TEXT; status <= LINX_GATEWAY_REQUEST_UNKNOWN; ++status) {
+        remote.pending.operation = 0U; remote.view.loading = false;
+        remote.view.request.valid = true; remote.view.request.status = (linx_gateway_request_status_t)status;
+        ui.at.page = LINX_UI_OVERVIEW; ui.at.selected = 1U;
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        if (status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION) assert(ui.at.page == LINX_UI_RECEIPT);
+        else if (status == LINX_GATEWAY_REQUEST_COMPLETED || status == LINX_GATEWAY_REQUEST_FAILED || status == LINX_GATEWAY_REQUEST_CANCELLED)
+            assert(ui.at.page == LINX_UI_VOICE);
+        else assert(ui.at.page == LINX_UI_RECEIPT);
+    }
+    remote.view.request.valid = false;
+    remote.pending.operation = 0U; remote.view.loading = false;
+    remote.view.target_unavailable = true; ui.at.page = LINX_UI_OVERVIEW; ui.at.selected = 1U;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_OVERVIEW);
+    remote.view.target_unavailable = false; remote.view.error = LINX_GATEWAY_ERROR_NONE;
+    ui.at.selected = 0U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_HISTORY && ui.read_latest);
+    linx_ui_tick(1U); assert(ui.at.page == LINX_UI_HISTORY);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    strcpy(remote.view.history_session_id, remote.view.selected_session_id);
+    remote.view.message_count = 2U;
+    strcpy(remote.view.messages[0].message_id, "first-user"); strcpy(remote.view.messages[0].role, "user");
+    strcpy(remote.view.messages[1].message_id, "latest-assistant"); strcpy(remote.view.messages[1].role, "assistant");
+    ++remote.view.revision; linx_ui_tick(2U);
+    assert(ui.at.page == LINX_UI_READER && !strcmp(ui.gateway_message, "latest-assistant"));
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_OVERVIEW);
+    ui.at.selected = 2U;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_HISTORY);
+    assert(!remote.view.message_count && !remote.view.content_valid);
+    remote.view.message_count = 2U;
+    strcpy(remote.view.messages[0].message_id, "first-user"); strcpy(remote.view.messages[0].role, "user");
+    strcpy(remote.view.messages[1].message_id, "latest-assistant"); strcpy(remote.view.messages[1].role, "assistant");
+    ui.at.selected = 1U;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_READER);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_HISTORY);
+    strcpy(ui.gateway_history, "latest-assistant");
+    linx_gateway_message_t swap = remote.view.messages[0];
+    remote.view.messages[0] = remote.view.messages[1]; remote.view.messages[1] = swap;
+    ++remote.view.revision; linx_ui_tick(3U);
+    assert(ui.at.selected == 0U);
+    strcpy(ui.gateway_history, "missing"); ++remote.view.revision; linx_ui_tick(4U);
+    remote.view.message_count = 0U; remote.view.loading = true; render();
+    remote.view.loading = false; remote.view.error = LINX_GATEWAY_ERROR_REMOTE; render();
+    remote.view.error = LINX_GATEWAY_ERROR_NONE; render();
+    ui.at.page = LINX_UI_TASKS; remote.view.bound = false; remote.view.configured = false; render();
+    remote.view.connected = false; render();
+    ui.at.page = LINX_UI_HISTORY; ui.at.selected = 19U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    ui.at.page = LINX_UI_SETTINGS; linx_ui_handle_key(LINX_UI_KEY_UP);
+    ui.voice_handler = NULL; ui.at.selected = 0U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    ui.at.selected = 9U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    ui.at.page = LINX_UI_VOICE; remote.view.request.valid = true;
+    remote.view.request.cancel_requested = true; render();
+    ui.at.page = LINX_UI_READER; ui.at.read_page = 63U; render();
+    linx_ui_handle_key(LINX_UI_KEY_UP);
+    remote.view.content_valid = true; remote.view.loading = true; linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    ui.at.page = LINX_UI_CONFIRM; ui.at.read_page = 0U; render();
+    linx_ui_handle_key(LINX_UI_KEY_UP);
+    ui.at.read_page = ui.pages.count - 1U; linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key((linx_ui_key_t)99);
+    check_reset();
+    lv_obj_t *empty = remote_text(NULL, 16, 100, 208, 20, COLOR_INK);
+    assert(empty && !lv_label_get_text(empty)[0]);
+    assert(remote_codepoint('\n') == '\n');
+    fill_labels();
+    assert(remote_text("鹦𠀀", 16, 100, 208, 20, COLOR_INK) == NULL);
+    assert(gateway_captures == captures);
+}
+
+
+static void test_remote_content_priority_during_refresh(void)
+{
+    remote_setup();
+    ui.at.page = LINX_UI_READER;
+    strcpy(ui.gateway_message, "reading-message");
+    strcpy(remote.view.content_message_id, ui.gateway_message);
+    strcpy(remote.view.content_session_id, remote.view.selected_session_id);
+    for (size_t i = 0U; i < 750U; i += 15U) memcpy(remote.view.content + i, "正文内容。", 15U);
+    remote.view.content[750] = '\0';
+    remote.view.content_valid = remote.view.content_has_next = true;
+    remote.view.content_next_offset = 750U;
+    remote.block_count = 1U;
+    ui.read_offset = 0U;
+    render();
+    assert(ui.pages.count > 1U);
+    ui.at.read_page = ui.pages.count - 1U;
+    const size_t last_page = ui.at.read_page;
+    const unsigned before = gateway_sends;
+    assert(gateway_action(LINX_GATEWAY_ACTION_REFRESH, NULL));
+    assert(remote.view.loading && !linx_gateway_client_content_pending(&remote));
+    assert(gateway_sends == before + 1U && strstr(gateway_last_send, "agent_sessions.list"));
+
+    /* 后台目录在途也能登记前台翻块；继续按键不能重复登记同一个正文请求。 */
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    assert(linx_gateway_client_content_pending(&remote));
+    assert(remote.intent.offset == 750U && gateway_sends == before + 1U);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    assert(remote.intent.offset == 750U && gateway_sends == before + 1U);
+    assert(remote.view.content_offset == 0U && ui.at.read_page == last_page && strlen(remote.view.content) == 750U);
+
+    char response[1024];
+    int size = snprintf(response, sizeof(response),
+        "{\"id\":\"refresh-response\",\"type\":\"response\",\"reply_to\":\"%s\","
+        "\"payload\":{\"ok\":true,\"data\":{\"items\":[],\"next_cursor\":null}}}", remote.pending.id);
+    assert(size > 0 && (size_t)size < sizeof(response));
+    assert(linx_gateway_client_receive(&remote, remote.view.generation, response, (size_t)size, 1U));
+    assert(gateway_sends == before + 2U && strstr(gateway_last_send, "message.content.get"));
+    assert(remote.pending.offset == 750U && !strcmp(remote.pending.message, "reading-message"));
+    assert(linx_gateway_client_content_pending(&remote));
+    linx_ui_tick(1U);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    assert(gateway_sends == before + 2U && remote.view.content_offset == 0U && ui.at.read_page == last_page);
+
+    /* 唯有相同正文的新块成功应答才替换屏幕内容、偏移和块内页。 */
+    size = snprintf(response, sizeof(response),
+        "{\"id\":\"content-response\",\"type\":\"response\",\"reply_to\":\"%s\","
+        "\"payload\":{\"ok\":true,\"data\":{\"text\":\"下一块\",\"next_offset\":null}}}", remote.pending.id);
+    assert(size > 0 && (size_t)size < sizeof(response));
+    assert(linx_gateway_client_receive(&remote, remote.view.generation, response, (size_t)size, 2U));
+    assert(!linx_gateway_client_content_pending(&remote));
+    linx_ui_tick(2U);
+    assert(remote.view.content_offset == 750U && ui.at.read_page == 0U && !strcmp(remote.view.content, "下一块"));
+    assert(!linx_gateway_client_content_pending(NULL));
+    puts("真实 UI 正文公平调度：后台目录刷新不吞跨块键、正文请求不重复登记、应答前阅读位置不变通过");
+}
+
+
+static void setup_failed_gateway_voice(linx_voice_state_t state, linx_voice_error_t error)
+{
+    remote_setup();
+    linx_gateway_request_t *request = &remote.view.request;
+    request->valid = true;
+    strcpy(request->request_id, "failed-voice-request");
+    strcpy(request->agent_session_id, remote.view.selected_session_id);
+    strcpy(request->target_title, remote.view.detail.title);
+    request->status = LINX_GATEWAY_REQUEST_AWAITING_TEXT;
+    remote.prepare_sent = true;
+    ui.at.page = LINX_UI_OVERVIEW; ui.at.selected = 1U; push(LINX_UI_VOICE);
+    ui.voice_generation = 42U; ui.voice_state = state; ui.voice_error = error;
+    render();
+}
+
+static void test_gateway_voice_failure_returns_safely(void)
+{
+    const linx_voice_state_t states[] = {LINX_VOICE_ERROR, LINX_VOICE_CLOSED};
+    for (unsigned i = 0; i < 2U; ++i) {
+        setup_failed_gateway_voice(states[i], LINX_VOICE_NETWORK_FAILED);
+        unsigned captures = gateway_captures, finishes = gateway_finishes, cancels = gateway_cancels;
+        assert(has_remote_label("本轮已结束，按OK返回"));
+        capture_session_status("voice", i ? "closed" : "error", false);
+        for (size_t label = 0; label < ui.labels_used; ++label)
+            assert(strstr(lv_label_get_text(ui.labels[label]), "重录") == NULL);
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(ui.at.page == LINX_UI_OVERVIEW && ui.voice_generation == 0U);
+        assert(remote.view.request.cancel_requested && remote.view.request.cancel_sent);
+        assert(strstr(gateway_last_send, "request.cancel"));
+        assert(gateway_cancels == cancels + 1U && gateway_captures == captures && gateway_finishes == finishes);
+        unsigned sends = gateway_sends;
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(ui.at.page == LINX_UI_RECEIPT && has_remote_label("正在核对取消结果"));
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(gateway_sends == sends && gateway_captures == captures);
+        char response[2048];
+        int size = snprintf(response, sizeof(response),
+            "{\"id\":\"cancelled\",\"type\":\"response\",\"reply_to\":\"%s\",\"payload\":{\"ok\":true,\"data\":{"
+            "\"request_id\":\"failed-voice-request\",\"agent_session_id\":\"%s\",\"target_title\":\"%s\","
+            "\"text\":null,\"status\":\"cancelled\",\"error\":null}}}",
+            remote.pending.id, remote.view.request.agent_session_id, remote.view.request.target_title);
+        assert(size > 0 && (size_t)size < sizeof(response));
+        assert(linx_gateway_client_receive(&remote, remote.view.generation, response, (size_t)size, 1U));
+        linx_ui_handle_key(LINX_UI_KEY_BACK);
+        assert(ui.at.page == LINX_UI_OVERVIEW);
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(ui.at.page == LINX_UI_VOICE && !strcmp(remote.view.request.agent_session_id, "session-真实"));
+        assert(strcmp(remote.view.request.request_id, "failed-voice-request") != 0);
+        assert(!remote.view.request.text_present);
+        assert(strstr(gateway_last_send, "request.prepare") && gateway_captures == captures);
+    }
+    for (unsigned i = 0; i < 2U; ++i) {
+        setup_failed_gateway_voice(i ? LINX_VOICE_SPEAKING : LINX_VOICE_WAITING, LINX_VOICE_OK);
+        unsigned sends = gateway_sends, captures = gateway_captures, cancels = gateway_cancels, finishes = gateway_finishes;
+        linx_ui_handle_key(LINX_UI_KEY_OK); linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(ui.at.page == LINX_UI_VOICE && !remote.view.request.cancel_requested);
+        assert(gateway_sends == sends && gateway_captures == captures && gateway_cancels == cancels && gateway_finishes == finishes);
+    }
+    const linx_gateway_request_status_t submitted[] = {LINX_GATEWAY_REQUEST_SENDING, LINX_GATEWAY_REQUEST_RUNNING, LINX_GATEWAY_REQUEST_UNKNOWN};
+    for (unsigned i = 0; i < 3U; ++i) {
+        setup_failed_gateway_voice(LINX_VOICE_ERROR, LINX_VOICE_NETWORK_FAILED);
+        remote.view.request.status = submitted[i];
+        unsigned sends = gateway_sends, captures = gateway_captures;
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(ui.at.page == LINX_UI_OVERVIEW && !remote.view.request.cancel_requested);
+        assert(remote.view.request.status == submitted[i]);
+        linx_ui_handle_key(LINX_UI_KEY_OK);
+        assert(ui.at.page == LINX_UI_RECEIPT && gateway_sends == sends && gateway_captures == captures);
+    }
+    setup_failed_gateway_voice(LINX_VOICE_ERROR, LINX_VOICE_NOT_CONFIGURED);
+    unsigned captures = gateway_captures, setups = gateway_setups;
+    assert(has_remote_label("本次未能完成，按OK配网"));
+    capture_session_status("voice", "configure", false);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_WIFI && ui.wifi_origin.page == LINX_UI_OVERVIEW);
+    assert(remote.view.request.cancel_requested && gateway_setups == setups + 1U);
+    const linx_voice_event_t saved = {.generation = ui.voice_generation, .state = LINX_VOICE_WIFI_SAVED};
+    assert(linx_ui_voice_event(&saved));
+    assert(ui.at.page == LINX_UI_WIFI && ui.wifi_mode == LINX_UI_WIFI_CONNECTED && gateway_captures == captures);
+    puts("Gateway录音失败：ERROR/CLOSED单击取消本条并返回，等待取消确认再prepare新编号；重复等待OK和已提交任务不取消不重投，配网成功不自动录音通过");
+}
+
+static void test_gateway_voice_pause_context(void)
+{
+    setup_failed_gateway_voice(LINX_VOICE_LISTENING, LINX_VOICE_OK);
+    remote.view.request.capture_claimed = true;
+    remote.view.connected = false; remote.view.bound = false;
+    remote.view.error = LINX_GATEWAY_ERROR_DISCONNECTED;
+    strcpy(remote.view.error_message, "连接已断开，保留上次数据");
+    render();
+    assert(has_remote_label("发送指令") && !has_remote_label(gateway_connection()));
+    assert(!has_remote_label(remote.view.error_message) && !has_remote_label("请检查网络后重试"));
+    capture_session_status("voice", "paused-listening", false);
+    ui.voice_state = LINX_VOICE_WAITING; render();
+    assert(has_remote_label("发送指令"));
+    capture_session_status("voice", "paused-waiting", false);
+    remote.view.error = LINX_GATEWAY_ERROR_NONE; render();
+    assert(has_remote_label("发送指令"));
+    remote.view.error = LINX_GATEWAY_ERROR_TRANSPORT; render();
+    assert(has_remote_label("发送指令") && !has_remote_label(remote.view.error_message));
+    remote.view.error = LINX_GATEWAY_ERROR_DISCONNECTED;
+    ui.voice_state = LINX_VOICE_ERROR; ui.voice_error = LINX_VOICE_NETWORK_FAILED; render();
+    assert(!has_remote_label("语音输入") && has_remote_label("本轮已结束，按OK返回"));
+    ui.voice_state = LINX_VOICE_CLOSED; render(); assert(!has_remote_label("语音输入"));
+    ui.voice_state = LINX_VOICE_LISTENING; remote.view.request.cancel_requested = true; render();
+    assert(!has_remote_label("语音输入") && has_remote_label("正在核对取消结果"));
+    remote.view.request.cancel_requested = false; remote.view.request.capture_claimed = false; render();
+    assert(!has_remote_label("语音输入"));
+    ui.voice_generation = 0U; render(); assert(!has_remote_label("语音输入"));
+    puts("Gateway业务暂停：录音和等待原文使用语音输入语境，真实语音错误与取消仍显示，未授权录音不冒充在线通过");
+}
+
+static void setup_gateway_one_key_capture(void)
+{
+    remote_setup(); reject_capture = reject_finish = false;
+    ui.at.page = LINX_UI_OVERVIEW; ui.at.selected = 1U;
+    render();
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_VOICE);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    remote.view.request.status = LINX_GATEWAY_REQUEST_AWAITING_TEXT;
+    remote.view.request.capture_pending = true;
+    ui.reply.task_id = 999U; /* Gateway 必须使用真实字符串目标，不夹带演示任务编号。 */
+    ++remote.view.revision; linx_ui_tick(1U);
+    assert(ui.at.page == LINX_UI_VOICE && ui.voice_generation);
+    linx_voice_event_t event = {.generation = ui.voice_generation, .state = LINX_VOICE_LISTENING};
+    assert(linx_ui_voice_event(&event));
+}
+
+static void test_gateway_recording_wave_and_timer(void)
+{
+    setup_failed_gateway_voice(LINX_VOICE_PREPARING, LINX_VOICE_OK);
+    remote.view.request.capture_claimed = true; render();
+    assert(ui.voice_counter && !strcmp(lv_label_get_text(ui.voice_counter), "00:00"));
+    linx_ui_tick(10000U);
+    assert(!strcmp(lv_label_get_text(ui.voice_counter), "00:00"));
+    linx_voice_event_t event = {.generation = ui.voice_generation - 1U, .state = LINX_VOICE_LISTENING};
+    assert(!linx_ui_voice_event(&event));
+    event.generation = ui.voice_generation; assert(linx_ui_voice_event(&event));
+    lv_obj_update_layout(ui.root);
+    assert(ui.boxes_used == 6U && ui.voice_counter && ui.labels_used < LABEL_COUNT);
+    assert(lv_obj_get_x(ui.voice_counter) == 79 && lv_obj_get_y(ui.voice_counter) == 210);
+    assert(lv_obj_get_width(ui.voice_counter) == 90 && lv_obj_get_height(ui.voice_counter) == 36);
+    assert(lv_obj_get_style_text_font(ui.voice_counter, LV_PART_MAIN) == &linx_font_28_bold);
+    bool heading = false;
+    for (size_t i = 0; i < ui.labels_used; ++i) if (!strcmp(lv_label_get_text(ui.labels[i]), "发送指令")) {
+        heading = true;
+        assert(lv_obj_get_style_text_font(ui.labels[i], LV_PART_MAIN) == &linx_font_24_bold);
+        assert(lv_obj_get_x(ui.labels[i]) == 16 && lv_obj_get_y(ui.labels[i]) == 43);
+    }
+    assert(heading && lv_obj_get_x(ui.boxes[0]) == 42 && lv_obj_get_width(ui.boxes[0]) == 6);
+    int first = lv_obj_get_height(ui.boxes[0]);
+    size_t children = lv_obj_get_child_count(ui.root);
+    linx_ui_tick(10124U); lv_obj_update_layout(ui.root);
+    assert(lv_obj_get_height(ui.boxes[0]) == first);
+    linx_ui_tick(10125U); lv_obj_update_layout(ui.root);
+    assert(lv_obj_get_height(ui.boxes[0]) != first);
+    linx_ui_tick(18000U);
+    assert(!strcmp(lv_label_get_text(ui.voice_counter), "00:08"));
+    assert(has_remote_label("发送指令") && has_remote_label(remote.view.request.target_title));
+    assert(has_remote_label(remote.view.detail.project_name));
+    capture_session_status("voice", "timer-eight", false);
+    ++remote.view.revision; linx_ui_tick(18500U);
+    assert(!strcmp(lv_label_get_text(ui.voice_counter), "00:08"));
+    assert(linx_ui_voice_event(&event));
+    linx_ui_tick(19000U);
+    assert(!strcmp(lv_label_get_text(ui.voice_counter), "00:09"));
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.voice_state == LINX_VOICE_WAITING);
+    linx_ui_tick(25000U); ++remote.view.revision; linx_ui_tick(26000U);
+    assert(!strcmp(lv_label_get_text(ui.voice_counter), "00:09"));
+    assert(!linx_ui_voice_event(&event)); /* 同代迟到 LISTENING 也不能重新开启本条。 */
+    capture_session_status("voice", "timer-waiting", false);
+    unsigned captures = gateway_captures, finishes = gateway_finishes;
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_OVERVIEW && !ui.voice_counter);
+    linx_ui_tick(90000U);
+    assert(!ui.voice_counter && gateway_captures == captures && gateway_finishes == finishes);
+    assert(lv_obj_get_child_count(ui.root) == children && lv_mem_test() == LV_RESULT_OK);
+    assert(!linx_ui_voice_event(&event));
+    setup_failed_gateway_voice(LINX_VOICE_CONNECTING, LINX_VOICE_OK);
+    remote.view.request.capture_claimed = true;
+    event.generation = ui.voice_generation; event.state = LINX_VOICE_LISTENING;
+    assert(linx_ui_voice_event(&event));
+    linx_ui_tick(8500U); event.state = LINX_VOICE_WAITING;
+    assert(linx_ui_voice_event(&event));
+    ++remote.view.revision; linx_ui_tick(30000U);
+    assert(!strcmp(lv_label_get_text(ui.voice_counter), "00:08"));
+    /* 目录更新不能拿别的工程名代替当前固定请求的工程。 */
+    strcpy(remote.view.detail.agent_session_id, "another-session"); render();
+    assert(!has_remote_label(remote.view.detail.project_name));
+    puts("Gateway录音视觉：同代开麦起计时、125ms对象复用、目录重绘不重置、OK后冻结和离页隔离通过");
+}
+
+static void gateway_request_response(const char *status)
+{
+    char response[4096];
+    int size = snprintf(response, sizeof(response), "{\"id\":\"voice-status\",\"type\":\"response\",\"reply_to\":\"%s\","
+        "\"payload\":{\"ok\":true,\"data\":{\"request_id\":\"%s\",\"agent_session_id\":\"%s\",\"target_title\":\"%s\","
+        "\"text\":\"原话\",\"status\":\"%s\",\"error\":null}}}", remote.pending.id, remote.view.request.request_id,
+        remote.view.request.agent_session_id, remote.view.request.target_title, status);
+    assert(size > 0 && (size_t)size < sizeof(response));
+    assert(linx_gateway_client_receive(&remote, remote.view.generation, response, (size_t)size, (uint32_t)ui.now_ms));
+}
+
+static void test_gateway_original_agent_voice_lifecycle(void)
+{
+    remote_setup(); ui.at.page = LINX_UI_OVERVIEW;
+    unsigned prepares = gateway_prepares, captures = gateway_captures;
+    render();
+    assert(gateway_prepares == prepares + 1U && gateway_captures == captures);
+    assert(!gateway_last_prepare.gateway_request_id[0] &&
+        !strcmp(gateway_last_prepare.gateway_agent_session_id, remote.view.selected_session_id));
+    render(); assert(gateway_prepares == prepares + 1U);
+    remote.view.sessions_omitted = true; ui.at.page = LINX_UI_TASKS; render();
+    assert(has_remote_label("本批仅显示最近2项"));
+    remote.view.messages_omitted = true; ui.at.page = LINX_UI_HISTORY; render();
+    assert(has_remote_label("本批仅显示最近2项") && gateway_captures == captures);
+
+    setup_gateway_one_key_capture();
+    assert(!strcmp(gateway_last_start.gateway_request_id, remote.view.request.request_id));
+    assert(!strcmp(gateway_last_start.gateway_agent_session_id, remote.view.request.agent_session_id));
+    assert(gateway_last_start.context.task_id == 0U);
+    unsigned finishes = gateway_finishes, cancels = gateway_cancels, requests_cancelled = gateway_request_cancels;
+    linx_ui_tick(8001U); linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(gateway_finishes == finishes + 1U && ui.gateway_finish_pending);
+    assert(has_remote_label("正在结束录音"));
+    for (unsigned i = 0U; i < 3U; ++i) linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(gateway_finishes == finishes + 1U);
+    linx_voice_event_t event = {.generation = ui.voice_generation, .state = LINX_VOICE_WAITING};
+    assert(linx_ui_voice_event(&event) && !ui.gateway_finish_pending);
+    assert(has_remote_label("录音已结束，等待灵矽回复"));
+    remote.view.request.status = LINX_GATEWAY_REQUEST_RUNNING; ++remote.view.revision; linx_ui_tick(18000U);
+    assert(ui.at.page == LINX_UI_VOICE && !strcmp(lv_label_get_text(ui.voice_counter), "00:08"));
+    remote.view.request.status = LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION;
+    event.state = LINX_VOICE_SPEAKING; assert(linx_ui_voice_event(&event));
+    capture_session_status("agent", "speaking", false);
+    event.state = LINX_VOICE_FINISHED; event.error = LINX_VOICE_TIMEOUT;
+    assert(!linx_ui_voice_event(&event));
+    event.error = LINX_VOICE_OK; assert(linx_ui_voice_event(&event));
+    assert(ui.at.page == LINX_UI_OVERVIEW && !ui.voice_generation && !linx_ui_voice_event(&event));
+    assert(gateway_cancels == cancels && gateway_request_cancels == requests_cancelled);
+    assert(strstr(gateway_last_send, "request.get"));
+    gateway_request_response("awaiting_confirmation"); linx_ui_tick(18001U);
+    assert(remote.view.request.cancel_requested && gateway_request_cancels == requests_cancelled + 1U);
+    assert(gateway_confirms == 0U);
+
+    const linx_gateway_request_status_t running[] = {LINX_GATEWAY_REQUEST_SENDING, LINX_GATEWAY_REQUEST_RUNNING, LINX_GATEWAY_REQUEST_COMPLETED};
+    for (unsigned i = 0; i < 3; ++i) {
+        setup_gateway_one_key_capture(); linx_ui_handle_key(LINX_UI_KEY_OK);
+        remote.view.request.status = running[i];
+        event.generation = ui.voice_generation; event.state = LINX_VOICE_FINISHED;
+        requests_cancelled = gateway_request_cancels;
+        assert(linx_ui_voice_event(&event));
+        remote.pending.operation = 0U; remote.view.loading = false; linx_ui_tick(2U);
+        assert(gateway_request_cancels == requests_cancelled && !remote.view.request.cancel_requested);
+    }
+    setup_gateway_one_key_capture(); finishes = gateway_finishes; cancels = gateway_cancels;
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_OVERVIEW && remote.view.request.cancel_requested && gateway_cancels == cancels + 1U);
+    assert(gateway_finishes == finishes && !linx_ui_voice_event(&event));
+
+    setup_gateway_one_key_capture(); linx_ui_handle_key(LINX_UI_KEY_OK);
+    remote.view.request.status = LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION;
+    event.generation = ui.voice_generation; event.state = LINX_VOICE_FINISHED;
+    assert(linx_ui_voice_event(&event));
+    gateway_request_response("unknown"); linx_ui_tick(2U);
+    assert(ui.gateway_voice_finished && !remote.view.request.cancel_requested);
+    assert(gateway_action(LINX_GATEWAY_ACTION_REQUEST_GET, NULL));
+    gateway_request_response("running"); linx_ui_tick(3U);
+    assert(!remote.view.request.cancel_requested && !ui.gateway_voice_finished);
+
+    setup_gateway_one_key_capture();
+    event.generation = ui.voice_generation; event.state = LINX_VOICE_ERROR; event.error = LINX_VOICE_NETWORK_FAILED;
+    captures = gateway_captures; finishes = gateway_finishes;
+    assert(linx_ui_voice_event(&event) && ui.at.page == LINX_UI_VOICE && has_remote_label("灵矽连接已断开"));
+    assert(gateway_captures == captures && gateway_finishes == finishes);
+    uint32_t previous = ui.voice_generation;
+    linx_ui_set_voice_handler(gateway_voice, NULL);
+    assert(ui.at.page == LINX_UI_OVERVIEW && remote.view.request.cancel_requested && !ui.voice_generation);
+    event.generation = previous; event.state = LINX_VOICE_FINISHED; event.error = LINX_VOICE_OK;
+    assert(!linx_ui_voice_event(&event));
+    puts("原灵矽同会话UI：真实目标预热、prepare许可、一次OK停录、Agent原声结束返回、快照不驱动播报、未执行安全收尾通过");
+}
+
+static void test_gateway_error_then_prepare_resets_ui(void)
+{
+    setup_failed_gateway_voice(LINX_VOICE_ERROR, LINX_VOICE_NETWORK_FAILED);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_OVERVIEW && remote.view.request.cancel_requested);
+    gateway_request_response("cancelled");
+    ui.at.selected = 1U; linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_VOICE && ui.voice_generation == 0U &&
+        ui.voice_state == LINX_VOICE_PREPARING && ui.voice_error == LINX_VOICE_OK);
+    unsigned finishes = gateway_finishes, cancels = gateway_cancels;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(!remote.view.request.cancel_requested && gateway_finishes == finishes && gateway_cancels == cancels);
+    assert(!has_remote_label("灵矽连接已断开") && has_remote_label("正在登记本条指令"));
+}
+
+static void test_gateway_started_owner_released_after_disconnect(void)
+{
+    setup_gateway_one_key_capture();
+    uint32_t owner = ui.voice_generation;
+    assert(ui.connection_generation == owner && gateway_last_prepare.generation != owner);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    remote.view.connected = remote.view.bound = false;
+    const linx_voice_event_t done = {.generation = owner, .state = LINX_VOICE_FINISHED};
+    assert(linx_ui_voice_event(&done));
+    unsigned releases = gateway_releases;
+    linx_ui_set_gateway_client(NULL);
+    assert(gateway_releases == releases + 1U && gateway_last_release.generation == owner);
+
+    remote_setup(); ui.at.page = LINX_UI_OVERVIEW; ui.at.selected = 1U; render();
+    uint32_t prepared = ui.connection_generation;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    remote.pending.operation = 0U; remote.view.loading = false;
+    remote.view.request.status = LINX_GATEWAY_REQUEST_AWAITING_TEXT; remote.view.request.capture_pending = true;
+    reject_capture = true; ++remote.view.revision; linx_ui_tick(1U);
+    assert(ui.voice_state == LINX_VOICE_ERROR && ui.connection_generation == prepared);
+    reject_capture = false;
+}
+
+static void test_remote_initial_transport_error_and_recovery(void)
+{
+    remote_setup();
+    const linx_gateway_client_config_t config = {.configured = true, .instance_id = 2U, .send = gateway_send};
+    linx_gateway_client_deinit(&remote);
+    linx_gateway_client_init(&remote, &config);
+    render();
+    assert(!remote.view.connected && remote.view.generation == 0U);
+    assert(strcmp(gateway_connection(), "正在连接网关") == 0);
+    linx_gateway_client_transport_error(&remote, 0U);
+    linx_ui_tick(100U);
+    assert(remote.view.error == LINX_GATEWAY_ERROR_TRANSPORT && !remote.view.connected);
+    bool visible_error = false;
+    for (size_t i = 0U; i < ui.labels_used; ++i)
+        visible_error |= strstr(lv_label_get_text(ui.labels[i]), "网关连接失败，请检查网络与服务配置") != NULL;
+    assert(visible_error && strstr(gateway_connection(), "连接失败"));
+
+    linx_gateway_client_connected(&remote, 1U, "AA:BB:CC:DD:EE:FF", 101U);
+    linx_ui_tick(101U);
+    assert(remote.view.error == LINX_GATEWAY_ERROR_NONE && remote.view.connected);
+    char response[1024];
+    int size = snprintf(response, sizeof(response),
+        "{\"id\":\"hello-recovered\",\"type\":\"response\",\"reply_to\":\"%s\","
+        "\"payload\":{\"ok\":true,\"data\":{\"device_id\":\"AA:BB:CC:DD:EE:FF\",\"desktop_client_id\":\"desktop\"}}}", remote.pending.id);
+    assert(size > 0 && (size_t)size < sizeof(response));
+    assert(linx_gateway_client_receive(&remote, 1U, response, (size_t)size, 102U));
+    size = snprintf(response, sizeof(response),
+        "{\"id\":\"list-recovered\",\"type\":\"response\",\"reply_to\":\"%s\","
+        "\"payload\":{\"ok\":true,\"data\":{\"items\":[],\"next_cursor\":null}}}", remote.pending.id);
+    assert(size > 0 && (size_t)size < sizeof(response));
+    assert(linx_gateway_client_receive(&remote, 1U, response, (size_t)size, 103U));
+    linx_ui_tick(103U);
+    assert(remote.view.error == LINX_GATEWAY_ERROR_NONE && remote.view.connected && remote.view.bound);
+    assert(strcmp(gateway_connection(), "工作电脑 · 已连接") == 0);
+    for (size_t i = 0U; i < ui.labels_used; ++i)
+        assert(strstr(lv_label_get_text(ui.labels[i]), "连接失败") == NULL);
+    puts("真实 UI 首次连接失败：generation0传输错误明确显示，随后hello/绑定/列表成功清除错误通过");
+}
+
 int main(void)
 {
     assert(LV_MEM_SIZE == 40U * 1024U);
@@ -463,7 +1284,21 @@ int main(void)
     test_voice_sequence_and_private_guards();
     test_soft_cancel_without_overview_retains_owner();
     test_phone_secret_and_render_boundaries();
+    test_remote_live_and_saved_status();
+    test_remote_project_context();
+    test_remote_render_and_navigation();
+    test_remote_body_and_full_draft();
+    test_remote_user_intents();
+    test_remote_content_priority_during_refresh();
+    test_remote_initial_transport_error_and_recovery();
+    test_gateway_voice_failure_returns_safely();
+    test_gateway_voice_pause_context();
+    test_gateway_recording_wave_and_timer();
+    test_gateway_original_agent_voice_lifecycle();
+    test_gateway_error_then_prepare_resets_ui();
+    test_gateway_started_owner_released_after_disconnect();
     linx_ui_deinit();
+    linx_gateway_client_deinit(&remote);
     render();
     assert(ui.root == NULL && lv_mem_test() == LV_RESULT_OK);
     lv_display_delete(display);

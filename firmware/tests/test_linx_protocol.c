@@ -145,6 +145,28 @@ static void test_endpoints(void)
     memcpy(oversized, "wss://host/", 11);
     oversized[sizeof(oversized) - 1] = '\0';
     assert(!linx_parse_endpoint(oversized, &endpoint));
+
+    const char *ws_url = "ws://124.220.162.10:8787/v1/devices/connect";
+    assert(!linx_parse_endpoint(ws_url, &endpoint));
+    assert(!linx_parse_gateway_endpoint(ws_url, false, &endpoint));
+    assert(linx_parse_gateway_endpoint(ws_url, true, &endpoint));
+    assert(!endpoint.tls && endpoint.port == 8787);
+    assert(!strcmp(endpoint.host, "124.220.162.10") && !strcmp(endpoint.path, "/v1/devices/connect"));
+    assert(linx_parse_gateway_endpoint("ws://host?x=1", true, &endpoint));
+    assert(!endpoint.tls && endpoint.port == 80 && !strcmp(endpoint.path, "/?x=1"));
+    assert(linx_parse_gateway_endpoint("ws://host", true, &endpoint));
+    assert(!strcmp(endpoint.path, "/"));
+    assert(linx_parse_gateway_endpoint("wss://host/", true, &endpoint));
+    assert(endpoint.tls && endpoint.port == 443);
+    assert(linx_parse_gateway_endpoint("wss://host/", false, &endpoint));
+    assert(endpoint.tls);
+    const char *const invalid_gateway[] = {NULL, "", "https://host/", "ws:///x", "ws://user@host/",
+        "ws://host/#part", "ws://host:0/", "ws://host:65536/", "ws://host:/", "ws://host:abc/",
+        "ws://host name/", "ws://host\r\n/x", "ws://[::1]/", "ws://host\\bad/"};
+    for (size_t i = 0; i < sizeof(invalid_gateway) / sizeof(invalid_gateway[0]); ++i) {
+        assert(!linx_parse_gateway_endpoint(invalid_gateway[i], true, &endpoint));
+    }
+    assert(!linx_parse_gateway_endpoint(ws_url, true, NULL));
 }
 
 static linx_gateway_result_t gateway(const char *json, linx_gateway_t *out)
@@ -375,7 +397,7 @@ static void counted_free(void *allocation)
 static void test_allocation_failures(void)
 {
     cJSON_Hooks hooks = {.malloc_fn = failing_malloc, .free_fn = counted_free};
-    for (unsigned operation = 0; operation < 5; ++operation) {
+    for (unsigned operation = 0; operation < 6; ++operation) {
         bool success = false;
         for (size_t allowed = 0; allowed < 150 && !success; ++allowed) {
             char output[4096];
@@ -390,6 +412,7 @@ static void test_allocation_failures(void)
                     success = gateway("{\"websocket\":{\"token\":\"t\",\"url\":\"wss://host/\"}}", &out) == LINX_GATEWAY_READY;
                     break;
                 }
+                case 5: success = linx_build_listen_request(output, sizeof(output), "session", "request"); break;
                 default: {
                     linx_message_t out;
                     success = message("{\"type\":\"stt\"}", &out);
@@ -398,14 +421,45 @@ static void test_allocation_failures(void)
             }
             assert(live_allocations == 0);
             cJSON_InitHooks(NULL);
-            if (!success && operation < 3) assert(output[0] == '\0');
+            if (!success && (operation < 3 || operation == 5)) assert(output[0] == '\0');
         }
         assert(success);
     }
 }
 
+static void test_listen_request_id(void)
+{
+    char output[2048], original[2048], id[514];
+    assert(!linx_protocol_id_valid(NULL) && !linx_protocol_id_valid(""));
+    assert(linx_build_listen(original, sizeof(original), "session", true));
+    assert(linx_build_listen_request(output, sizeof(output), "session", NULL));
+    assert(!strcmp(output, original));
+    assert(linx_build_listen_request(output, sizeof(output), "session", ""));
+    assert(!strcmp(output, original));
+    assert(linx_build_listen_request(output, sizeof(output), "session", "轮次\"\\id"));
+    cJSON *root = cJSON_Parse(output);
+    expect_string(root, "request_id", "轮次\"\\id");
+    expect_string(root, "state", "start"); cJSON_Delete(root);
+    for (size_t i = 0; i < 128; ++i) memcpy(id + 4 * i, "\xf0\x9f\x98\x80", 4);
+    id[512] = 0;
+    assert(linx_build_listen_request(output, sizeof(output), "session", id));
+    assert(!linx_build_listen_request(NULL, sizeof(output), "session", id));
+    assert(!linx_build_listen_request(output, 1, "session", id));
+    id[512] = 'x'; id[513] = 0;
+    assert(!linx_build_listen_request(output, sizeof(output), "session", id));
+    memset(id, 'a', 129); id[129] = 0;
+    assert(!linx_build_listen_request(output, sizeof(output), "session", id));
+    const char *bad[] = {"\x80", "\xc0\x80", "\xc2", "\xc2x", "\xe0\x80\x80", "\xed\xa0\x80", "\xf4\x90\x80\x80", "\xf5\x80\x80\x80", "bad\n", "\x7f"};
+    for (size_t i = 0; i < sizeof(bad)/sizeof(bad[0]); ++i)
+        assert(!linx_build_listen_request(output, sizeof(output), "session", bad[i]));
+    assert(linx_build_listen_request(output, sizeof(output), "session", "\xc2\xa2\xe4\xb8\xad"));
+    assert(linx_build_listen(output, sizeof(output), "session", false) && !strstr(output, "request_id"));
+    assert(linx_build_abort(output, sizeof(output), "session") && !strstr(output, "request_id"));
+}
+
 int main(void)
 {
+    test_listen_request_id();
     test_builders();
     test_endpoints();
     test_gateway();

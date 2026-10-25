@@ -88,10 +88,51 @@ for name, (size, weight, ascii_only) in expected_variants.items():
     assert f"LV_FONT_DECLARE({name});" in (ROOT / "main/linx_assets.h").read_text()
 assert manifest["image_bytes"] <= 640 * 1024
 assert sum(manifest["bitmap_bytes"].values()) <= 1024 * 1024
+# Remote text uses one shared Bold 4bpp repertoire with large bitmap offsets.
+remote = json.loads((fonts / "remote-manifest.json").read_text())
+remote_inventory = fonts / remote["inventory"]
+remote_points = {int(value, 16) for value in remote_inventory.read_text().splitlines()}
+remote_source = (fonts / remote["source_file"]).read_text()
+assert hashlib.sha256(remote_inventory.read_bytes()).hexdigest() == remote["inventory_sha256"]
+assert hashlib.sha256(remote_source.encode()).hexdigest() == remote["generated_sha256"]
+assert remote["source_sha256"] == expected_hashes["Bold"]
+assert remote["font"] == "Noto Sans CJK SC Bold" and remote["weight_class"] == 700
+assert remote["codepoint_count"] == len(remote_points)
+assert remote["cjk_count"] == 20976
+assert set(range(0x4E00, 0x9FF0)) <= remote_points
+assert remote["unsupported_basic_cjk"] == [f"{cp:04X}" for cp in range(0x9FF0, 0xA000)]
+assert {0xFFFD, 0x9F98} <= remote_points
+assert remote["bpp"] == 4 and remote["line_height"] == 20 and remote["base_line"] == 5
+assert ".bpp=4, .bitmap_format=0" in remote_source
+assert "#if !LV_FONT_FMT_TXT_LARGE" in remote_source
+assert remote["large_format"] is True
+assert "CONFIG_LV_FONT_FMT_TXT_LARGE=y" in (ROOT / "sdkconfig.defaults").read_text()
+assert "#define LV_FONT_FMT_TXT_LARGE 1" in (ROOT / "tests/linx_host/lv_conf.h").read_text()
+assert remote["bitmap_budget_bytes"] == 4 * 1024 * 1024
+assert 0 < remote["bitmap_bytes"] <= remote["bitmap_budget_bytes"]
+remote_bitmap = remote_source.split("glyph_bitmap[] = {", 1)[1].split("};", 1)[0]
+assert len(re.findall(r"0x[0-9a-f]{2}", remote_bitmap)) == remote["bitmap_bytes"]
+remote_offsets = re.search(r"unicode_list\[\] = \{([^}]+)\}", remote_source).group(1)
+assert [int(value) + min(remote_points) for value in remote_offsets.split(",")] == sorted(remote_points)
+remote_descriptors = re.findall(
+    r"\{\.bitmap_index=(\d+), \.adv_w=(\d+), \.box_w=(\d+), \.box_h=(\d+), "
+    r"\.ofs_x=(-?\d+), \.ofs_y=(-?\d+)\}", remote_source)
+assert len(remote_descriptors) == len(remote_points)
+remote_offset = 0
+for descriptor in remote_descriptors:
+    index, advance, width, height, x, y = map(int, descriptor)
+    assert index == remote_offset and advance >= 0
+    assert height + y <= 15 and -y <= 5
+    remote_offset += (width * height + 1) // 2
+assert remote_offset == remote["bitmap_bytes"]
+for cmake_path in (ROOT / "main/CMakeLists.txt", ROOT / "tests/linx_host/CMakeLists.txt"):
+    assert '/linx_font_remote_16.c"' in cmake_path.read_text()
+assert "LV_FONT_DECLARE(linx_font_remote_16);" in (ROOT / "main/linx_assets.h").read_text()
 image_source = (ROOT / "assets/images/linx_image_data.c").read_text()
 assert image_source.count(".magic=LV_IMAGE_HEADER_MAGIC") == 9
 app = (ROOT / "main/main.c").read_text()
 for forbidden in ("bsp_audio_init(", "bsp_battery_init(", "esp_wifi_init(", "nimble_port_init("):
     assert forbidden not in app, f"UI entrypoint directly initializes slow hardware: {forbidden}"
 print(f"LinX resources: PASS ({len(points)} glyphs × 7 CJK variants; 95 ASCII × 28px bold; "
+      f"{len(remote_points)} remote Bold 4bpp glyphs; "
       "exact metrics/cmaps/source hashes; 9 retained RGB565 fixtures; deferred radio/audio startup)")

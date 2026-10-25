@@ -1,8 +1,11 @@
 set(LINX_VOICE_SOURCES "")
-if(CONFIG_LINX_VOICE_ENABLE)
+if(CONFIG_LINX_VOICE_ENABLE OR CONFIG_LINX_GATEWAY_ENABLE)
     list(APPEND LINX_VOICE_SOURCES
          "linx_device.c"
          "linx_wifi_portal.c")
+endif()
+if(CONFIG_LINX_GATEWAY_ENABLE)
+    list(APPEND LINX_VOICE_SOURCES "linx_gateway_transport.c")
 endif()
 
 idf_component_register(
@@ -14,12 +17,14 @@ idf_component_register(
          "linx_navigation.c"
          "linx_reader.c"
          "linx_ui.c"
+         "linx_gateway_client.c"
          "linx_wifi.c"
          "linx_protocol.c"
          ${LINX_VOICE_SOURCES}
          "../assets/fonts/linx_font_12.c"
          "../assets/fonts/linx_font_14.c"
          "../assets/fonts/linx_font_16.c"
+         "../assets/fonts/linx_font_remote_16.c"
          "../assets/fonts/linx_font_20.c"
          "../assets/fonts/linx_font_16_bold.c"
          "../assets/fonts/linx_font_20_bold.c"

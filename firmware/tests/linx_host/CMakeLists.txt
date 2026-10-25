@@ -13,6 +13,8 @@ set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${REPO_ROOT}/managed_components/lvgl__lvgl" lvgl)
 add_library(linx_host_app STATIC
     "${REPO_ROOT}/main/linx_ui.c"
+    "${REPO_ROOT}/main/linx_gateway_client.c"
+    "$ENV{IDF_PATH}/components/json/cJSON/cJSON.c"
     "${REPO_ROOT}/main/linx_wifi.c"
     "${REPO_ROOT}/main/linx_demo.c"
     "${REPO_ROOT}/main/linx_content.c"
@@ -23,17 +25,22 @@ add_library(linx_host_app STATIC
     "${REPO_ROOT}/assets/fonts/linx_font_12.c"
     "${REPO_ROOT}/assets/fonts/linx_font_14.c"
     "${REPO_ROOT}/assets/fonts/linx_font_16.c"
+    "${REPO_ROOT}/assets/fonts/linx_font_remote_16.c"
     "${REPO_ROOT}/assets/fonts/linx_font_20.c"
     "${REPO_ROOT}/assets/fonts/linx_font_16_bold.c"
     "${REPO_ROOT}/assets/fonts/linx_font_20_bold.c"
     "${REPO_ROOT}/assets/fonts/linx_font_24_bold.c"
     "${REPO_ROOT}/assets/fonts/linx_font_28_bold.c")
-target_include_directories(linx_host_app PUBLIC "${REPO_ROOT}/main" "${AI_PASSPORT_DIR}/components/bsp/src")
+target_include_directories(linx_host_app PUBLIC "${REPO_ROOT}/main" "${AI_PASSPORT_DIR}/components/bsp/src"
+    "$ENV{IDF_PATH}/components/json/cJSON")
 target_compile_options(linx_host_app PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(linx_host_app PUBLIC lvgl m)
 
 add_executable(linx_host renderer.c)
 add_executable(linx_ui_boundaries test_ui_boundaries.c)
+add_executable(linx_gateway_host linx_gateway_host.c)
+target_compile_options(linx_gateway_host PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(linx_gateway_host PRIVATE linx_host_app)
 target_compile_options(linx_ui_boundaries PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(linx_ui_boundaries PRIVATE linx_host_app)
 target_compile_definitions(linx_host PRIVATE LINX_REPO_ROOT="${REPO_ROOT}")
@@ -49,7 +56,7 @@ if(LINX_ENABLE_COVERAGE)
     target_compile_options(linx_ui_boundaries PRIVATE -O0 -g -fprofile-instr-generate -fcoverage-mapping)
     # 私有单测包含同一 UI 源码，统一静态函数的 profile 名，合并互补分支而非重复统计。
     target_compile_options(linx_ui_boundaries PRIVATE "SHELL:-Xclang -main-file-name -Xclang linx_ui.c")
-    foreach(target linx_host linx_ui_boundaries)
+    foreach(target linx_host linx_ui_boundaries linx_gateway_host)
         target_link_options(${target} PRIVATE -fprofile-instr-generate)
     endforeach()
 endif()

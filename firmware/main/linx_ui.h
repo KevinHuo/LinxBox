@@ -7,6 +7,7 @@
 #include "linx_demo.h"
 #include "linx_input.h"
 #include "linx_voice.h"
+#include "linx_gateway_client.h"
 
 typedef enum {
     LINX_UI_KEY_UP,
@@ -53,6 +54,12 @@ typedef struct {
     linx_voice_state_t voice_state;
     linx_voice_error_t voice_error;
     linx_ui_wifi_mode_t wifi_mode;
+    bool gateway_online;
+    const char *session_id;
+    const char *request_id;
+    const char *message_id;
+    uint32_t content_offset;
+    bool new_reply;
 } linx_ui_debug_t;
 
 /* Call only from a serialized LVGL context (or while the BSP LVGL lock is held).
@@ -67,6 +74,8 @@ void linx_ui_deinit(void);
 /* 在同一 LVGL 上下文内注册非阻塞后端、接收主循环转交的状态快照。 */
 void linx_ui_set_voice_handler(linx_voice_handler_t handler, void *user);
 bool linx_ui_voice_event(const linx_voice_event_t *event);
+/* controller 与 UI 均由应用线程串行拥有；动作回调只登记非阻塞发送。 */
+void linx_ui_set_gateway_client(linx_gateway_client_t *client);
 
 /* 启动时加载偏好；设置页仅投递保存请求，成功结果到达后才切换操作方式。 */
 typedef bool (*linx_ui_back_mode_handler_t)(linx_back_mode_t mode, void *user);

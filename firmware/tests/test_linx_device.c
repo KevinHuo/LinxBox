@@ -1,11 +1,16 @@
 /* 用真实协议解析器驱动设备 worker；只有 ESP-IDF、Codec 和 BSP 边界被替换。 */
 #include <assert.h>
+#include <stdbool.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+static bool auto_network_ack;
+static bool release_network_on_delay;
+static char recorded_request_id[513];
+
 static void test_lingxi_log(const char *tag, const char *format, ...)
     __attribute__((format(printf, 2, 3)));
 #define ESP_LOGW(tag, ...) test_lingxi_log(tag, __VA_ARGS__)
@@ -194,7 +199,8 @@ BaseType_t xQueueOverwrite(QueueHandle_t queue, const void *data)
         assert(event->state <= LINX_VOICE_DRAINING);
         if (event->state == LINX_VOICE_FINISHED) {
             /* 播放收尾后音频休眠，Wi-Fi/WSS 留给下一条显式指令。 */
-            assert(!mock_http.live && mock_ssl.live && mock_ws.live);
+            assert(!mock_http.live);
+            assert(mock_ssl.live && mock_ws.live);
             assert(wifi_live && wifi_running && netif_live && !audio_live && !codec_live);
             assert(!sntp_running && !pending_cleanup && retained);
             assert(!atomic_load(&listening) && !atomic_load(&finish_pending));
@@ -245,6 +251,8 @@ void vTaskDelay(TickType_t ticks)
     assert(ticks == READ_TIMEOUT_MS);
     ++delay_calls;
     clock_us += ticks * 1000;
+    if (auto_network_ack) linx_device_network_closed(atomic_load(&network_epoch));
+    if (release_network_on_delay) linx_device_network_release();
     if (time_ready_delay && delay_calls >= (unsigned)time_ready_delay) wall_time = 1800000000;
     /* 模拟 SDK 的启动延迟和首台无应答后 15 秒才轮换，不依赖应用的超时常量。 */
     if (sntp_running && sntp_response_server >= 0 && sntp_servers[sntp_response_server] &&
@@ -498,7 +506,17 @@ int esp_transport_ws_send_raw(esp_transport_handle_t transport, ws_transport_opc
     else {
         assert(kind == WS_TRANSPORT_OPCODES_TEXT);
         if (strstr(buffer, "\"type\":\"listen\"")) {
-            if (strstr(buffer, "\"state\":\"start\"")) { ++listen_starts; upload_stopped = false; }
+            if (strstr(buffer, "\"state\":\"start\"")) {
+                ++listen_starts; upload_stopped = false;
+                const char *id = strstr(buffer, "\"request_id\":\"");
+                recorded_request_id[0] = 0;
+                if (id) {
+                    id += strlen("\"request_id\":\"");
+                    const char *end = strchr(id, '"'); assert(end);
+                    size_t length = (size_t)(end - id); assert(length < sizeof(recorded_request_id));
+                    memcpy(recorded_request_id, id, length); recorded_request_id[length] = 0;
+                }
+            }
             else { assert(strstr(buffer, "\"state\":\"stop\"")); ++listen_stops; upload_stopped = true; }
         } else if (strstr(buffer, "\"type\":\"abort\"")) ++aborts;
         else assert(strstr(buffer, "\"type\":\"hello\""));
@@ -698,6 +716,11 @@ static void reset(void)
     atomic_store(&listening, false); atomic_store(&finish_pending, false);
     atomic_store(&discard_transport, false);
     atomic_store(&cancel_turn_pending, false);
+    atomic_store(&network_wanted, false); atomic_store(&network_ready, false);
+    atomic_store(&network_provisioning, false); atomic_store(&network_epoch, 0);
+    atomic_store(&network_close_ack, 0); atomic_store(&network_error, LINX_VOICE_OK);
+    memset(network_mac, 0, sizeof(network_mac)); network_retry_at = 0;
+    auto_network_ack = release_network_on_delay = false; recorded_request_id[0] = 0;
     memset(&requested_target, 0, sizeof(requested_target));
     audio_initialized = false;
     shutdown_result = LINX_VOICE_OK;
@@ -1845,8 +1868,180 @@ static void test_transport_diagnostics(void)
     }
 }
 
+static void release_network_owner(void)
+{
+    linx_device_network_release();
+    shutdown_retained();
+    assert(!retained && !pending_cleanup);
+}
+
+static void test_network_only_owner(void)
+{
+    reset(); assert(!linx_device_network_poll(NULL));
+    failure = "xTaskCreate"; assert(!linx_device_network_acquire()); assert(!atomic_load(&network_wanted));
+    failure = NULL; assert(linx_device_network_acquire());
+    assert(linx_device_network_acquire() && task_calls == 2);
+    linx_device_network_state_t state;
+    assert(linx_device_network_poll(&state) && !state.ready && !state.provisioning);
+    assert(!atomic_load(&active) && !atomic_load(&listening) && !commands->ready);
+    network_tick(); assert(retained && retained->network_only);
+    assert(linx_device_network_poll(&state) && state.ready && state.error == LINX_VOICE_OK);
+    assert(!strcmp(state.mac_address, retained->device_id));
+    assert(connect_calls == 1 && !http_cleanups && !ws_connects && !audio_reads);
+    voice_session_t *owner = retained;
+    prewarm(); assert(retained == owner && connect_calls == 1);
+    network_tick(); assert(atomic_load(&network_ready));
+    clock_us = owner->idle_deadline; idle_poll(); network_tick();
+    assert(!mock_ws.live && wifi_running && retained == owner && atomic_load(&network_ready));
+    request_voice(LINX_VOICE_RELEASE, 7, cached_context); execute_retained();
+    assert(wifi_running && retained == owner && atomic_load(&network_ready));
+    release_network_owner();
+    reset(); assert(linx_device_network_acquire()); network_tick();
+    linx_device_network_release(); network_tick(); assert(!retained && !wifi_running);
+    reset(); assert(linx_device_network_acquire()); atomic_store(&network_provisioning, true); network_tick();
+    assert(!retained && !session_allocations); atomic_store(&network_provisioning, false);
+    network_tick(); auto_network_ack = true;
+    uint32_t old_epoch = atomic_load(&network_epoch);
+    wifi_event(retained, WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, NULL);
+    assert(!atomic_load(&network_ready) && atomic_load(&network_epoch) == old_epoch + 1);
+    linx_device_network_closed(old_epoch); assert(atomic_load(&network_close_ack) == old_epoch);
+    network_tick(); assert(atomic_load(&network_ready) && session_allocations == 2 && connect_calls == 2);
+    release_network_owner();
+}
+
+static void test_network_failures_and_provisioning(void)
+{
+    reset(); assert(linx_device_network_acquire()); session_oom = true; network_tick();
+    assert(atomic_load(&network_error) == LINX_VOICE_NO_MEMORY && network_retry_at > clock_us);
+    session_oom = false; network_tick(); assert(!retained);
+    clock_us = network_retry_at; configured = false; network_tick();
+    assert(!retained && atomic_load(&network_error) == LINX_VOICE_NOT_CONFIGURED);
+    clock_us = network_retry_at; configured = true; strcpy((char *)flash_config.sta.ssid, "existing-net"); network_tick(); assert(atomic_load(&network_ready));
+    voice_session_t *owner = retained;
+    request_voice(LINX_VOICE_WIFI_SETUP, 7, cached_context); execute_retained();
+    assert(retained == owner && wifi_running && !portal_starts && !wifi_stops);
+    expect_error(LINX_VOICE_TIMEOUT); assert(!atomic_load(&network_provisioning));
+    assert(!atomic_load(&network_ready) && atomic_load(&network_error) == LINX_VOICE_TIMEOUT);
+    auto_network_ack = true; linx_device_network_closed(atomic_load(&network_epoch));
+    request_voice(LINX_VOICE_WIFI_SETUP, 7, cached_context); portal_submissions = 1; execute_retained();
+    assert(portal_starts == 1 && portal_statuses[LINX_WIFI_PORTAL_SAVED] == 1 && !atomic_load(&network_provisioning));
+    network_tick(); assert(atomic_load(&network_ready)); release_network_owner();
+    reset(); assert(linx_device_network_acquire()); network_tick();
+    auto_network_ack = true; request_voice(LINX_VOICE_WIFI_SETUP, 7, cached_context); portal_cancel = true; portal_stop_failures = 1;
+    execute_retained(); assert(!pending_cleanup && !atomic_load(&network_provisioning));
+    network_tick(); assert(atomic_load(&network_ready)); release_network_owner();
+    reset(); assert(linx_device_network_acquire()); wall_time = 0; time_ready_delay = 1; network_tick();
+    assert(atomic_load(&network_ready) && sntp_stops == 1); release_network_owner();
+    reset(); assert(linx_device_network_acquire()); wall_time = 0; network_tick();
+    assert(!retained && atomic_load(&network_error) == LINX_VOICE_TIME_FAILED); linx_device_network_release();
+    reset(); assert(linx_device_network_acquire()); wall_time = 0; release_network_on_delay = true; network_tick();
+    assert(!atomic_load(&network_ready) && !atomic_load(&network_wanted)); release_network_owner();
+    reset(); assert(linx_device_network_acquire()); network_tick();
+    /* 试连 IP 只更新试连状态，不能对 Gateway 开放 ready。 */
+    network_invalidate(); retained->trial = retained->trial_accepting = true;
+    atomic_store(&retained->trial_associated, true);
+    wifi_event(retained, IP_EVENT, IP_EVENT_STA_GOT_IP, NULL);
+    assert(!atomic_load(&network_ready));
+    auto_network_ack = true; release_network_owner();
+}
+
+static void gateway_voice(linx_voice_command_t command, uint32_t generation, const char *target, const char *request_id)
+{
+    linx_voice_request_t request = {.command = command, .generation = generation, .context = cached_context};
+    strcpy(request.gateway_agent_session_id, target);
+    strcpy(request.gateway_request_id, request_id);
+    assert(linx_device_request(&request, NULL));
+}
+
+static void pcm_reply(void)
+{
+    static const uint8_t samples[640] = {1, 0, 2, 0};
+    add_text(tts_start); add_binary(samples, sizeof(samples)); add_text(tts_stop);
+}
+
+static void test_gateway_same_agent_voice(void)
+{
+    reset(); assert(linx_device_network_acquire()); network_tick();
+    voice_session_t *owner = retained;
+    uint32_t epoch = atomic_load(&network_epoch);
+    gateway_voice(LINX_VOICE_PREPARE, 7, "real-session-a", ""); add_text(hello_pcm); execute_retained();
+    assert(retained == owner && retained->hello && !audio_live && !listen_starts && !audio_reads);
+    for (uint32_t generation = 8; generation <= 9; ++generation) {
+        clock_us = retained->idle_deadline - 1000000LL;
+        clear_frames(); add_wait(0); add_wait(1);
+        add_text("{\"type\":\"stt\",\"text\":\"今天天气如何\"}"); pcm_reply();
+        if (generation == 8) gateway_voice(LINX_VOICE_START, generation, "real-session-a", "round-8");
+        else {
+            linx_voice_request_t request = {.command = LINX_VOICE_START, .generation = generation,
+                                            .context = {.scene_id = 99, .task_id = 777, .source_turn_id = 888}};
+            strcpy(request.gateway_agent_session_id, "real-session-a");
+            strcpy(request.gateway_request_id, "round-9");
+            /* Gateway真实目标相同，展示来源变化不应当更换语音连接。 */
+            assert(linx_device_request(&request, NULL));
+        }
+        execute_retained();
+        assert(retained == owner && retained->hello && retained->ws && !retained->turn_active);
+        assert(!strcmp(recorded_request_id, generation == 8 ? "round-8" : "round-9"));
+        assert(event_counts[LINX_VOICE_FINISHED] == generation - 7U && audio_writes == generation - 7U);
+        assert(listen_starts == generation - 7U && listen_stops == generation - 7U && audio_reads >= generation - 7U);
+        assert(ws_connects == 1 && ws_closes == 0 && http_cleanups == 1 && connect_calls == 1 && !opus_opens);
+        assert(retained->idle_deadline == clock_us + 30000000LL);
+        assert(atomic_load(&network_ready) && atomic_load(&network_epoch) == epoch);
+    }
+    clear_frames(); gateway_voice(LINX_VOICE_PREPARE, 10, "real-session-b", "");
+    add_text(hello_pcm); execute_retained();
+    assert(!strcmp(retained->gateway_agent_session_id, "real-session-b") && ws_connects == 2 && ws_closes == 1);
+    assert(connect_calls == 1 && atomic_load(&network_epoch) == epoch);
+    auto_network_ack = true; release_network_owner();
+
+    /* STT是旁观事件；没有 Agent TTS 时超时，不能据此“完成”或新建回执连接。 */
+    reset(); gateway_voice(LINX_VOICE_START, 7, "real-session-a", "round-7");
+    add_text(hello_pcm); add_wait(1); add_text("{\"type\":\"stt\",\"text\":\"原话\"}"); add_wait(4);
+    execute_retained(); expect_error(LINX_VOICE_TIMEOUT);
+    assert(!event_counts[LINX_VOICE_FINISHED] && !audio_writes && ws_connects == 1 && !mock_ws.live);
+    shutdown_retained();
+
+    /* Gateway目标同样保留取消屏障；新请求号不能跳过旧tts.stop。 */
+    reset(); gateway_voice(LINX_VOICE_PREPARE, 7, "real-session-a", ""); add_text(hello_pcm); execute_retained();
+    clear_frames(); add_wait(0); add_wait(2);
+    gateway_voice(LINX_VOICE_START, 8, "real-session-a", "cancelled-round"); execute_retained();
+    assert(retained->draining && retained->ws && !audio_live && aborts == 1);
+    clear_frames(); add_text(tts_stop); add_wait(0); add_wait(1); pcm_reply();
+    gateway_voice(LINX_VOICE_START, 9, "real-session-a", "next-round"); execute_retained();
+    assert(event_counts[LINX_VOICE_FINISHED] == 1 && listen_starts == 2 && ws_connects == 1 && !retained->draining);
+    assert(!strcmp(recorded_request_id, "next-round") && audio_writes == 1);
+    shutdown_retained();
+}
+
+static void test_gateway_voice_request_validation(void)
+{
+    reset();
+    linx_voice_request_t request = {.command = LINX_VOICE_START, .generation = 7};
+    strcpy(request.gateway_request_id, "round"); assert(!linx_device_request(&request, NULL));
+    strcpy(request.gateway_agent_session_id, "target"); request.gateway_request_id[0] = 0;
+    assert(!linx_device_request(&request, NULL));
+    strcpy(request.gateway_request_id, "round");
+    memset(request.gateway_agent_session_id, 'x', sizeof(request.gateway_agent_session_id));
+    assert(!linx_device_request(&request, NULL));
+    strcpy(request.gateway_agent_session_id, "target");
+    memset(request.gateway_request_id, 'x', sizeof(request.gateway_request_id));
+    assert(!linx_device_request(&request, NULL));
+    strcpy(request.gateway_request_id, "bad\n"); assert(!linx_device_request(&request, NULL));
+    strcpy(request.gateway_request_id, "round"); strcpy(request.gateway_agent_session_id, "bad\n");
+    assert(!linx_device_request(&request, NULL) && !commands && !events);
+    reset(); gateway_voice(LINX_VOICE_PREPARE, 7, "target", ""); cancel(); execute();
+    reset(); gateway_voice(LINX_VOICE_START, 7, "target", "round");
+    add_text(hello_opus); add_wait(1); add_text(tts_start); add_binary("opus", 4); add_text(tts_stop); execute();
+    assert(opus_opens == 1 && opus_decodes == 1 && opus_closes == 1 && audio_writes == 1);
+    assert(event_counts[LINX_VOICE_FINISHED] == 1 && !strcmp(recorded_request_id, "round"));
+}
+
 int main(void)
 {
+    test_gateway_same_agent_voice();
+    test_gateway_voice_request_validation();
+    test_network_only_owner();
+    test_network_failures_and_provisioning();
     test_init_and_commands();
     test_success_stream();
     test_audio_resume();

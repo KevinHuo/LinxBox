@@ -19,7 +19,10 @@
 #include "linx_ui.h"
 #include "linx_input_settings.h"
 #include "sdkconfig.h"
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_GATEWAY_ENABLE
+#include "linx_gateway_transport.h"
+#endif
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
 #include "linx_device.h"
 #endif
 
@@ -35,8 +38,11 @@ enum scenario {
     LOCK_QUEUED_DOUBLE, DOUBLE_LOCK_FAIL,
     DEFAULT_LONG, SETTINGS_INIT_FAIL, SETTINGS_MODE_SWITCH, SETTINGS_SAVE_FAIL,
     MANUAL_MODE_SWITCH, MODE_SWITCH_HELD, SETTINGS_ACK_QUEUED,
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
     VOICE_INIT_FAIL, VOICE_EVENT_BARRIER,
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+    GATEWAY_INIT_FAIL, GATEWAY_EVENTS, GATEWAY_EVENT_BARRIER,
 #endif
     SCENARIO_COUNT
 };
@@ -48,8 +54,11 @@ static const char *const scenario_names[SCENARIO_COUNT] = {
     "lock_queued_double", "double_lock_fail",
     "default_long", "settings_init_fail", "settings_mode_switch", "settings_save_fail",
     "manual_mode_switch", "mode_switch_held", "settings_ack_queued",
-#if CONFIG_LINX_VOICE_ENABLE
-    "voice_init_fail", "voice_event_barrier"
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
+    "voice_init_fail", "voice_event_barrier",
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+    "gateway_init_fail", "gateway_events", "gateway_event_barrier",
 #endif
 };
 
@@ -66,6 +75,7 @@ typedef struct {
     bool automatic_change;
     bool manual_change;
     bool voice_change;
+    bool gateway_change;
     bool double_during_lock;
     bool settings_result;
     bool settings_saved;
@@ -121,9 +131,25 @@ static bool settings_init_fail;
 static unsigned settings_inits, settings_binds, settings_polls, settings_results;
 static unsigned info_logs, error_logs, warning_logs, metric_logs;
 static unsigned free_calls, minimum_calls, largest_calls, stack_calls;
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
 static bool voice_init_fail;
 static unsigned voice_inits, voice_binds, voice_polls, voice_events;
+#endif
+
+#if CONFIG_LINX_GATEWAY_ENABLE
+static linx_gateway_client_t *gateway_client;
+static bool gateway_init_fail, gateway_ui_change;
+static unsigned gateway_inits, gateway_binds, gateway_polls, gateway_ticks;
+static unsigned gateway_connected, gateway_disconnected, gateway_errors, gateway_frames, gateway_releases;
+static unsigned gateway_event_index;
+static enum scenario active_scenario;
+static unsigned random_calls;
+
+uint32_t esp_random(void)
+{
+    assert(!locked);
+    return ++random_calls;
+}
 #endif
 
 static step_t *step(uint64_t now_ms)
@@ -154,6 +180,9 @@ static void expect_key(linx_ui_key_t key, uint64_t at_ms)
 
 static void configure(enum scenario scenario)
 {
+#if CONFIG_LINX_GATEWAY_ENABLE
+    active_scenario = scenario;
+#endif
     switch (scenario) {
     case DISPLAY_FAIL: failure = DISPLAY_FAILURE; break;
     case LVGL_FAIL: failure = LVGL_FAILURE; break;
@@ -407,7 +436,7 @@ static void configure(enum scenario scenario)
         expect_key(LINX_UI_KEY_OK, 450);
         break;
     }
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
     case VOICE_INIT_FAIL:
         voice_init_fail = true;
         step(100);
@@ -415,6 +444,26 @@ static void configure(enum scenario scenario)
     case VOICE_EVENT_BARRIER:
         event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
         step(200)->voice_change = true;
+        event_step(300, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(450, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(751);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_OK, 751);
+        break;
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+    case GATEWAY_INIT_FAIL:
+        gateway_init_fail = true;
+        step(100);
+        break;
+    case GATEWAY_EVENTS:
+        step(100)->gateway_change = true;
+        step(200)->gateway_change = true;
+        break;
+    case GATEWAY_EVENT_BARRIER:
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        step(200)->gateway_change = true;
         event_step(300, BSP_BTN_OK, BSP_BTN_RELEASE);
         event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
         event_step(450, BSP_BTN_OK, BSP_BTN_RELEASE);
@@ -662,10 +711,10 @@ static void change_page(void)
     page = page == LINX_UI_TASKS ? LINX_UI_OVERVIEW : LINX_UI_TASKS;
 }
 
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
 bool linx_device_init(void)
 {
-    assert(locked && ui_init_calls == 1);
+    assert(!locked && ui_init_calls == 0);
     ++voice_inits;
     return !voice_init_fail;
 }
@@ -701,10 +750,103 @@ bool linx_ui_voice_event(const linx_voice_event_t *event)
 }
 #endif
 
+
+#if CONFIG_LINX_GATEWAY_ENABLE
+bool linx_gateway_transport_init(void)
+{
+    assert(!locked && voice_inits == 1U);
+    ++gateway_inits;
+    return !gateway_init_fail;
+}
+
+bool linx_gateway_transport_send(uint32_t generation, const char *json, size_t size, void *user)
+{
+    (void)generation; (void)json; (void)size; (void)user;
+    assert(false);
+    return false;
+}
+
+void linx_gateway_client_init(linx_gateway_client_t *client, const linx_gateway_client_config_t *config)
+{
+    assert(!locked && config->send == linx_gateway_transport_send && config->configured && config->instance_id);
+    gateway_client = client;
+    client->view.configured = config->configured;
+}
+
+void linx_ui_set_gateway_client(linx_gateway_client_t *client)
+{
+    assert(locked && client == gateway_client && gateway_inits == 1U);
+    ++gateway_binds;
+}
+
+bool linx_gateway_transport_poll(linx_gateway_transport_event_t *event)
+{
+    assert(!locked && active_step);
+    ++gateway_polls;
+    if (!active_step->gateway_change) return NULL;
+    if (active_scenario == GATEWAY_EVENT_BARRIER) {
+        if (gateway_event_index++) return false;
+        *event = (linx_gateway_transport_event_t){.type = LINX_GATEWAY_TRANSPORT_FRAME,
+            .generation = 7U, .data = "{}", .size = 2U};
+        return true;
+    }
+    if (gateway_event_index >= 5U) return false;
+    static const linx_gateway_transport_event_type_t types[] = {LINX_GATEWAY_TRANSPORT_ERROR,
+        LINX_GATEWAY_TRANSPORT_CONNECTED, LINX_GATEWAY_TRANSPORT_FRAME,
+        LINX_GATEWAY_TRANSPORT_DISCONNECTED, LINX_GATEWAY_TRANSPORT_NOT_CONFIGURED};
+    *event = (linx_gateway_transport_event_t){.type = types[gateway_event_index], .generation = gateway_event_index ? 7U : 0U,
+        .mac_address = "AA:BB:CC:DD:EE:FF", .data = "{}", .size = 2U};
+    ++gateway_event_index;
+    return true;
+}
+
+void linx_gateway_client_connected(linx_gateway_client_t *client, uint32_t generation, const char *mac, uint32_t now)
+{
+    assert(!locked && client == gateway_client && generation == 7U && strlen(mac) == 17U && now == clock_ms);
+    ++gateway_connected;
+}
+
+void linx_gateway_client_disconnected(linx_gateway_client_t *client, uint32_t generation)
+{
+    assert(!locked && client == gateway_client && generation == 7U);
+    ++gateway_disconnected;
+}
+
+void linx_gateway_client_transport_error(linx_gateway_client_t *client, uint32_t generation)
+{
+    assert(!locked && client == gateway_client && generation == 0U);
+    ++gateway_errors;
+}
+
+bool linx_gateway_client_receive(linx_gateway_client_t *client, uint32_t generation,
+                                 const char *bytes, size_t size, uint32_t now)
+{
+    assert(!locked && client == gateway_client && generation == 7U && !strcmp(bytes, "{}") && size == 2U && now == clock_ms);
+    ++gateway_frames;
+    gateway_ui_change = active_scenario == GATEWAY_EVENT_BARRIER;
+    return true;
+}
+
+void linx_gateway_transport_release(void)
+{
+    assert(!locked && gateway_frames == gateway_releases + 1U);
+    ++gateway_releases;
+}
+
+void linx_gateway_client_tick(linx_gateway_client_t *client, uint32_t now)
+{
+    assert(!locked && client == gateway_client && now == clock_ms);
+    ++gateway_ticks;
+}
+#endif
+
 void linx_ui_tick(uint64_t now_ms)
 {
     assert(locked && active_step != NULL && now_ms == active_step->now_ms);
     ++ui_ticks;
+#if CONFIG_LINX_GATEWAY_ENABLE
+    if (gateway_ui_change) { change_page(); gateway_ui_change = false; }
+#endif
     if (active_step->automatic_change) {
         change_page();
         ++automatic_changes;
@@ -767,7 +909,9 @@ void device_test_log(char level, const char *tag, const char *format, ...)
             ++metric_logs;
             assert(strcmp(message, "heap free=65536 min=32768 largest=16384 stack=2048") == 0);
         } else {
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_GATEWAY_ENABLE
+            assert(strcmp(message, "LinX connects to the configured Gateway") == 0);
+#elif CONFIG_LINX_VOICE_ENABLE
             assert(strcmp(message, "LinX voice connects on demand") == 0);
 #else
             assert(strstr(message, "LinX warm-white offline demo") != NULL);
@@ -781,11 +925,14 @@ void device_test_log(char level, const char *tag, const char *format, ...)
     } else {
         ++error_logs;
         assert(level == 'E');
-#if CONFIG_LINX_VOICE_ENABLE
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
         if (voice_init_fail) {
             assert(strcmp(message, "Voice worker allocation failed") == 0);
             return;
         }
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+        if (gateway_init_fail) { assert(strcmp(message, "Gateway worker allocation failed") == 0); return; }
 #endif
         const char *expected = failure == DISPLAY_FAILURE || failure == LVGL_FAILURE
             ? "Display initialization failed" : failure == QUEUE_FAILURE
@@ -799,13 +946,28 @@ static void verify(enum scenario scenario)
 {
     assert(display_calls == 1 && !locked);
     assert(info_logs == 1 + expected_metrics);
-#if CONFIG_LINX_VOICE_ENABLE
-    assert(error_logs == (failure == NO_FAILURE && !voice_init_fail ? 0U : 1U));
-    assert(voice_inits == ui_init_calls && voice_binds == ui_init_calls);
+#if CONFIG_LINX_VOICE_ENABLE || CONFIG_LINX_GATEWAY_ENABLE
+    assert(error_logs == (failure == NO_FAILURE && !voice_init_fail
+#if CONFIG_LINX_GATEWAY_ENABLE
+        && !gateway_init_fail
+#endif
+        ? 0U : 1U));
+    assert(voice_inits == ui_init_calls + (failure == INITIAL_LOCK_FAILURE ? 1U : 0U));
+    assert(voice_binds == ui_init_calls);
     assert(voice_polls == ui_ticks);
     assert(voice_events == (scenario == VOICE_EVENT_BARRIER ? 1U : 0U));
 #else
     assert(error_logs == (failure == NO_FAILURE ? 0U : 1U));
+#endif
+#if CONFIG_LINX_GATEWAY_ENABLE
+    assert(gateway_inits == voice_inits && gateway_binds == ui_init_calls);
+    assert(gateway_ticks == loop_locks);
+    assert(gateway_frames == gateway_releases);
+    if (scenario == GATEWAY_EVENTS) {
+        assert(gateway_connected == 1U && gateway_disconnected == 1U && gateway_errors == 1U && gateway_frames == 1U);
+        assert(!gateway_client->view.configured);
+    }
+    if (scenario == GATEWAY_EVENT_BARRIER) assert(gateway_frames == 1U);
 #endif
     assert(warning_logs == expected_warnings && metric_logs == expected_metrics);
     assert(free_calls == expected_metrics && minimum_calls == expected_metrics);
