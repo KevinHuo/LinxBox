@@ -232,9 +232,7 @@ function togglePause(): void {
 function wireEvents(): void {
   qs('#btn-open-main')?.addEventListener('click', () => {
     setOpen(false);
-    // The main window is owned by the main process: the panel asks it to
-    // come forward through the bridge rather than opening a second window.
-    window.focus();
+    void bridge?.focusMainWindow();
   });
 
   qs('#btn-pause')?.addEventListener('click', togglePause);

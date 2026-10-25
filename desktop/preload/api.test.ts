@@ -35,6 +35,7 @@ describe('preload bridge', () => {
     await api.readFloatWindow();
     await api.setFloatWindowVisible({ visible: true });
     await api.moveFloatWindow({ x: 10, y: 20 });
+    await api.focusMainWindow();
 
     expect(calls.map((call) => call.channel)).toEqual([
       'linxbox.v1.codex.probe',
@@ -61,6 +62,7 @@ describe('preload bridge', () => {
       'linxbox.v1.window.float.read',
       'linxbox.v1.window.float.setVisible',
       'linxbox.v1.window.float.move',
+      'linxbox.v1.window.main.focus',
     ]);
   });
 
@@ -69,12 +71,14 @@ describe('preload bridge', () => {
     expect(Object.keys(api).sort()).toEqual(
       [
         'cancelTask',
+        'bindDevice',
         'continueCodexSession',
         'getTask',
         'interruptCodexTurn',
         'listCodexProjects',
         'listCodexSessions',
         'moveFloatWindow',
+        'focusMainWindow',
         'onConnectionChanged',
         'readAppearance',
         'readCodexConversation',

@@ -206,6 +206,7 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'window.float.read': emptyPayloadSchema,
   'window.float.setVisible': floatSetVisibleSchema,
   'window.float.move': floatMoveSchema,
+  'window.main.focus': emptyPayloadSchema,
 };
 
 /* ------------------------------------------------------------------ */

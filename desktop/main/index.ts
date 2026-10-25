@@ -334,6 +334,18 @@ function handleFloatRead(): unknown {
   return { ok: true, data: readFloatView(floatState) };
 }
 
+function handleMainWindowFocus(): unknown {
+  if (mainWindow === null || mainWindow.isDestroyed()) {
+    return { ok: false, code: 'NOT_FOUND', message: '主窗口不存在' };
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  return { ok: true };
+}
+
 /**
  * Show or hide the floating ball.
  *
@@ -574,6 +586,7 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'window.float.read': () => handleFloatRead(),
   'window.float.setVisible': (payload) => handleFloatSetVisible(payload),
   'window.float.move': (payload) => handleFloatMove(payload),
+  'window.main.focus': () => handleMainWindowFocus(),
 };
 
 /** Register one handler per allowlisted channel. */
