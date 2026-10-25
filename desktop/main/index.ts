@@ -210,6 +210,23 @@ function handleConnectionTest(): unknown {
   };
 }
 
+async function handleDeviceBind(payload: unknown): Promise<unknown> {
+  const parsed = parseIpcRequest('device.bind', payload);
+  if (!parsed.ok) return { ok: false, code: parsed.code, message: parsed.message };
+  const { macAddress } = parsed.data as { macAddress: string };
+  const normalized = macAddress.replace(/[:-]/g, '').toUpperCase().match(/.{2}/g)?.join(':');
+  if (normalized === undefined) return { ok: false, code: 'INVALID_ARGUMENT', message: 'MAC 地址格式不正确' };
+  const result = await gateway.bindDevice(normalized);
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === true) {
+    return { ok: true, data: 'data' in result ? result.data : null };
+  }
+  const error = result && typeof result === 'object' && 'error' in result ? result.error : null;
+  if (error && typeof error === 'object' && 'code' in error && 'message' in error) {
+    return { ok: false, code: error.code, message: error.message };
+  }
+  return { ok: false, code: 'DEPENDENCY_UNAVAILABLE', message: '设备配对失败' };
+}
+
 function handleProjectsList(): unknown {
   return listProjects(state);
 }
@@ -537,6 +554,7 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'connection.read': () => handleConnectionRead(),
   'connection.save': (payload) => handleConnectionSave(payload),
   'connection.test': () => handleConnectionTest(),
+  'device.bind': (payload) => handleDeviceBind(payload),
   'projects.list': () => handleProjectsList(),
   'projects.grant': (payload) => handleProjectsGrant(payload),
   'projects.revoke': (payload) => handleProjectsRevoke(payload),

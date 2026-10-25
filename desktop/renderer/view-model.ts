@@ -255,6 +255,7 @@ export interface LinxboxBridge {
   readConnection(): Promise<unknown>;
   saveConnection(payload: unknown): Promise<unknown>;
   testConnection(): Promise<unknown>;
+  bindDevice(payload: unknown): Promise<unknown>;
   listProjects(): Promise<unknown>;
   grantProject(payload: unknown): Promise<unknown>;
   revokeProject(payload: unknown): Promise<unknown>;

@@ -505,6 +505,30 @@ describe('GatewayConnectionManager', () => {
     manager.disconnect();
   });
 
+  it('correlates a fast binding.result response before send returns', async () => {
+    const { manager, socket } = createManager();
+    socket.emit('open', undefined);
+    const originalSend = socket.send.bind(socket);
+    socket.send = (data: string) => {
+      originalSend(data);
+      const frame = JSON.parse(data) as { message_id: string; type: string };
+      if (frame.type === 'device.bind') {
+        socket.emit('message', {
+          data: JSON.stringify({
+            protocol_version: '1.0', message_id: 'msg_result', sequence: 2,
+            type: 'binding.result', sent_at: new Date().toISOString(),
+            payload: {
+              reply_to_message_id: frame.message_id, ok: true,
+              data: { device_id: 'AA:BB:CC:DD:EE:FF', desktop_client_id: 'desktop-1' },
+            },
+          }),
+        });
+      }
+    };
+    await expect(manager.bindDevice('AA:BB:CC:DD:EE:FF')).resolves.toMatchObject({ ok: true });
+    manager.disconnect();
+  });
+
   it('acknowledges a cancel frame without a task payload', async () => {
     const { socket } = createManager({
       resolveProject: () => ({ rootPath: '/tmp/work', enabled: true }),

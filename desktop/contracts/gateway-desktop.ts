@@ -24,6 +24,7 @@ export type ProjectCapability = (typeof PROJECT_CAPABILITIES)[number];
 export const GATEWAY_MESSAGE_TYPES = [
   'task.dispatch',
   'task.cancel',
+  'binding.result',
   'agent_sessions.sync.result',
   'project.upsert',
   'project.revoke',
@@ -35,6 +36,7 @@ export type GatewayMessageType = (typeof GATEWAY_MESSAGE_TYPES)[number];
 export const DESKTOP_MESSAGE_TYPES = [
   'client.hello',
   'client.heartbeat',
+  'device.bind',
   'task.ack',
   'task.started',
   'task.progress',
@@ -94,6 +96,17 @@ export interface ClientHelloPayload {
 export interface ClientHeartbeatPayload {
   readonly client_time: string;
   readonly summary?: string;
+}
+
+export interface DeviceBindPayload {
+  readonly mac_address: string;
+}
+
+export interface BindingResultPayload {
+  readonly reply_to_message_id: string;
+  readonly ok: boolean;
+  readonly data?: { readonly device_id: string; readonly desktop_client_id: string };
+  readonly error?: ContractError;
 }
 
 /** `project.upsert` payload. Absolute paths never appear in this protocol. */
@@ -220,6 +233,7 @@ export interface GatewayPayloadByType {
   'task.dispatch': TaskDispatchPayload;
   'task.cancel': TaskCancelPayload;
   'agent_sessions.sync.result': AgentSessionsSyncResultPayload | AgentSessionsSyncErrorPayload;
+  'binding.result': BindingResultPayload;
   'project.upsert': ProjectUpsertPayload;
   'project.revoke': ProjectRevokePayload;
 }
@@ -227,6 +241,7 @@ export interface GatewayPayloadByType {
 export interface DesktopPayloadByType {
   'client.hello': ClientHelloPayload;
   'client.heartbeat': ClientHeartbeatPayload;
+  'device.bind': DeviceBindPayload;
   'task.ack': TaskAckPayload;
   'task.started': TaskEventPayload;
   'task.progress': TaskEventPayload;

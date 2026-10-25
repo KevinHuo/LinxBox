@@ -43,6 +43,8 @@ const connectionSaveSchema = z
   })
   .strict();
 
+const deviceBindSchema = z.object({ macAddress: z.string().min(1).max(32) }).strict();
+
 /**
  * The project root is deliberately absent.
  *
@@ -190,6 +192,7 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.conversation.read': codexConversationReadSchema,
   'connection.read': emptyPayloadSchema,
   'connection.save': connectionSaveSchema,
+  'device.bind': deviceBindSchema,
   'connection.test': emptyPayloadSchema,
   'projects.list': emptyPayloadSchema,
   'projects.grant': projectGrantSchema,

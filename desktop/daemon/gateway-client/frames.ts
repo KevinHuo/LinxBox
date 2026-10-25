@@ -51,6 +51,18 @@ export const GATEWAY_CONNECT_PATH = '/v1/clients/connect';
 
 /** Public error code used when a frame cannot be trusted. */
 const INVALID_FRAME = 'INVALID_ARGUMENT';
+const MAC_ADDRESS = /^(?:[0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2})$/;
+const DEVICE_ID = /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/;
+const CONTRACT_ERROR_CODE = z.enum([
+  'INVALID_ARGUMENT',
+  'UNAUTHENTICATED',
+  'PERMISSION_DENIED',
+  'NOT_FOUND',
+  'CONFLICT',
+  'DEPENDENCY_UNAVAILABLE',
+  'RESOURCE_EXHAUSTED',
+  'INTERNAL',
+]);
 
 const envelopeSchema = z.looseObject({
   protocol_version: z.string(),
@@ -108,6 +120,23 @@ const agentSessionsSyncResultSchema = z
         ]),
         message: z.string().min(1),
       }),
+    }),
+  );
+
+const bindingResultSchema = z
+  .strictObject({
+    reply_to_message_id: z.string().min(1),
+    ok: z.literal(true),
+    data: z.strictObject({
+      device_id: z.string().regex(DEVICE_ID),
+      desktop_client_id: z.string().min(1),
+    }),
+  })
+  .or(
+    z.strictObject({
+      reply_to_message_id: z.string().min(1),
+      ok: z.literal(false),
+      error: z.strictObject({ code: CONTRACT_ERROR_CODE, message: z.string().min(1) }),
     }),
   );
 
@@ -183,9 +212,36 @@ export function parseInboundFrame(
       } as GatewayFrame,
     };
   }
+  if (value.type === 'binding.result') {
+    const payload = bindingResultSchema.safeParse(value.payload);
+    if (!payload.success) {
+      return { ok: false, error: publicError(INVALID_FRAME, 'binding.result 负载不合法', value.message_id) };
+    }
+    return { ok: true, frame: { ...value, type: 'binding.result', payload: payload.data } as GatewayFrame };
+  }
   return {
     ok: false,
     error: publicError(INVALID_FRAME, `未知的 Gateway 消息类型：${value.type}`, value.message_id),
+  };
+}
+
+/** Build the contract-defined Desktop -> Gateway device binding request. */
+export function buildDeviceBindFrame(input: {
+  messageId: string;
+  sequence: number;
+  macAddress: string;
+  sentAt: string;
+}): DesktopFrame<'device.bind'> {
+  if (!MAC_ADDRESS.test(input.macAddress)) {
+    throw new Error('device.bind requires a valid MAC address');
+  }
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    message_id: input.messageId,
+    sequence: input.sequence,
+    type: 'device.bind',
+    sent_at: input.sentAt,
+    payload: { mac_address: input.macAddress },
   };
 }
 

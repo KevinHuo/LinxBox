@@ -24,6 +24,7 @@ export const IPC_METHODS = [
   'connection.read',
   'connection.save',
   'connection.test',
+  'device.bind',
   'diagnostics.read',
   'projects.grant',
   'projects.list',

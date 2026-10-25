@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAgentSessionsSyncFrame,
   buildAckFrame,
+  buildDeviceBindFrame,
   buildHelloFrame,
   buildHeartbeatFrame,
   buildTaskEventFrame,
@@ -30,6 +31,24 @@ const dispatchFrame = {
 };
 
 describe('parseInboundFrame', () => {
+  it('accepts a contract-compatible binding result and rejects unknown error codes', () => {
+    const valid = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'binding.result',
+      payload: {
+        reply_to_message_id: 'msg_bind',
+        ok: true,
+        data: { device_id: 'AA:BB:CC:DD:EE:FF', desktop_client_id: 'desktop-1' },
+      },
+    });
+    expect(valid.ok).toBe(true);
+    const invalid = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'binding.result',
+      payload: { reply_to_message_id: 'msg_bind', ok: false, error: { code: 'NOPE', message: 'x' } },
+    });
+    expect(invalid.ok).toBe(false);
+  });
   it('accepts a valid task.dispatch', () => {
     const result = parseInboundFrame(dispatchFrame);
     expect(result.ok).toBe(true);
@@ -141,6 +160,14 @@ describe('parseInboundFrame', () => {
 });
 
 describe('outbound frame builders', () => {
+  it('builds device.bind and rejects malformed MAC addresses', () => {
+    expect(buildDeviceBindFrame({
+      messageId: 'msg_bind', sequence: 1, macAddress: 'AA:BB:CC:DD:EE:FF', sentAt: '2026-10-24T01:00:00Z',
+    }).payload.mac_address).toBe('AA:BB:CC:DD:EE:FF');
+    expect(() => buildDeviceBindFrame({
+      messageId: 'msg_bind', sequence: 1, macAddress: 'not-a-mac', sentAt: '2026-10-24T01:00:00Z',
+    })).toThrow();
+  });
   it('builds a hello frame with the negotiated protocol version', () => {
     const frame = buildHelloFrame({
       messageId: 'msg_1',

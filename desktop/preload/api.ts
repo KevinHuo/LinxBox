@@ -35,6 +35,7 @@ export interface LinxboxApi {
   readConnection(): Promise<unknown>;
   saveConnection(payload: unknown): Promise<unknown>;
   testConnection(): Promise<unknown>;
+  bindDevice(payload: unknown): Promise<unknown>;
   listProjects(): Promise<unknown>;
   grantProject(payload: unknown): Promise<unknown>;
   revokeProject(payload: unknown): Promise<unknown>;
@@ -78,6 +79,7 @@ export function createLinxboxApi(
     readConnection: () => call('connection.read'),
     saveConnection: (payload) => call('connection.save', payload),
     testConnection: () => call('connection.test'),
+    bindDevice: (payload) => call('device.bind', payload),
     listProjects: () => call('projects.list'),
     grantProject: (payload) => call('projects.grant', payload),
     revokeProject: (payload) => call('projects.revoke', payload),

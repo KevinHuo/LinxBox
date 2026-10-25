@@ -303,7 +303,7 @@ function applyTheme(theme: AppearanceFacts['theme']): void {
  * not implemented: the pairing contract has not been reviewed yet, so the
  * client reports that honestly instead of pretending a device confirmed.
  */
-function startPairing(): void {
+async function startPairing(): Promise<void> {
   const input = qs<HTMLInputElement>('#mac-input');
   const mac = normalizeMacAddress(input?.value ?? '');
   if (!isValidMacAddress(mac)) {
@@ -312,12 +312,16 @@ function startPairing(): void {
     return;
   }
 
-  const note = qs('#pairing-note');
-  if (note) {
-    note.textContent = `已向 ${mac} 发起配对 · 等待设备确认`;
+  if (!bridge) return;
+  const result = (await bridge.bindDevice({ macAddress: mac })) as { ok?: boolean; message?: string };
+  if (!result?.ok) {
+    showToast(result?.message ?? '设备配对失败');
+    return;
   }
-  go('pairing');
-  showToast('配对协议尚未接入，暂无法完成设备确认');
+  const note = qs('#pairing-note');
+  if (note) note.textContent = `设备 ${mac} 已配对成功`;
+  go('home');
+  showToast('设备配对成功');
 }
 
 /** Cancel the pairing flow and return to the first screen. */
@@ -448,7 +452,9 @@ function wireEvents(): void {
     button.addEventListener('click', () => go('home'));
   });
 
-  qs('#btn-start')?.addEventListener('click', startPairing);
+  qs('#btn-start')?.addEventListener('click', () => {
+    void startPairing();
+  });
   qs('#btn-cancel')?.addEventListener('click', cancelPairing);
   qs('#btn-unpair')?.addEventListener('click', unpair);
   qs('#btn-conn-save')?.addEventListener('click', () => {

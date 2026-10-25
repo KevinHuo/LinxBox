@@ -16,6 +16,7 @@ import { TaskDispatcher, type CodexRunner } from '../daemon/gateway-client/dispa
 import { homedir } from 'node:os';
 import {
   buildAgentSessionsSyncFrame,
+  buildDeviceBindFrame,
   buildTaskEventFrame,
   publicError,
 } from '../daemon/gateway-client/frames.js';
@@ -114,6 +115,7 @@ export class GatewayConnectionManager {
   private syncInFlight: Promise<void> | null = null;
   private publishedProjects = new Map<string, PublishedProject>();
   private readonly blockedThreads = new Set<string>();
+  private readonly bindingWaiters = new Map<string, { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(options: GatewayConnectionManagerOptions) {
     this.options = options;
@@ -222,6 +224,15 @@ export class GatewayConnectionManager {
         return;
       }
       if (event.type === 'frame') {
+        if (event.frame.type === 'binding.result') {
+          const waiter = this.bindingWaiters.get(event.frame.payload.reply_to_message_id);
+          if (waiter !== undefined) {
+            clearTimeout(waiter.timer);
+            this.bindingWaiters.delete(event.frame.payload.reply_to_message_id);
+            waiter.resolve(event.frame.payload);
+          }
+          return;
+        }
         if (event.frame.type === 'agent_sessions.sync.result') {
           if (!event.frame.payload.ok) {
             this.lastError = event.frame.payload.error?.message ?? 'Gateway 未保存会话目录';
@@ -239,6 +250,33 @@ export class GatewayConnectionManager {
     this.publishStatus();
   }
 
+  bindDevice(macAddress: string): Promise<unknown> {
+    const client = this.client;
+    if (!this.connected || client === null) {
+      return Promise.resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 尚未连接' } });
+    }
+    const messageId = this.nextMessageId();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.bindingWaiters.delete(messageId);
+        resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 配对响应超时' } });
+      }, 10_000);
+      this.bindingWaiters.set(messageId, { resolve, timer });
+      try {
+        client.send(buildDeviceBindFrame({
+          messageId,
+          sequence: this.nextSequence(),
+          macAddress,
+          sentAt: new Date().toISOString(),
+        }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.bindingWaiters.delete(messageId);
+        resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: error instanceof Error ? error.message : 'Gateway 配对发送失败' } });
+      }
+    });
+  }
+
   /** Close the connection and stop reconnecting. */
   disconnect(): void {
     this.client?.close();
@@ -246,6 +284,11 @@ export class GatewayConnectionManager {
     this.dispatcher = null;
     this.connected = false;
     this.agentSessions.clear();
+    for (const waiter of this.bindingWaiters.values()) {
+      clearTimeout(waiter.timer);
+      waiter.resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 连接已断开' } });
+    }
+    this.bindingWaiters.clear();
     if (this.config !== null) {
       this.publishStatus();
     }

@@ -102,6 +102,38 @@ export function buildAgentSessionsSyncResult(syncFrame, ok = true, message = '')
   };
 }
 
+export function buildBindingResult(bindFrame, macAddress, ok = true) {
+  const now = Date.now();
+  return {
+    protocol_version: '1.0',
+    message_id: `msg_gateway_${now.toString(36)}_bind`,
+    sequence: now,
+    type: 'binding.result',
+    sent_at: new Date(now).toISOString(),
+    payload: ok
+      ? {
+          reply_to_message_id: bindFrame.message_id,
+          ok: true,
+          data: { device_id: macAddress, desktop_client_id: 'desktop-mock' },
+        }
+      : {
+          reply_to_message_id: bindFrame.message_id,
+          ok: false,
+          error: { code: 'NOT_FOUND', message: '设备未在线' },
+        },
+  };
+}
+
+function validateDeviceBindFrame(frame) {
+  if (!frame || typeof frame !== 'object') return false;
+  if (frame.protocol_version !== '1.0' || frame.type !== 'device.bind') return false;
+  if (typeof frame.message_id !== 'string' || frame.message_id.length === 0) return false;
+  if (!Number.isInteger(frame.sequence) || frame.sequence < 0) return false;
+  if (typeof frame.sent_at !== 'string' || !frame.payload || typeof frame.payload !== 'object') return false;
+  const keys = Object.keys(frame.payload);
+  return keys.length === 1 && keys[0] === 'mac_address' && typeof frame.payload.mac_address === 'string';
+}
+
 /**
  * Summarise a frame for the console list.
  *
@@ -397,6 +429,14 @@ export async function startMockGatewayConsole(options = {}) {
         }
         socket.send(JSON.stringify(reply));
         record(reply, 'outbound');
+      }
+      if (frame.type === 'device.bind') {
+        const mac = String(frame?.payload?.mac_address ?? '').replace(/-/g, ':').toUpperCase();
+        const valid = validateDeviceBindFrame(frame) && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac);
+        const reply = buildBindingResult(frame, mac, valid);
+        socket.send(JSON.stringify(reply));
+        record(reply, 'outbound');
+        publish({ kind: 'binding', mac, ok: valid });
       }
       if (verbose) {
         console.log(`[gateway] 收到 ${frame.type} ${summarizeFrame(frame)}`);
