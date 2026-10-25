@@ -292,3 +292,24 @@ export function getBridge(): LinxboxBridge | null {
   const candidate = (window as { linxbox?: unknown }).linxbox;
   return candidate && typeof candidate === 'object' ? (candidate as LinxboxBridge) : null;
 }
+
+export interface DeviceFacts {
+  readonly mac: string | null;
+  readonly pairedAt: string | null;
+  readonly syncedAt: string | null;
+}
+
+/** 本机显示缓存不可信；只接收展示所需的三个字段。 */
+export function parseDeviceFacts(value: unknown): DeviceFacts | null {
+  if (value === null || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  const nullableString = (field: unknown): field is string | null =>
+    field === null || typeof field === 'string';
+  if (
+    !nullableString(item['mac']) ||
+    !nullableString(item['pairedAt']) ||
+    !nullableString(item['syncedAt'])
+  )
+    return null;
+  return { mac: item['mac'], pairedAt: item['pairedAt'], syncedAt: item['syncedAt'] };
+}

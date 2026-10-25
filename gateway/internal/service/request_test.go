@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KevinHuo/LinxBox/gateway/internal/config"
 	"github.com/KevinHuo/LinxBox/gateway/internal/contracts"
 	"github.com/KevinHuo/LinxBox/gateway/internal/domain"
 	"github.com/KevinHuo/LinxBox/gateway/internal/storage"
@@ -43,7 +44,10 @@ func newRequestEnv(t *testing.T) *requestEnv {
 	t.Cleanup(func() { db.Close() })
 	repos := storage.NewRepositories(db.DB())
 	ctx := t.Context()
-	for _, device := range []string{string(requestDevice), "AA:BB:CC:DD:EE:02"} {
+	for i, device := range []string{string(requestDevice), "AA:BB:CC:DD:EE:02"} {
+		if _, err := repos.Devices.Register(ctx, db.DB(), device, "alice", config.DeviceCredentialKey(base.cfg.Credentials.Devices[i].Token)); err != nil {
+			t.Fatal(err)
+		}
 		if err := repos.Bindings.Insert(ctx, db.DB(), storage.BindingRow{DeviceID: device, DesktopClientID: "desktop-1", Subject: "alice", CreatedAt: time.Now()}); err != nil {
 			t.Fatal(err)
 		}

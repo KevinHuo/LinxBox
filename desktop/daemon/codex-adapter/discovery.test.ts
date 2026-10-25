@@ -38,6 +38,10 @@ describe('discoverCodexBinary', () => {
 });
 
 describe('readCodexVersion', () => {
+  it('区分正常版本文本和成功但无输出的进程', () => {
+    expect(readCodexVersion(process.execPath)).toMatch(/^v\d+\./);
+    expect(readCodexVersion('/usr/bin/true')).toBeNull();
+  });
   it('returns null when the binary refuses to report a version', () => {
     expect(readCodexVersion('/definitely/not/a/binary', 200)).toBeNull();
   });

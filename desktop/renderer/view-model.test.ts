@@ -12,6 +12,7 @@ import {
   isValidMacAddress,
   normalizeMacAddress,
   pendingTaskCount,
+  parseDeviceFacts,
   railAppForView,
   taskRows,
   taskStateLabel,
@@ -28,6 +29,37 @@ const task = (overrides: Partial<TaskFacts> = {}): TaskFacts => ({
   updatedAt: '2026-10-24T08:00:00.000Z',
   needsAttention: false,
   ...overrides,
+});
+
+describe('设备显示缓存', () => {
+  it.each([
+    null,
+    undefined,
+    1,
+    'bad',
+    [],
+    {},
+    { mac: false, pairedAt: null, syncedAt: null },
+    { mac: null, pairedAt: false, syncedAt: null },
+    { mac: null, pairedAt: null, syncedAt: false },
+  ])('忽略非法缓存 %#', (value) => {
+    expect(parseDeviceFacts(value)).toBeNull();
+  });
+  it('保留空值与有效展示字段，丢弃未知扩展', () => {
+    expect(parseDeviceFacts({ mac: null, pairedAt: null, syncedAt: null })).toEqual({
+      mac: null,
+      pairedAt: null,
+      syncedAt: null,
+    });
+    expect(
+      parseDeviceFacts({
+        mac: 'AA:BB:CC:DD:EE:FF',
+        pairedAt: '2026-10-26',
+        syncedAt: '2026-10-26',
+        private: 'hidden',
+      }),
+    ).toEqual({ mac: 'AA:BB:CC:DD:EE:FF', pairedAt: '2026-10-26', syncedAt: '2026-10-26' });
+  });
 });
 
 const project = (overrides: Partial<ProjectFacts> = {}): ProjectFacts => ({
@@ -110,25 +142,31 @@ describe('headPill', () => {
 describe('homeHeadline', () => {
   it('claims the device is online only while connected', () => {
     expect(
-      homeHeadline({
-        configured: true,
-        connected: true,
-        gatewayUrl: 'wss://example.com/ws',
-        tokenHint: '••••abcd',
-        computerName: 'mac',
-      }, true),
+      homeHeadline(
+        {
+          configured: true,
+          connected: true,
+          gatewayUrl: 'wss://example.com/ws',
+          tokenHint: '••••abcd',
+          computerName: 'mac',
+        },
+        true,
+      ),
     ).toBe('已配对 · 设备在线');
   });
 
   it('does not claim a device is online while disconnected', () => {
     expect(
-      homeHeadline({
-        configured: false,
-        connected: false,
-        gatewayUrl: null,
-        tokenHint: null,
-        computerName: null,
-      }, true),
+      homeHeadline(
+        {
+          configured: false,
+          connected: false,
+          gatewayUrl: null,
+          tokenHint: null,
+          computerName: null,
+        },
+        true,
+      ),
     ).toBe('尚未配对 · 等待设备');
   });
 });
@@ -136,25 +174,31 @@ describe('homeHeadline', () => {
 describe('deviceSubtitle', () => {
   it('reports a live connection', () => {
     expect(
-      deviceSubtitle({
-        configured: true,
-        connected: true,
-        gatewayUrl: null,
-        tokenHint: null,
-        computerName: 'mac',
-      }, true),
+      deviceSubtitle(
+        {
+          configured: true,
+          connected: true,
+          gatewayUrl: null,
+          tokenHint: null,
+          computerName: 'mac',
+        },
+        true,
+      ),
     ).toBe('已连接 · 这台 Mac');
   });
 
   it('names the machine that runs the client', () => {
     expect(
-      deviceSubtitle({
-        configured: true,
-        connected: false,
-        gatewayUrl: null,
-        tokenHint: null,
-        computerName: 'mac',
-      }, false),
+      deviceSubtitle(
+        {
+          configured: true,
+          connected: false,
+          gatewayUrl: null,
+          tokenHint: null,
+          computerName: 'mac',
+        },
+        false,
+      ),
     ).toBe('WSS 已连接 · 等待设备绑定');
   });
 });

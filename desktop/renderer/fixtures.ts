@@ -21,7 +21,7 @@ export const mockConnection: ConnectionFacts = {
     },
     online: {
       gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
-      tokenHint: null,
+      tokenHint: '••••••••a5fe',
     },
   },
 };

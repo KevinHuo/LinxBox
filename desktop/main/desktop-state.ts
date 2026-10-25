@@ -91,7 +91,7 @@ export function createDesktopState(options: DesktopStateOptions = {}): DesktopSt
         },
         online: {
           gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
-          accessToken: null,
+          accessToken: '483e724def796c87d600306a2fde1d0b9c70d607cdd2a5fe',
         },
       },
     },

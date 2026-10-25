@@ -647,10 +647,17 @@ export class GatewayConnectionManager {
   }
 
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-    return await Promise.race([
-      promise,
-      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
-    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((resolve) => {
+          timer = setTimeout(() => resolve(fallback), timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Handle one inbound frame and answer it with an ack. */

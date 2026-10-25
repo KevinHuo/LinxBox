@@ -4,15 +4,14 @@ macOS 本地客户端：Electron UI、Main/Daemon 进程边界、本地项目授
 
 ## 状态
 
-**这是 Proposed 阶段的实现，不是已验收的客户端。**
+**这是开发中的客户端实现，线上 Gateway 已接入，完整生产链路仍需按部署环境验收。**
 
 - 开发 Issue：[Task #9 实现 LinxBox Desktop 本地客户端与 Companion Daemon](https://github.com/KevinHuo/LinxBox/issues/9)
 - 执行 Spec：`SPEC-0003`（`Proposed`），状态未 `Accepted`
-- 出站 Gateway client、Codex app-server adapter 和 Electron UI 已有本地实现与自动化测试
-- Electron main 尚未正式接线 Gateway client；SQLite schema 已定义但尚未执行真实持久化
+- 出站 Gateway client、Codex app-server adapter 和 Electron UI 已接线并有自动化测试
+- Electron main 已支持线上 Gateway WSS；SQLite schema 已定义，真实业务持久化仍按部署需求验收
 
-当前真实驱动过本机 Codex app-server，并通过 mock Gateway 验证 WSS 链路；没有连过真实云端
-Gateway，也没有创建业务数据库。这些本地结果不能描述为生产链路已经验收。
+当前已可连接部署中的 Gateway，并真实驱动本机 Codex app-server；线上凭据、网络稳定性、真实设备和完整语音链路仍需在目标环境验收。
 
 ## 目录结构
 
@@ -67,7 +66,7 @@ pnpm format:check   # Prettier
 pnpm lint           # ESLint（type-aware）
 pnpm typecheck      # tsc --noEmit
 pnpm test           # Vitest
-pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statements 均 >= 90%）
+pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statements 均 >= 93%）
 ```
 
 ## 测试覆盖率
@@ -76,12 +75,14 @@ pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statem
 
 | 指标       | 覆盖率 |
 | ---------- | -----: |
-| Statements | 97.10% |
-| Branches   | 91.67% |
-| Functions  | 98.42% |
-| Lines      | 97.25% |
+| Statements | 98.29% |
+| Branches   | 95.77% |
+| Functions  | 98.02% |
+| Lines      | 98.37% |
 
-最近验证：2026-10-25，29 个测试文件通过、1 个跳过；586 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+最近验证：2026-10-26，35 个测试文件通过、1 个跳过；692 个测试通过、3 个既有测试跳过，0 失败。格式、lint、类型检查、四项覆盖率门禁和构建全部通过。四项门槛已从 90% 提高至 93%，统计范围及排除项不变；覆盖率报告为本地生成物，不提交到仓库。
+
+新增回归覆盖配对超时/断线、目录同步超时与重试、历史查询和 UTF-8 分块、原任务续接及迟到结果、配置损坏和显示缓存。用户已确认保留 main 的 WSS 默认目录/不重复授权规则，旧断言按该规则更新，仍验证无目录拒绝、项目身份匹配、不回退新会话及重复投递。修复异步操作完成后残留超时定时器、握手失败的 provider 进程回收及原始错误文案回显，并校验本机显示缓存的字段。验证使用模拟 Gateway/provider，不代表真实语音或模型任务验收。
 
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 
@@ -125,16 +126,15 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - 契约草稿切片：`Gateway/Desktop 1.0` 帧、`task-domain/v1` 状态机、`task-result/v1`
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
 - **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
-- **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + mock Gateway 联调脚本
+- **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + Gateway 连接环境切换
 - **WSS 指令不重复授权**：Electron 收到 Gateway 的 `task.dispatch` 后直接交给本机 Codex；Electron 的本地项目目录授权不是执行前置条件。已发布会话沿用 Codex 自己记录的工作目录，普通新任务使用 Desktop 默认工作目录。
-- **会话目录联调**：Electron 把已授权项目内的 Codex 会话以 `agent_sessions.sync` 全量同步给 mock Gateway，控制台按会话下达续接任务
+- **会话目录同步**：Electron 把已授权项目内的 Codex 会话以 `agent_sessions.sync` 全量同步给 Gateway，按会话目标续接任务
 - **本机会话浏览**：读 Codex 的会话列表与聊天记录（`thread/list` / `thread/read`），**本地读取、不调用模型，没有额度也能用**
 
 未实现（属于后续 Slice）：
 
-- 真实云端 Gateway（当前只有本地 mock）
 - SQLite 真实持久化与迁移执行
-- 结果投影接入真实任务（`result-projector` 已就绪，尚未接上真实 turn 的产物）
+- 完整执行事实投影：当前 provider 明确完成且无错误时，发送只证明本轮追问完成的结构化 TaskResult；文件改动、验证细节尚未汇总，结果中的 risk 会明确标注，不能据此声称测试通过或整体工程已验收
 
 ## 真实 Codex 接入
 
@@ -305,13 +305,11 @@ pnpm e2e:mock-console    # 终端 B：起 Desktop 侧，浏览器打开 http://1
 
 ### 授权本地项目
 
-远程任务要能在本机执行，得先在这台 Mac 上授权一个目录：**设置 → 本地项目 → 授权目录**，在系统
-目录选择器里选一个文件夹。没授权时，远程下发的任务会被本地授权检查拒绝（`disposition=rejected`，
-「项目未授权」）。
+可以通过 **设置 → 本地项目 → 授权目录** 指定要展示和同步的项目。沿用 main 当前行为，WSS 指令不重复要求 Electron 项目授权：新任务在本机映射或默认目录执行，续接沿用本机 Codex 记录的目录。不存在或没有可校验目录的会话仍拒绝，不回退新任务。
 
 > 目录只能由主进程的系统选择器给出，渲染层无法传入路径——这是安全边界，自动化脚本无法代替这一步。
 > 授权后 Electron 会枚举该目录下的既有 Codex 会话，并把不含绝对路径的会话目录同步给 mock Gateway。
-> 控制台只能选择这份目录里的会话，不再要求人工复制 `project_id`；未由本机发布的 `thread_id` 会被拒绝。
+> 控制台从已同步目录选择会话并携带匹配的项目与标题；未命中本机目录的 thread 仍须由 Codex 解析成功，不从远端标识推导路径。
 
 项目授权当前仍是进程内状态，Electron 重启后需要重新授权目录。真实云端 Gateway、固件列表读取和灵矽
 MCP 路由仍属于 Issue #14 的后续实现；这里验证的是同一消息语义下的本机 mock 闭环。

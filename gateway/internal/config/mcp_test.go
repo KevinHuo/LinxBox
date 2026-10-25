@@ -11,7 +11,7 @@ func TestMCPCredentials(t *testing.T) {
 		{"规范化", MCPCredential{Token: "mcp-token", DeviceID: "aabbccddee01", AgentID: "agent"}, true},
 		{"空凭据", MCPCredential{DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "agent"}, false},
 		{"复用设备凭据", MCPCredential{Token: "dev-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "agent"}, false},
-		{"未知设备", MCPCredential{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:02", AgentID: "agent"}, false},
+		{"设备可在之后登记", MCPCredential{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:02", AgentID: "agent"}, true},
 		{"非法设备", MCPCredential{Token: "mcp-token", DeviceID: "invalid", AgentID: "agent"}, false},
 		{"缺少智能体", MCPCredential{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:01"}, false},
 	} {
@@ -22,7 +22,7 @@ func TestMCPCredentials(t *testing.T) {
 			if (err == nil) != tc.valid {
 				t.Fatalf("凭据校验结果不符: %v", err)
 			}
-			if tc.valid && got.Credentials.MCP[0].DeviceID != "AA:BB:CC:DD:EE:01" {
+			if tc.name == "规范化" && got.Credentials.MCP[0].DeviceID != "AA:BB:CC:DD:EE:01" {
 				t.Fatal("MCP 设备未规范化")
 			}
 		})

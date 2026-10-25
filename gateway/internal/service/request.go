@@ -20,20 +20,31 @@ type RequestNotifier interface {
 	NotifyRequest(deviceID, event string, request contracts.Request)
 }
 
-// RequestService 实现 #14 的 prepare→最终原文→待确认，不调度执行。
+// RequestConflict 是内部排查信息，不扩展固件的共享 Error 字段。
+type RequestConflict struct {
+	Blockers     []storage.RequestBlocker
+	TargetStatus string
+}
+
+func (*RequestConflict) Error() string { return "设备或目标会话存在未结束请求" }
+
+// RequestService 实现 #14 的准备、原文、确认投递与执行事实持久化。
 // 锁覆盖提交与通知，避免同一进程中旧通知越过取消/过期事件。
 type RequestService struct {
-	mu       sync.Mutex
-	repos    *storage.Repositories
-	requests storage.RequestRepo
-	cfg      *config.Config
-	notifier RequestNotifier
-	now      func() time.Time
+	mu         sync.Mutex
+	repos      *storage.Repositories
+	requests   storage.RequestRepo
+	executions storage.ExecutionRepo
+	dispatcher TaskDispatcher
+	cfg        *config.Config
+	notifier   RequestNotifier
+	now        func() time.Time
 }
 
 // NewRequestService 构造持久化录音请求服务。
 func NewRequestService(repos *storage.Repositories, cfg *config.Config, notifier RequestNotifier) *RequestService {
-	return &RequestService{repos: repos, cfg: cfg, notifier: notifier, now: time.Now}
+	dispatcher, _ := notifier.(TaskDispatcher)
+	return &RequestService{repos: repos, cfg: cfg, notifier: notifier, dispatcher: dispatcher, now: time.Now}
 }
 
 // Prepare 固定已绑定 Desktop 的会话、thread/project/title；重试不延长超时。
@@ -55,7 +66,7 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 		if err != nil {
 			return err
 		}
-		if err := validateBindingOwner(s.cfg, binding); err != nil {
+		if err := validateBindingOwner(ctx, tx, s.cfg, binding); err != nil {
 			return err
 		}
 		existing, err := s.requests.Get(ctx, tx, id)
@@ -76,12 +87,13 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 		if err != nil {
 			return err
 		}
-		busy, err := s.requests.Busy(ctx, tx, string(device), binding.DesktopClientID, session)
+		blockers, err := s.requests.Blockers(ctx, tx, string(device), binding.DesktopClientID, session)
 		if err != nil {
 			return err
 		}
-		if busy || target.Status == "running" || target.Status == "unknown" {
-			return domain.ErrConflict("设备或目标会话存在未结束请求")
+		if len(blockers) > 0 || target.Status == "running" || target.Status == "unknown" {
+			return domain.WrapError(domain.CodeConflict, "设备或目标会话存在未结束请求",
+				&RequestConflict{Blockers: blockers, TargetStatus: target.Status})
 		}
 		r := &storage.RequestRow{
 			Request:  contracts.Request{RequestID: id, AgentSessionID: session, TargetTitle: target.Title, Status: "awaiting_text"},
@@ -97,9 +109,21 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 	return result, err
 }
 
-// Propose 原样保存最终 ASR；每次只按调用携带的 request_id 定位，不查询“最新录音”。
+// Propose 原样保存最终 ASR；显式 request_id 无论联调开关如何均精确定位，不回退其他请求。
 func (s *RequestService) Propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string) (contracts.Request, error) {
-	if !domain.ValidateID(id) || !domain.ValidateID(agent) || !domain.ValidateID(voiceSession) {
+	return s.propose(ctx, device, id, agent, voiceSession, text, false)
+}
+
+// ProposeImplicit 在明确开启的联调模式中，事务内定位唯一待处理请求；不新建或改投目标。
+func (s *RequestService) ProposeImplicit(ctx context.Context, device domain.DeviceID, agent, voiceSession, text string) (contracts.Request, error) {
+	if !s.cfg.MCP.AllowImplicitRequestID {
+		return contracts.Request{}, domain.ErrPermissionDenied("MCP 请求自动关联未开启")
+	}
+	return s.propose(ctx, device, "", agent, voiceSession, text, true)
+}
+
+func (s *RequestService) propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string, implicit bool) (contracts.Request, error) {
+	if (!implicit && !domain.ValidateID(id)) || !domain.ValidateID(agent) || !domain.ValidateID(voiceSession) {
 		return contracts.Request{}, domain.ErrInvalidArgument("缺少本轮请求或灵矽上下文")
 	}
 	if !utf8.ValidString(text) || strings.TrimSpace(text) == "" || utf8.RuneCountInString(text) > 16000 || len(text) > 16*1024 ||
@@ -107,7 +131,23 @@ func (s *RequestService) Propose(ctx context.Context, device domain.DeviceID, id
 		(s.cfg.Limits.DraftMaxUTF8Bytes > 0 && len(text) > s.cfg.Limits.DraftMaxUTF8Bytes) {
 		return contracts.Request{}, domain.ErrInvalidArgument("最终识别文字为空、无效或超过长度限制")
 	}
-	return s.change(ctx, device, id, func(tx *sql.Tx, r *storage.RequestRow) (string, error) {
+	selectRequest := func(tx *sql.Tx) (*storage.RequestRow, error) {
+		if !implicit {
+			return s.requests.Get(ctx, tx, id)
+		}
+		ids, err := s.requests.PendingIDsForDevice(ctx, tx, string(device), s.now().UnixMilli())
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 0 {
+			return nil, domain.ErrNotFound("没有可关联的待处理请求，请先 request.prepare")
+		}
+		if len(ids) != 1 {
+			return nil, domain.ErrConflict("设备存在多个可关联请求，不能自动选择")
+		}
+		return s.requests.Get(ctx, tx, ids[0])
+	}
+	return s.changeSelected(ctx, device, selectRequest, func(tx *sql.Tx, r *storage.RequestRow) (string, error) {
 		if r.Status == "cancelled" || r.Expired {
 			return "", domain.ErrConflict("请求已取消或过期")
 		}
@@ -140,7 +180,11 @@ func (s *RequestService) Propose(ctx context.Context, device domain.DeviceID, id
 
 // Get 只返回 Gateway 已保存快照，不向 Desktop 查询执行结果。
 func (s *RequestService) Get(ctx context.Context, device domain.DeviceID, id string) (contracts.Request, error) {
-	return s.change(ctx, device, id, func(*sql.Tx, *storage.RequestRow) (string, error) { return "", nil })
+	request, err := s.change(ctx, device, id, func(*sql.Tx, *storage.RequestRow) (string, error) { return "", nil })
+	if domain.CodeOf(err) == domain.CodeNotFound {
+		return request, domain.WrapError(domain.CodeNotFound, domain.RequestRecoveryMessage, err)
+	}
+	return request, err
 }
 
 // Cancel 只取消确认前请求；终态保留原文及 request_id。
@@ -158,6 +202,10 @@ func (s *RequestService) Cancel(ctx context.Context, device domain.DeviceID, id 
 }
 
 func (s *RequestService) change(ctx context.Context, device domain.DeviceID, id string, fn func(*sql.Tx, *storage.RequestRow) (string, error)) (contracts.Request, error) {
+	return s.changeSelected(ctx, device, func(tx *sql.Tx) (*storage.RequestRow, error) { return s.requests.Get(ctx, tx, id) }, fn)
+}
+
+func (s *RequestService) changeSelected(ctx context.Context, device domain.DeviceID, selectRequest func(*sql.Tx) (*storage.RequestRow, error), fn func(*sql.Tx, *storage.RequestRow) (string, error)) (contracts.Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.expireLocked(ctx); err != nil {
@@ -166,7 +214,7 @@ func (s *RequestService) change(ctx context.Context, device domain.DeviceID, id 
 	var result contracts.Request
 	var event string
 	err := s.repos.WithTx(ctx, func(tx *sql.Tx) error {
-		r, err := s.requests.Get(ctx, tx, id)
+		r, err := selectRequest(tx)
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.ErrNotFound("请求不存在")
 		}
@@ -180,7 +228,7 @@ func (s *RequestService) change(ctx context.Context, device domain.DeviceID, id 
 		if err != nil {
 			return err
 		}
-		if err := validateBindingOwner(s.cfg, binding); err != nil {
+		if err := validateBindingOwner(ctx, tx, s.cfg, binding); err != nil {
 			return err
 		}
 		event, err = fn(tx, r)
@@ -233,7 +281,7 @@ func (s *RequestService) expireLocked(ctx context.Context) error {
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
-			if err == nil && binding.DesktopClientID == r.DesktopID && validateBindingOwner(s.cfg, binding) == nil {
+			if err == nil && binding.DesktopClientID == r.DesktopID && validateBindingOwner(ctx, tx, s.cfg, binding) == nil {
 				expired = append(expired, r)
 			}
 		}

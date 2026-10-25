@@ -22,10 +22,11 @@ const (
 
 // Principal 是认证后的连接主体。
 type Principal struct {
-	Kind      PrincipalKind
-	DeviceID  domain.DeviceID        // 设备连接有效
-	DesktopID domain.DesktopClientID // Desktop 连接有效
-	Subject   domain.Subject
+	Kind          PrincipalKind
+	DeviceID      domain.DeviceID        // 固件 hello 成功后有效
+	DesktopID     domain.DesktopClientID // Desktop 连接有效
+	Subject       domain.Subject
+	CredentialKey string
 }
 
 // Authenticator 按配置凭据精确匹配握手 token。
@@ -61,11 +62,7 @@ func (a *Authenticator) Authenticate(kind PrincipalKind, r *http.Request) (Princ
 		if !ok {
 			return Principal{}, domain.ErrUnauthenticated("设备凭据无效")
 		}
-		deviceID, err := domain.NormalizeMAC(cred.DeviceID)
-		if err != nil {
-			return Principal{}, domain.ErrInternal("设备凭据配置不合法")
-		}
-		return Principal{Kind: kind, DeviceID: deviceID, Subject: domain.Subject(cred.Subject)}, nil
+		return Principal{Kind: kind, Subject: domain.Subject(cred.Subject), CredentialKey: config.DeviceCredentialKey(token)}, nil
 	case PrincipalDesktop:
 		cred, ok := a.desktopCreds[token]
 		if !ok {

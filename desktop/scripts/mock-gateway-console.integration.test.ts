@@ -185,6 +185,8 @@ describe('mock gateway console', () => {
       body: JSON.stringify({
         kind: 'dispatch',
         agent_session_id: 'codex_th_1',
+        project_id: 'prj_local_1',
+        title: '已有会话',
         payload: { prompt: '继续检查' },
       }),
     });
@@ -233,8 +235,20 @@ describe('mock gateway console', () => {
   });
 
   it.each([
-    ['project.upsert', { project_id: 'prj_local_1', display_name: 'LinxBox', capabilities: ['read', 'write', 'test'], availability: 'online', grant_version: 2 }],
-    ['project.revoke', { project_id: 'prj_local_1', grant_version: 2, revoked_at: '2026-10-25T00:00:00.000Z' }],
+    [
+      'project.upsert',
+      {
+        project_id: 'prj_local_1',
+        display_name: 'LinxBox',
+        capabilities: ['read', 'write', 'test'],
+        availability: 'online',
+        grant_version: 2,
+      },
+    ],
+    [
+      'project.revoke',
+      { project_id: 'prj_local_1', grant_version: 2, revoked_at: '2026-10-25T00:00:00.000Z' },
+    ],
   ] as const)('delivers %s to the connected Desktop', async (kind, payload) => {
     const service = await start();
     const socket = await connectDesktop(service.port);
@@ -250,7 +264,9 @@ describe('mock gateway console', () => {
     await waitFor(() => received.length > 0);
     expect(received[0]?.type).toBe(kind);
     expect(received[0]?.payload).toMatchObject(
-      kind === 'project.revoke' ? { project_id: payload.project_id, grant_version: payload.grant_version } : payload,
+      kind === 'project.revoke'
+        ? { project_id: payload.project_id, grant_version: payload.grant_version }
+        : payload,
     );
     expect(service.sent[0]?.type).toBe(kind);
     socket.close();

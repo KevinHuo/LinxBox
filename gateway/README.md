@@ -5,7 +5,7 @@ LinxBox Gateway 是用 Go 编写的常驻后端服务：固件（AI Passport）�
 一个监听端口、一个本地 SQLite 数据库；MCP 与 WebSocket 是同一程序的不同入口。
 
 当前实现覆盖工程与契约、绑定与目录，以及历史 / 正文读取路由和新消息通知。
-另已接入 MCP 最终文字提案及请求准备、查询、取消；请求确认、调度与执行事实暂缓。本仓库 `contracts/`
+另已接入 MCP 最终文字提案、请求准备/查询/取消、确认投递和执行事实；见 [MVP 流程](docs/execution.md)。本仓库 `contracts/`
 仍是字段契约的唯一正文，本程序生成的 `internal/contracts/assets/` 为构建资源。
 
 ## 目录
@@ -49,15 +49,21 @@ make build
 
 `config.example.json` 含全部配置项与无效示例值；真实配置和凭据不入仓库。
 必需项：`listen.addr`、`database.path`、`credentials.devices`、
-`credentials.desktops`（至少各一个）。配对许可由 `pairing.rules` 预置；
-知道设备 MAC 不等于拥有配对权。
+`credentials.desktops`（至少各一个）。两端凭据各自唯一、`subject` 相同；
+无需预配置设备 MAC 或配对白名单。固件建立 WS 后用 `device.hello` 上报真实 MAC，
+Gateway 自动登记账号归属，Desktop 随后通过 `device.bind` 绑定同账号的在线设备。
+
+Ubuntu 安装、已有服务升级、二进制验证和两端接入地址见[WS 联调部署步骤](docs/ws-deployment.md)。
 
 - 开发与回环地址允许 HTTP/WS；公网由反向代理终止 TLS。如直接暴露，
   配置 `listen.tls_cert_file` / `listen.tls_key_file`。
 - 凭据 token 通过子协议 `linxbox.v1, linxbox-token.<token>` 或
-  `Authorization: Bearer <token>` 传递；token 不进入帧、日志或数据库。
+  `Authorization: Bearer <token>` 传递；明文 token 不进入帧、日志或数据库。
+  数据库仅保存设备登记所用凭据的 SHA-256 指纹，用于核对当前授权是否仍有效。
 - MCP 使用 `credentials.mcp` 的独立 Bearer 凭据，绑定一个设备及灵矽智能体；
   省略该配置时拒绝全部 MCP 访问。设备和 Desktop 凭据不能访问 MCP。
+- 日志默认 `log.format=text`，可设 `json`。info 显示中文交互摘要、追踪短号、脱敏请求 body、错误原因和排查提示；
+  分发与入队细节位于 debug。正文、凭据等不直接写入日志，body 有大小限制。
 
 ## 验证
 
@@ -72,6 +78,28 @@ make release           # CGO_ENABLED=0 构建 Linux amd64/arm64
 覆盖率门禁由 `tools/covergate` 执行；PR 增量包门禁在 CI 中以
 `INCREMENTAL_BASE=origin/main make check` 运行。
 race 检测与发布构建分开：发布构建不要求 CGO。
+
+## 测试覆盖率
+
+当前覆盖率由 `make check` 生成，统计 `gateway/` 内全部自有 Go 包，使用
+`go test -count=1 -covermode=atomic -coverpkg=./...`，不排除未命中的源码；整体及关键包
+门槛均为 90%。最近本地验证（2026-10-26）结果如下：
+
+| 范围 | 语句覆盖率 | 已覆盖 / 总数 |
+| --- | ---: | ---: |
+| 整体 | 93.08% | 2826 / 3036 |
+| `cmd/linxbox-gateway` | 92.31% | 36 / 39 |
+| `cmd/linxbox-smoke` | 92.62% | 276 / 298 |
+| `internal/config` | 99.31% | 143 / 144 |
+| `internal/contracts` | 97.69% | 127 / 130 |
+| `internal/domain` | 100.00% | 42 / 42 |
+| `internal/lifecycle` | 96.63% | 172 / 178 |
+| `internal/service` | 91.19% | 600 / 658 |
+| `internal/storage` | 90.95% | 181 / 199 |
+| `internal/transport` | 94.25% | 1115 / 1183 |
+
+覆盖率报告为本地或 CI 生成物，不提交到仓库；CI 会在摘要中展示关键包结果，并保存
+`gateway-go-coverage` artifact。覆盖率只反映主机测试代码路径，不代表真实设备、云端服务或完整语音链路验收。
 
 `make smoke-local` 自动启动回环 TCP 服务，以固定模拟会话验证绑定、5+1 目录分页、
 会话详情、历史、中文正文连续分块、新消息通知和错误凭据拒绝。它连续运行两次，
@@ -89,16 +117,16 @@ race 检测与发布构建分开：发布构建不要求 CGO。
 | `WSS /v1/devices/connect` | hello、目录分页、单条会话、历史与正文读取 | 已实现 |
 | `WSS /v1/clients/connect` | hello、绑定、目录同步、query.result、新消息通知 | 已实现 |
 | `GET /healthz` / `GET /readyz` | 存活与就绪探测 | 已实现 |
-| `GET /mcp`、`POST /mcp/message` | 灵矽 SSE MCP，唯一工具 `propose_task_reply` | 已实现 Gateway 接收；真实平台待联调 |
+| `/mcp`、`POST /mcp/message` | Streamable HTTP 与兼容旧 SSE，唯一工具 `propose_task_reply` | 已实现 Gateway 接收；真实平台待联调 |
 | `request.prepare/get/cancel` | 固定目标、读取快照、确认前取消 | 已实现 Gateway 侧 |
-| `request.confirm`、任务调度 | 确认与 `task.*` | 未实现；明确返回依赖不可用，不执行任务 |
+| `request.confirm`、任务调度 | 固定目标投递、`task.*` 与持久状态 | 主机模拟通过；真实三端执行待验收 |
 
 ## 已知限制（与设计文档一致）
 
-- 固件尚未接入 Gateway 录音准备及请求通知；确认投递、执行事实与 unknown 恢复未实现。
+- 固件真实接线与界面验收需独立提供证据；Gateway 的确认投递、执行事实和 unknown 恢复已实现，不能用模拟结果代替真实三端验收。
 - 目录 cursor 绑定设备、Desktop 和目录版本，5 分钟过期；目录变动或 Gateway 重启后从首页重取。
 - 默认每设备最多 4 条、全局最多 128 条在途历史 / 正文查询，15 秒超时；Desktop 断线明确失败，不自动重试。
-- 现有 Desktop 运行代码尚未支持绑定、全量目录与 sync.result，需独立实现 PR。
+- Desktop 已有绑定、目录与查询处理代码；目录同步应答等待、历史按轮次分页、持久去重及完整结果投影仍待对齐。
 - 灵矽逐轮 `X-Linx-Request-Id` 透传待平台支持；当前只能 mock 验证。
 - 真固件 + 灵矽 + Gateway + Desktop 的端到端语音链路验收未完成；
   本程序的 `make smoke` 与集成测试是主机模拟证据，不能据此声称端到端可用。

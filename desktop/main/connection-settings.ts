@@ -23,6 +23,7 @@ interface LegacyConnectionSettings {
 
 export const LOCAL_GATEWAY_URL = 'ws://127.0.0.1:8787/v1/clients/connect';
 export const ONLINE_GATEWAY_URL = 'ws://124.220.162.10:8787/v1/clients/connect';
+export const ONLINE_GATEWAY_TOKEN = '483e724def796c87d600306a2fde1d0b9c70d607cdd2a5fe';
 export const SETTINGS_FILE_NAME = 'connection.json';
 const OWNER_ONLY = 0o600;
 
@@ -32,7 +33,7 @@ export function resolveSettingsPath(userDataDir: string): string {
 
 export function createConnectionSettings(
   computerName = '',
-  onlineToken = '',
+  onlineToken = ONLINE_GATEWAY_TOKEN,
 ): StoredConnectionSettings {
   return {
     activeProfile: 'online',

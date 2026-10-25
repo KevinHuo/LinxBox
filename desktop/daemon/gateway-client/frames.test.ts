@@ -45,7 +45,11 @@ describe('parseInboundFrame', () => {
     const invalid = parseInboundFrame({
       ...dispatchFrame,
       type: 'binding.result',
-      payload: { reply_to_message_id: 'msg_bind', ok: false, error: { code: 'NOPE', message: 'x' } },
+      payload: {
+        reply_to_message_id: 'msg_bind',
+        ok: false,
+        error: { code: 'NOPE', message: 'x' },
+      },
     });
     expect(invalid.ok).toBe(false);
   });
@@ -68,24 +72,33 @@ describe('parseInboundFrame', () => {
   });
 
   it('accepts contract-defined project and history request frames', () => {
-    expect(parseInboundFrame({
-      ...dispatchFrame,
-      type: 'project.upsert',
-      payload: {
-        project_id: 'prj_1', display_name: 'LinxBox', capabilities: ['read'],
-        availability: 'online', grant_version: 1,
-      },
-    }).ok).toBe(true);
-    expect(parseInboundFrame({
-      ...dispatchFrame,
-      type: 'messages.list',
-      payload: { agent_session_id: 'ses_1' },
-    }).ok).toBe(true);
-    expect(parseInboundFrame({
-      ...dispatchFrame,
-      type: 'message.content.get',
-      payload: { agent_session_id: 'ses_1', message_id: 'msg_1', offset: 0 },
-    }).ok).toBe(true);
+    expect(
+      parseInboundFrame({
+        ...dispatchFrame,
+        type: 'project.upsert',
+        payload: {
+          project_id: 'prj_1',
+          display_name: 'LinxBox',
+          capabilities: ['read'],
+          availability: 'online',
+          grant_version: 1,
+        },
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseInboundFrame({
+        ...dispatchFrame,
+        type: 'messages.list',
+        payload: { agent_session_id: 'ses_1' },
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseInboundFrame({
+        ...dispatchFrame,
+        type: 'message.content.get',
+        payload: { agent_session_id: 'ses_1', message_id: 'msg_1', offset: 0 },
+      }).ok,
+    ).toBe(true);
   });
 
   it('accepts a device-selected existing Codex session continuation', () => {
@@ -182,12 +195,22 @@ describe('parseInboundFrame', () => {
 
 describe('outbound frame builders', () => {
   it('builds device.bind and rejects malformed MAC addresses', () => {
-    expect(buildDeviceBindFrame({
-      messageId: 'msg_bind', sequence: 1, macAddress: 'AA:BB:CC:DD:EE:FF', sentAt: '2026-10-24T01:00:00Z',
-    }).payload.mac_address).toBe('AA:BB:CC:DD:EE:FF');
-    expect(() => buildDeviceBindFrame({
-      messageId: 'msg_bind', sequence: 1, macAddress: 'not-a-mac', sentAt: '2026-10-24T01:00:00Z',
-    })).toThrow();
+    expect(
+      buildDeviceBindFrame({
+        messageId: 'msg_bind',
+        sequence: 1,
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+        sentAt: '2026-10-24T01:00:00Z',
+      }).payload.mac_address,
+    ).toBe('AA:BB:CC:DD:EE:FF');
+    expect(() =>
+      buildDeviceBindFrame({
+        messageId: 'msg_bind',
+        sequence: 1,
+        macAddress: 'not-a-mac',
+        sentAt: '2026-10-24T01:00:00Z',
+      }),
+    ).toThrow();
   });
   it('builds a hello frame with the negotiated protocol version', () => {
     const frame = buildHelloFrame({

@@ -11,7 +11,6 @@
     "devices": [
       {
         "token": "<设备凭据 token，与部署环境注入保持一致>",
-        "device_id": "AA:BB:CC:DD:EE:01",
         "subject": "<账号主体>"
       }
     ],
@@ -30,13 +29,8 @@
       }
     ]
   },
-  "pairing": {
-    "rules": [
-      {
-        "subject": "<账号主体>",
-        "device_ids": ["AA:BB:CC:DD:EE:01"]
-      }
-    ]
+  "mcp": {
+    "allow_implicit_request_id": false
   },
   "limits": {
     "max_frame_bytes": 65536,
@@ -55,6 +49,7 @@
     "query_timeout": "15s"
   },
   "log": {
+    "format": "text",
     "level": "info"
   }
 }

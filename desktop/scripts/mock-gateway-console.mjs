@@ -80,8 +80,14 @@ export function buildCancelFrame(taskId, reason = '用户在控制台取消') {
 
 export function buildGatewayTestFrame(type, payload) {
   const now = Date.now();
-  return { protocol_version: '1.0', message_id: `msg_ui_${now.toString(36)}_gateway`, sequence: now,
-    type, sent_at: new Date(now).toISOString(), payload };
+  return {
+    protocol_version: '1.0',
+    message_id: `msg_ui_${now.toString(36)}_gateway`,
+    sequence: now,
+    type,
+    sent_at: new Date(now).toISOString(),
+    payload,
+  };
 }
 
 /** Acknowledge one replace-all session catalogue from the Desktop. */
@@ -135,22 +141,47 @@ function validateDeviceBindFrame(frame) {
   if (frame.protocol_version !== '1.0' || frame.type !== 'device.bind') return false;
   if (typeof frame.message_id !== 'string' || frame.message_id.length === 0) return false;
   if (!Number.isInteger(frame.sequence) || frame.sequence < 0) return false;
-  if (typeof frame.sent_at !== 'string' || !frame.payload || typeof frame.payload !== 'object') return false;
+  if (typeof frame.sent_at !== 'string' || !frame.payload || typeof frame.payload !== 'object')
+    return false;
   const keys = Object.keys(frame.payload);
-  return keys.length === 1 && keys[0] === 'mac_address' && typeof frame.payload.mac_address === 'string';
+  return (
+    keys.length === 1 && keys[0] === 'mac_address' && typeof frame.payload.mac_address === 'string'
+  );
 }
 
 const DESKTOP_TYPES = new Set([
-  'client.hello', 'client.heartbeat', 'device.bind', 'task.ack', 'task.started',
-  'task.progress', 'task.approval_required', 'task.completed', 'task.failed',
-  'task.cancelled', 'task.interrupted', 'agent_sessions.sync', 'message.available', 'query.result',
+  'client.hello',
+  'client.heartbeat',
+  'device.bind',
+  'task.ack',
+  'task.started',
+  'task.progress',
+  'task.approval_required',
+  'task.completed',
+  'task.failed',
+  'task.cancelled',
+  'task.interrupted',
+  'agent_sessions.sync',
+  'message.available',
+  'query.result',
 ]);
 
 function validateDesktopFrame(frame) {
-  return Boolean(frame && typeof frame === 'object' && frame.protocol_version === '1.0' &&
-    typeof frame.message_id === 'string' && frame.message_id.length > 0 && frame.message_id.length <= 128 &&
-    Number.isInteger(frame.sequence) && frame.sequence >= 0 && DESKTOP_TYPES.has(frame.type) &&
-    typeof frame.sent_at === 'string' && frame.payload && typeof frame.payload === 'object' && !Array.isArray(frame.payload));
+  return Boolean(
+    frame &&
+    typeof frame === 'object' &&
+    frame.protocol_version === '1.0' &&
+    typeof frame.message_id === 'string' &&
+    frame.message_id.length > 0 &&
+    frame.message_id.length <= 128 &&
+    Number.isInteger(frame.sequence) &&
+    frame.sequence >= 0 &&
+    DESKTOP_TYPES.has(frame.type) &&
+    typeof frame.sent_at === 'string' &&
+    frame.payload &&
+    typeof frame.payload === 'object' &&
+    !Array.isArray(frame.payload),
+  );
 }
 
 /**
@@ -347,15 +378,42 @@ export async function startMockGatewayConsole(options = {}) {
           return;
         }
 
-        const gatewayKinds = new Set(['messages.list', 'message.content.get', 'project.upsert', 'project.revoke']);
-        const kind = gatewayKinds.has(payload.kind) ? payload.kind : payload.kind === 'cancel' ? 'cancel' : 'dispatch';
+        const gatewayKinds = new Set([
+          'messages.list',
+          'message.content.get',
+          'project.upsert',
+          'project.revoke',
+        ]);
+        const kind = gatewayKinds.has(payload.kind)
+          ? payload.kind
+          : payload.kind === 'cancel'
+            ? 'cancel'
+            : 'dispatch';
         let frame;
         if (gatewayKinds.has(kind)) {
           const defaults = {
-            'messages.list': { agent_session_id: payload.agent_session_id ?? agentSessions[0]?.agent_session_id ?? 'codex_missing' },
-            'message.content.get': { agent_session_id: payload.agent_session_id ?? agentSessions[0]?.agent_session_id ?? 'codex_missing', message_id: payload.message_id ?? 'msg_missing', offset: 0 },
-            'project.upsert': { project_id: payload.project_id ?? 'prj_demo_0001', display_name: payload.display_name ?? 'LinxBox', capabilities: ['read', 'write', 'test'], availability: 'online', grant_version: Number(payload.grant_version ?? 1) },
-            'project.revoke': { project_id: payload.project_id ?? 'prj_demo_0001', grant_version: Number(payload.grant_version ?? 1), revoked_at: new Date().toISOString() },
+            'messages.list': {
+              agent_session_id:
+                payload.agent_session_id ?? agentSessions[0]?.agent_session_id ?? 'codex_missing',
+            },
+            'message.content.get': {
+              agent_session_id:
+                payload.agent_session_id ?? agentSessions[0]?.agent_session_id ?? 'codex_missing',
+              message_id: payload.message_id ?? 'msg_missing',
+              offset: 0,
+            },
+            'project.upsert': {
+              project_id: payload.project_id ?? 'prj_demo_0001',
+              display_name: payload.display_name ?? 'LinxBox',
+              capabilities: ['read', 'write', 'test'],
+              availability: 'online',
+              grant_version: Number(payload.grant_version ?? 1),
+            },
+            'project.revoke': {
+              project_id: payload.project_id ?? 'prj_demo_0001',
+              grant_version: Number(payload.grant_version ?? 1),
+              revoked_at: new Date().toISOString(),
+            },
           };
           frame = buildGatewayTestFrame(kind, { ...defaults[kind], ...payload.payload });
         } else if (kind === 'cancel') {
@@ -377,7 +435,9 @@ export async function startMockGatewayConsole(options = {}) {
               (typeof payload.title === 'string' && payload.title !== selected.title))
           ) {
             response.writeHead(409, { 'content-type': 'application/json; charset=utf-8' });
-            response.end(JSON.stringify({ ok: false, message: '项目与对话标题已变化，请重新选择' }));
+            response.end(
+              JSON.stringify({ ok: false, message: '项目与对话标题已变化，请重新选择' }),
+            );
             return;
           }
           const overrides = { ...(payload.payload ?? {}) };
@@ -475,8 +535,11 @@ export async function startMockGatewayConsole(options = {}) {
         record(reply, 'outbound');
       }
       if (frame.type === 'device.bind') {
-        const mac = String(frame?.payload?.mac_address ?? '').replace(/-/g, ':').toUpperCase();
-        const valid = validateDeviceBindFrame(frame) && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac);
+        const mac = String(frame?.payload?.mac_address ?? '')
+          .replace(/-/g, ':')
+          .toUpperCase();
+        const valid =
+          validateDeviceBindFrame(frame) && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac);
         const reply = buildBindingResult(frame, mac, valid);
         socket.send(JSON.stringify(reply));
         record(reply, 'outbound');

@@ -31,6 +31,7 @@ func run(args []string) int {
 	fs := flag.NewFlagSet("linxbox-smoke", flag.ContinueOnError)
 	configPath := fs.String("config", "", "网关配置文件路径（读取凭据与监听地址）")
 	baseURL := fs.String("url", "", "网关基础 URL（默认 ws://<listen.addr>）")
+	deviceMAC := fs.String("device-mac", "AA:BB:CC:DD:EE:01", "模拟固件主动上报的 MAC，与服务端配置无关")
 	if err := fs.Parse(args); err != nil {
 		fs.Usage()
 		return 2
@@ -49,7 +50,7 @@ func run(args []string) int {
 		base = "ws://" + cfg.Listen.Addr
 	}
 	logger, _ := lifecycle.NewLogger("warn", os.Stderr)
-	s := &smoker{cfg: cfg, base: base, logger: logger}
+	s := &smoker{cfg: cfg, base: base, logger: logger, mac: *deviceMAC}
 
 	if err := s.run(); err != nil {
 		fmt.Fprintf(os.Stderr, "SMOKE FAIL: %v\n", err)
@@ -60,6 +61,7 @@ func run(args []string) int {
 }
 
 type smoker struct {
+	mac    string
 	cfg    *config.Config
 	base   string
 	logger *slog.Logger
@@ -84,7 +86,10 @@ func (s *smoker) run() error {
 
 	deviceCred := s.cfg.Credentials.Devices[0]
 	desktopCred := s.cfg.Credentials.Desktops[0]
-	mac := deviceCred.DeviceID
+	mac := s.mac
+	if mac == "" {
+		mac = "AA:BB:CC:DD:EE:01"
+	}
 
 	// 固件连接：hello 返回当前绑定。
 	fw := newWS(s.base + "/v1/devices/connect")

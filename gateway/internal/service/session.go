@@ -187,7 +187,7 @@ func (s *SessionService) boundDesktop(ctx context.Context, deviceID domain.Devic
 	if err != nil {
 		return "", err
 	}
-	if err := validateBindingOwner(s.cfg, row); err != nil {
+	if err := validateBindingOwner(ctx, s.repos.DB(), s.cfg, row); err != nil {
 		return "", err
 	}
 	return row.DesktopClientID, nil

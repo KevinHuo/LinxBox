@@ -551,15 +551,28 @@
               <label for="in-caps">capabilities（逗号分隔）</label>
               <input id="in-caps" type="text" value="read,write,test" />
             </div>
-            <button class="btn btn-primary dispatch-primary" id="btn-dispatch" type="button" style="width: 100%">
+            <button
+              class="btn btn-primary dispatch-primary"
+              id="btn-dispatch"
+              type="button"
+              style="width: 100%"
+            >
               下达测试指令
             </button>
             <div class="gateway-test-actions">
               <strong>Gateway → Electron 契约测试</strong>
-              <button class="btn" type="button" data-gateway-kind="messages.list">查询消息目录</button>
-              <button class="btn" type="button" data-gateway-kind="message.content.get">查询消息正文</button>
-              <button class="btn" type="button" data-gateway-kind="project.upsert">推送项目更新</button>
-              <button class="btn" type="button" data-gateway-kind="project.revoke">推送项目撤销</button>
+              <button class="btn" type="button" data-gateway-kind="messages.list">
+                查询消息目录
+              </button>
+              <button class="btn" type="button" data-gateway-kind="message.content.get">
+                查询消息正文
+              </button>
+              <button class="btn" type="button" data-gateway-kind="project.upsert">
+                推送项目更新
+              </button>
+              <button class="btn" type="button" data-gateway-kind="project.revoke">
+                推送项目撤销
+              </button>
             </div>
             <p class="hint" style="margin-top: 10px">
               下发的帧会走真实的 Gateway/Desktop 1.0 校验。Desktop 回传的
@@ -659,9 +672,15 @@
         const select = $('#in-session');
         const previousProject = projectSelect.value;
         const previous = select.value;
-        const projects = [...new Map(state.agentSessions.map((item) => [item.project_id, item.project_name])).entries()];
+        const projects = [
+          ...new Map(
+            state.agentSessions.map((item) => [item.project_id, item.project_name]),
+          ).entries(),
+        ];
         projectSelect.innerHTML = projects.length
-          ? projects.map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('')
+          ? projects
+              .map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`)
+              .join('')
           : '<option value="">暂无 Codex 项目</option>';
         if (projects.some(([id]) => id === previousProject)) projectSelect.value = previousProject;
         const projectId = projectSelect.value;
@@ -788,10 +807,16 @@
           const kind = button.dataset.gatewayKind;
           let extra = {};
           if (kind === 'message.content.get') {
-            const latest = [...state.entries].reverse().find((entry) =>
-              entry.direction === 'inbound' && entry.type === 'query.result' && entry.frame?.payload?.ok &&
-              Array.isArray(entry.frame.payload.data?.items) && entry.frame.payload.data.items.length > 0,
-            );
+            const latest = [...state.entries]
+              .reverse()
+              .find(
+                (entry) =>
+                  entry.direction === 'inbound' &&
+                  entry.type === 'query.result' &&
+                  entry.frame?.payload?.ok &&
+                  Array.isArray(entry.frame.payload.data?.items) &&
+                  entry.frame.payload.data.items.length > 0,
+              );
             const messageId = latest?.frame?.payload?.data?.items?.at(-1)?.message_id;
             if (!messageId) {
               toast('请先查询消息目录，再查询消息正文');
@@ -803,7 +828,8 @@
             const projectId = $('#in-project').value.trim();
             if (projectId) {
               extra.project_id = projectId;
-              extra.display_name = $('#in-project').selectedOptions[0]?.textContent?.trim() || projectId;
+              extra.display_name =
+                $('#in-project').selectedOptions[0]?.textContent?.trim() || projectId;
             }
           }
           const result = await post('/api/dispatch', { kind, ...extra });

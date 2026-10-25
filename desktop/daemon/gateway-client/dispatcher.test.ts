@@ -35,6 +35,7 @@ interface Harness {
 function createHarness(
   options: {
     projects?: Record<string, { rootPath: string; enabled: boolean }>;
+    defaultCwd?: string | null;
     sessionCwd?: string | null | ((threadId: string) => string | null);
     agentSessions?: Record<string, { threadId: string; projectId: string; rootPath: string }>;
   } = {},
@@ -82,7 +83,7 @@ function createHarness(
 
   const dispatcher = new TaskDispatcher({
     resolveProject: (projectId) => projects[projectId] ?? null,
-    defaultCwd: '/tmp/app',
+    ...(options.defaultCwd === null ? {} : { defaultCwd: options.defaultCwd ?? '/tmp/app' }),
     resolveAgentSession: (agentSessionId) => {
       const target = options.agentSessions?.[agentSessionId];
       return target === undefined ? null : { agentSessionId, ...target };
@@ -170,9 +171,10 @@ describe('TaskDispatcher', () => {
     ]);
   });
 
-  it('rejects a remote thread that was not published by this Desktop', async () => {
+  it('rejects an unpublished thread that Codex cannot resolve locally', async () => {
     const harness = createHarness({
       projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+      sessionCwd: null,
     });
     const frame = {
       ...dispatchFrame,
@@ -263,7 +265,7 @@ describe('TaskDispatcher', () => {
     expect(harness.continued).toHaveLength(0);
   });
 
-  it('refuses a continuation after the parent project authorisation was revoked', async () => {
+  it('continues in the Codex directory after an Electron project grant was revoked', async () => {
     const harness = createHarness({
       projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
     });
@@ -288,12 +290,13 @@ describe('TaskDispatcher', () => {
       },
     } as unknown as GatewayFrame);
 
-    expect(outcome.disposition).toBe('rejected');
-    expect(outcome.error).toBe('项目授权已撤销');
-    expect(harness.continued).toHaveLength(0);
+    expect(outcome.disposition).toBe('accepted');
+    expect(outcome.error).toBeNull();
+    expect(harness.continued).toEqual([{ threadId: 'th_1', prompt: '做点事', cwd: '/tmp/app' }]);
+    expect(harness.started).toHaveLength(1);
   });
 
-  it('refuses a continuation when the authorisation is revoked while the session is looked up', async () => {
+  it('uses the verified Codex directory when an Electron grant changes during lookup', async () => {
     let revokeProject: () => void = () => undefined;
     const harness = createHarness({
       projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
@@ -323,12 +326,13 @@ describe('TaskDispatcher', () => {
       },
     } as unknown as GatewayFrame);
 
-    expect(outcome.disposition).toBe('rejected');
-    expect(outcome.error).toBe('原任务项目授权已撤销');
-    expect(harness.continued).toHaveLength(0);
+    expect(outcome.disposition).toBe('accepted');
+    expect(outcome.error).toBeNull();
+    expect(harness.continued).toEqual([{ threadId: 'th_1', prompt: '做点事', cwd: '/tmp/app' }]);
+    expect(harness.started).toHaveLength(1);
   });
 
-  it('refuses a continuation whose session directory is outside the authorised project', async () => {
+  it('uses the provider directory instead of forcing an old Electron project root', async () => {
     const harness = createHarness({
       projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
       sessionCwd: '/tmp/elsewhere',
@@ -353,9 +357,12 @@ describe('TaskDispatcher', () => {
       },
     } as unknown as GatewayFrame);
 
-    expect(outcome.disposition).toBe('rejected');
-    expect(outcome.error).toBe('目标会话不属于本次授权项目');
-    expect(harness.continued).toHaveLength(0);
+    expect(outcome.disposition).toBe('accepted');
+    expect(outcome.error).toBeNull();
+    expect(harness.continued).toEqual([
+      { threadId: 'th_1', prompt: '做点事', cwd: '/tmp/elsewhere' },
+    ]);
+    expect(harness.started).toHaveLength(1);
   });
 
   it('refuses a continuation whose session has no verifiable working directory', async () => {
@@ -388,8 +395,8 @@ describe('TaskDispatcher', () => {
     expect(harness.continued).toHaveLength(0);
   });
 
-  it('rejects a dispatch for an unknown project', async () => {
-    const harness = createHarness();
+  it('rejects a dispatch for an unknown project when no default directory is configured', async () => {
+    const harness = createHarness({ defaultCwd: null });
 
     const outcome = await harness.dispatcher.handle(dispatchFrame);
 
@@ -397,9 +404,10 @@ describe('TaskDispatcher', () => {
     expect(harness.started).toHaveLength(0);
   });
 
-  it('rejects a dispatch for a revoked project', async () => {
+  it('rejects a dispatch for a revoked project when no default directory is configured', async () => {
     const harness = createHarness({
       projects: { prj_1: { rootPath: '/tmp/app', enabled: false } },
+      defaultCwd: null,
     });
 
     const outcome = await harness.dispatcher.handle(dispatchFrame);
@@ -614,6 +622,21 @@ describe('TaskDispatcher', () => {
 
     const terminal = harness.events.find((event) => event.type === 'task.completed');
     expect(terminal?.payload.state).toBe('succeeded');
+    expect(terminal?.payload.result).toMatchObject({
+      contract_version: 'task-result-v1',
+      status: 'succeeded',
+      summary: '本轮追问已完成',
+      changes: [],
+      verification: [],
+      risks: [
+        {
+          code: 'EXECUTION_DETAILS_NOT_PROJECTED',
+          summary: '文件改动和验证详情尚未汇总',
+        },
+      ],
+      needs_user_action: null,
+      voice_summary: '本轮追问已完成',
+    });
   });
 
   it('maps an unprovable outcome to task.interrupted', async () => {
@@ -670,7 +693,7 @@ describe('TaskDispatcher', () => {
 });
 
 describe('TaskDispatcher cancel and failure paths', () => {
-  it('accepts a cancel request without starting a turn', async () => {
+  it('rejects cancellation when there is no running task', async () => {
     const harness = createHarness();
     const frame = {
       protocol_version: '1.0',
@@ -683,7 +706,8 @@ describe('TaskDispatcher cancel and failure paths', () => {
 
     const outcome = await harness.dispatcher.handle(frame);
 
-    expect(outcome.disposition).toBe('accepted');
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('没有可取消的本机任务');
     expect(harness.started).toHaveLength(0);
   });
 
@@ -760,7 +784,7 @@ describe('TaskDispatcher cancel and failure paths', () => {
     await dispatcher.handle({ ...dispatchFrame, message_id: 'busy' });
 
     expect(dispositions).toEqual([
-      'rejected:unknown:项目未授权',
+      'rejected:unknown:没有可用的 Codex 工作目录',
       'accepted:msg_1:',
       'duplicate:msg_1:',
       'rejected:busy:客户端正在执行另一项任务',

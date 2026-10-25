@@ -16,6 +16,7 @@ import {
   isValidMacAddress,
   normalizeMacAddress,
   pendingTaskCount,
+  parseDeviceFacts,
   railAppForView,
   taskRows,
   type AppearanceFacts,
@@ -46,7 +47,7 @@ const state = {
       },
       online: {
         gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
-        tokenHint: null,
+        tokenHint: '••••••••a5fe',
       },
     },
   } as ConnectionFacts,
@@ -211,9 +212,11 @@ function persistDeviceFacts(): void {
 
 function restoreDeviceFacts(): void {
   try {
-    const value = JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null');
-    if (value && typeof value === 'object') {
-      state.device = value as typeof state.device;
+    const value = parseDeviceFacts(
+      JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null'),
+    );
+    if (value !== null) {
+      state.device = value;
     }
   } catch {
     // Ignore unavailable or malformed renderer storage.
