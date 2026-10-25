@@ -41,13 +41,13 @@ class CoverageGateTest(unittest.TestCase):
         }}
 
     def evaluate(self):
-        return CHECK.evaluate(self.payload, self.source)
+        return CHECK.evaluate(self.payload, self.root)
 
     def test_full_inventory_and_exact_threshold_pass(self):
         result = self.evaluate()
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["totals"]["branches"], {"count": 40, "covered": 36, "percent": 90.0})
-        self.assertEqual(set(result["files"]), {"main.c", "screen.c"})
+        self.assertEqual(set(result["files"]), {"main/main.c", "main/screen.c"})
 
     def test_missing_source_and_new_unmeasured_source_fail(self):
         self.payload["data"][0]["files"].pop()
@@ -66,14 +66,32 @@ class CoverageGateTest(unittest.TestCase):
         self.payload["data"][0]["files"].append(self.file("nested/screen.c"))
         result = self.evaluate()
         self.assertEqual(result["errors"], [])
-        self.assertEqual(set(result["files"]), {"main.c", "screen.c", "nested/screen.c"})
+        self.assertEqual(set(result["files"]), {"main/main.c", "main/screen.c", "main/nested/screen.c"})
+
+    def test_hardware_sources_are_required_and_keep_their_directory(self):
+        hardware = self.root / "hardware/folotoy/ai-passport/main.c"
+        hardware.parent.mkdir(parents=True)
+        hardware.write_text("void hardware_function(void) {}\n")
+        self.assertTrue(any("hardware/folotoy/ai-passport/main.c" in error
+                            for error in self.evaluate()["errors"]))
+        entry = self.file("main.c")
+        entry["filename"] = str(hardware)
+        self.payload["data"][0]["files"].append(entry)
+        result = self.evaluate()
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(set(result["files"]), {
+            "main/main.c", "main/screen.c", "hardware/folotoy/ai-passport/main.c",
+        })
+        entry["summary"]["branches"]["covered"] = 0
+        self.assertTrue(any("hardware/folotoy/ai-passport/main.c branches" in error
+                            for error in self.evaluate()["errors"]))
 
     def test_each_file_and_metric_must_meet_threshold(self):
         for metric in ("lines", "branches", "functions"):
             with self.subTest(metric=metric):
                 payload = copy.deepcopy(self.payload)
                 payload["data"][0]["files"][0]["summary"][metric] = {"count": 100, "covered": 89}
-                result = CHECK.evaluate(payload, self.source)
+                result = CHECK.evaluate(payload, self.root)
                 self.assertTrue(any("main.c" in error and metric in error for error in result["errors"]))
 
     def test_rounding_cannot_turn_failure_into_pass(self):
@@ -103,12 +121,12 @@ class CoverageGateTest(unittest.TestCase):
                 payload = copy.deepcopy(self.payload)
                 payload["data"][0]["files"][0][field] = value
                 with self.assertRaises(ValueError):
-                    CHECK.evaluate(payload, self.source)
+                    CHECK.evaluate(payload, self.root)
 
     def test_invalid_schema_and_empty_inventory_fail(self):
         for payload in ({}, [], {"type": "other"}, {"type": "llvm.coverage.json.export", "data": []}):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
-                CHECK.evaluate(payload, self.source)
+                CHECK.evaluate(payload, self.root)
         for path in self.source.glob("*.c"):
             path.unlink()
         with self.assertRaisesRegex(ValueError, "源码"):
@@ -127,7 +145,7 @@ class CoverageGateTest(unittest.TestCase):
                 payload = copy.deepcopy(self.payload)
                 payload["data"][0]["files"][0]["summary"][metric] = value
                 with self.assertRaises(ValueError):
-                    CHECK.evaluate(payload, self.source)
+                    CHECK.evaluate(payload, self.root)
 
     def test_straight_line_file_can_have_no_branches(self):
         self.payload["data"][0]["files"][0]["summary"]["branches"] = {"count": 0, "covered": 0}

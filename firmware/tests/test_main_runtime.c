@@ -17,6 +17,10 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "linx_ui.h"
+#include "sdkconfig.h"
+#if CONFIG_LINX_VOICE_ENABLE
+#include "linx_device.h"
+#endif
 
 void app_main(void);
 
@@ -26,13 +30,20 @@ enum scenario {
     DISPLAY_FAIL, LVGL_FAIL, QUEUE_FAIL, BUTTON_FAIL, INITIAL_LOCK_FAIL,
     IDLE_METRICS, LOOP_LOCK_FAIL, FILTER_EVENTS, BUTTON_ACTIONS,
     WAKE_HELD, WAKE_RELEASED, WAKE_TIMEOUT, INPUT_OVERFLOW,
-    AUTOMATIC_BARRIER, MANUAL_BARRIER, SCENARIO_COUNT
+    AUTOMATIC_BARRIER, MANUAL_BARRIER,
+#if CONFIG_LINX_VOICE_ENABLE
+    VOICE_INIT_FAIL, VOICE_EVENT_BARRIER,
+#endif
+    SCENARIO_COUNT
 };
 static const char *const scenario_names[SCENARIO_COUNT] = {
     "display_fail", "lvgl_fail", "queue_fail", "button_fail", "initial_lock_fail",
     "idle_metrics", "loop_lock_fail", "filter_events", "button_actions",
     "wake_held", "wake_released", "wake_timeout", "input_overflow",
-    "automatic_barrier", "manual_barrier"
+    "automatic_barrier", "manual_barrier",
+#if CONFIG_LINX_VOICE_ENABLE
+    "voice_init_fail", "voice_event_barrier"
+#endif
 };
 
 typedef struct {
@@ -47,6 +58,7 @@ typedef struct {
     bool fail_lock;
     bool automatic_change;
     bool manual_change;
+    bool voice_change;
 } step_t;
 
 /* 队列容量遵循真实入口的 24 项；不假设私有事件结构的布局。 */
@@ -89,6 +101,10 @@ static unsigned initial_locks, loop_locks, failed_loop_locks, unlocks;
 static unsigned ui_init_calls, ui_ticks, automatic_changes, manual_changes;
 static unsigned info_logs, error_logs, warning_logs, metric_logs;
 static unsigned free_calls, minimum_calls, largest_calls, stack_calls;
+#if CONFIG_LINX_VOICE_ENABLE
+static bool voice_init_fail;
+static unsigned voice_inits, voice_binds, voice_polls, voice_events;
+#endif
 
 static step_t *step(uint64_t now_ms)
 {
@@ -230,6 +246,21 @@ static void configure(enum scenario scenario)
         expect_key(LINX_UI_KEY_UP, 301);
         break;
     }
+#if CONFIG_LINX_VOICE_ENABLE
+    case VOICE_INIT_FAIL:
+        voice_init_fail = true;
+        step(100);
+        break;
+    case VOICE_EVENT_BARRIER:
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        step(200)->voice_change = true;
+        event_step(300, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(450, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_OK, 450);
+        break;
+#endif
     case SCENARIO_COUNT: assert(false); break;
     }
 }
@@ -387,6 +418,45 @@ static void change_page(void)
     page = page == LINX_UI_TASKS ? LINX_UI_OVERVIEW : LINX_UI_TASKS;
 }
 
+#if CONFIG_LINX_VOICE_ENABLE
+bool linx_device_init(void)
+{
+    assert(locked && ui_init_calls == 1);
+    ++voice_inits;
+    return !voice_init_fail;
+}
+
+bool linx_device_request(const linx_voice_request_t *request, void *user)
+{
+    (void)request; (void)user;
+    assert(false);
+    return false;
+}
+
+void linx_ui_set_voice_handler(linx_voice_handler_t handler, void *user)
+{
+    assert(locked && handler == linx_device_request && user == NULL);
+    assert(voice_inits == 1);
+    ++voice_binds;
+}
+
+bool linx_device_poll(linx_voice_event_t *event)
+{
+    assert(locked && voice_binds == 1 && event != NULL);
+    ++voice_polls;
+    *event = (linx_voice_event_t){.generation = 42, .state = LINX_VOICE_CLOSED};
+    return active_step->voice_change;
+}
+
+bool linx_ui_voice_event(const linx_voice_event_t *event)
+{
+    assert(locked && event->generation == 42 && event->state == LINX_VOICE_CLOSED);
+    ++voice_events;
+    change_page();
+    return true;
+}
+#endif
+
 void linx_ui_tick(uint64_t now_ms)
 {
     assert(locked && active_step != NULL && now_ms == active_step->now_ms);
@@ -452,7 +522,11 @@ void device_test_log(char level, const char *tag, const char *format, ...)
             ++metric_logs;
             assert(strcmp(message, "heap free=65536 min=32768 largest=16384 stack=2048") == 0);
         } else {
+#if CONFIG_LINX_VOICE_ENABLE
+            assert(strcmp(message, "LinX voice connects on demand") == 0);
+#else
             assert(strstr(message, "LinX warm-white offline demo") != NULL);
+#endif
         }
     } else if (level == 'W') {
         ++warning_logs;
@@ -460,6 +534,12 @@ void device_test_log(char level, const char *tag, const char *format, ...)
     } else {
         ++error_logs;
         assert(level == 'E');
+#if CONFIG_LINX_VOICE_ENABLE
+        if (voice_init_fail) {
+            assert(strcmp(message, "Voice worker allocation failed") == 0);
+            return;
+        }
+#endif
         const char *expected = failure == DISPLAY_FAILURE || failure == LVGL_FAILURE
             ? "Display initialization failed" : failure == QUEUE_FAILURE
             ? "Input queue allocation failed" : failure == BUTTON_FAILURE
@@ -472,7 +552,14 @@ static void verify(enum scenario scenario)
 {
     assert(display_calls == 1 && !locked);
     assert(info_logs == 1 + expected_metrics);
+#if CONFIG_LINX_VOICE_ENABLE
+    assert(error_logs == (failure == NO_FAILURE && !voice_init_fail ? 0U : 1U));
+    assert(voice_inits == ui_init_calls && voice_binds == ui_init_calls);
+    assert(voice_polls == ui_ticks);
+    assert(voice_events == (scenario == VOICE_EVENT_BARRIER ? 1U : 0U));
+#else
     assert(error_logs == (failure == NO_FAILURE ? 0U : 1U));
+#endif
     assert(warning_logs == expected_warnings && metric_logs == expected_metrics);
     assert(free_calls == expected_metrics && minimum_calls == expected_metrics);
     assert(largest_calls == expected_metrics && stack_calls == expected_metrics);

@@ -13,6 +13,7 @@ set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${REPO_ROOT}/managed_components/lvgl__lvgl" lvgl)
 add_library(linx_host_app STATIC
     "${REPO_ROOT}/main/linx_ui.c"
+    "${REPO_ROOT}/main/linx_wifi.c"
     "${REPO_ROOT}/main/linx_demo.c"
     "${REPO_ROOT}/main/linx_content.c"
     "${REPO_ROOT}/main/linx_navigation.c"

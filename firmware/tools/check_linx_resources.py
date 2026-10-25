@@ -11,6 +11,9 @@ fonts = ROOT / "assets/fonts"
 points = {int(line, 16) for line in (fonts / "codepoints.txt").read_text().splitlines()}
 required = set(range(32, 127))
 for source in (ROOT / "main").glob("*.[ch]"):
+    # 设备运行和手机网页不在设备屏幕绘制，无须进入屏幕字库。
+    if source.stem in ("linx_device", "linx_wifi_portal"):
+        continue
     required.update(ord(c) for c in source.read_text() if ord(c) >= 128 and not c.isspace())
 missing = required - points
 assert not missing, "Missing font inventory: " + ", ".join(f"U+{cp:04X}" for cp in sorted(missing))
@@ -89,6 +92,6 @@ image_source = (ROOT / "assets/images/linx_image_data.c").read_text()
 assert image_source.count(".magic=LV_IMAGE_HEADER_MAGIC") == 9
 app = (ROOT / "main/main.c").read_text()
 for forbidden in ("bsp_audio_init(", "bsp_battery_init(", "esp_wifi_init(", "nimble_port_init("):
-    assert forbidden not in app, f"Offline startup includes {forbidden}"
+    assert forbidden not in app, f"UI entrypoint directly initializes slow hardware: {forbidden}"
 print(f"LinX resources: PASS ({len(points)} glyphs × 7 CJK variants; 95 ASCII × 28px bold; "
-      "exact metrics/cmaps/source hashes; 9 RGB565 views; offline startup)")
+      "exact metrics/cmaps/source hashes; 9 RGB565 views; deferred radio/audio startup)")
