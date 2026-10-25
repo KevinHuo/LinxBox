@@ -24,6 +24,13 @@ func (s *Server) serveDesktop(conn *websocket.Conn, p Principal) {
 	defer s.conns.UnregisterDesktop(string(p.DesktopID), wsConn)
 	defer wsConn.Close()
 	defer s.queries.Disconnect(false, string(p.DesktopID), generation)
+	defer func() {
+		if s.requests != nil {
+			if err := s.requests.DesktopDisconnected(context.Background(), string(p.DesktopID), generation); err != nil {
+				s.logger.Error("Desktop 断线执行状态保存失败", "client_id", p.DesktopID)
+			}
+		}
+	}()
 	conn.SetReadLimit(int64(s.cfg.Limits.MaxFrameBytes) + frameReadMargin)
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
@@ -125,8 +132,12 @@ func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.C
 	case "task.ack", "task.started", "task.progress",
 		"task.approval_required", "task.completed", "task.failed",
 		"task.cancelled", "task.interrupted":
-		// 契约已识别并记录；对应操作在后续阶段开放，不假装成功。
-		s.logger.Info("Desktop 消息暂未开放", "type", msg.Type, "client_id", p.DesktopID)
+		if s.requests == nil {
+			return domain.ErrDependencyUnavailable("请求服务未配置")
+		}
+		err := s.requests.ApplyTask(ctx, p.DesktopID, wsConn.Generation(), msg)
+		s.logOperation("task.fact", wsConn, msg.Type, msg.MessageID, err, "client_id", p.DesktopID)
+		return err
 	default:
 		s.logger.Warn("未知 Desktop 消息类型", "type", msg.Type)
 	}

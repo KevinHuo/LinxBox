@@ -20,20 +20,23 @@ type RequestNotifier interface {
 	NotifyRequest(deviceID, event string, request contracts.Request)
 }
 
-// RequestService 实现 #14 的 prepare→最终原文→待确认，不调度执行。
+// RequestService 实现 #14 的准备、原文、确认投递与执行事实持久化。
 // 锁覆盖提交与通知，避免同一进程中旧通知越过取消/过期事件。
 type RequestService struct {
-	mu       sync.Mutex
-	repos    *storage.Repositories
-	requests storage.RequestRepo
-	cfg      *config.Config
-	notifier RequestNotifier
-	now      func() time.Time
+	mu         sync.Mutex
+	repos      *storage.Repositories
+	requests   storage.RequestRepo
+	executions storage.ExecutionRepo
+	dispatcher TaskDispatcher
+	cfg        *config.Config
+	notifier   RequestNotifier
+	now        func() time.Time
 }
 
 // NewRequestService 构造持久化录音请求服务。
 func NewRequestService(repos *storage.Repositories, cfg *config.Config, notifier RequestNotifier) *RequestService {
-	return &RequestService{repos: repos, cfg: cfg, notifier: notifier, now: time.Now}
+	dispatcher, _ := notifier.(TaskDispatcher)
+	return &RequestService{repos: repos, cfg: cfg, notifier: notifier, dispatcher: dispatcher, now: time.Now}
 }
 
 // Prepare 固定已绑定 Desktop 的会话、thread/project/title；重试不延长超时。

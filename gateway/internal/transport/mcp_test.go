@@ -157,8 +157,8 @@ func TestMCPSSEOriginalASRFlow(t *testing.T) {
 		callMCP(t, env, session, map[string]any{"text": text}, entry.code)
 		headers.set(entry.key, old)
 	}
-	if response := fw.fwReq(t, "request.confirm", map[string]any{"request_id": "req-1"}); response.OK || response.Code != "DEPENDENCY_UNAVAILABLE" {
-		t.Fatal("未实现调度却返回执行成功")
+	if response := fw.fwReq(t, "request.get", map[string]any{"request_id": "req-1"}); !response.OK {
+		t.Fatal("未确认草稿应可读取", response)
 	}
 	if response := fw.fwReq(t, "request.cancel", map[string]any{"request_id": "req-1"}); !response.OK {
 		t.Fatal(response)

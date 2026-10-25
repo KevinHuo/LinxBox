@@ -2,7 +2,7 @@
 
 Refs #33、#31、#14、#1。DRI：BoleLiu（Gateway）。主模块：Gateway；受影响模块：固件、Desktop 与灵矽平台接入；必要跨端评审：KevinHuo（固件）、yydounai1234（Desktop）。Streamable HTTP 传输设计见 #31，受控联调的请求自动关联设计见 #33；不能视为已经通过跨端评审或真实联调。
 
-目标是接收每轮最终 ASR 原文并保存为待确认请求。范围包括 MCP 接入、录音目标准备、持久化、取消、超时和来源校验；不包括任务确认投递、Agent 执行或灵矽平台代码修改。
+本文说明最终 ASR 原文接收、准备、持久化、取消、超时和来源校验。确认后的任务投递、执行事件及 unknown 恢复已整合，流程与验收边界见 [MVP 确认执行](execution.md)；不修改灵矽平台代码。
 
 ## Gateway 配置
 
@@ -39,7 +39,7 @@ initialize 与 tools/list 只需认证，不要求录音业务上下文。默认
 
 默认值为 false，设回 false 并重启即可恢复严格模式。开启后，只有 X-Linx-Request-Id **完全缺失**时才自动关联；显式空值、重复值、错误/过期 ID 不会回退。设备、智能体、语音会话三个来源头和独立 Bearer token 仍需正确，所有原有归属、目录、目标和文字限制继续生效。
 
-自动关联在请求服务锁与数据库事务内进行：先处理过期，再查找该设备唯一未过期的 awaiting_text/awaiting_confirmation 请求。没有候选返回 NOT_FOUND，要求固件先 request.prepare；出现多个候选返回 CONFLICT。awaiting_confirmation 仅用于按既有原文和来源校验返回幂等快照，不覆盖文字或更换来源。成功仍使用固件原有 request_id，进入 awaiting_confirmation 并通知设备，不自动创建请求或增加任务调度。
+自动关联在请求服务锁与数据库事务内进行：先处理过期，再查找该设备唯一未过期的 awaiting_text/awaiting_confirmation 请求。没有候选返回 NOT_FOUND，要求固件先 request.prepare；出现多个候选返回 CONFLICT。awaiting_confirmation 仅用于按既有原文和来源校验返回幂等快照，不覆盖文字或更换来源。成功仍使用固件原有 request_id，进入 awaiting_confirmation 并通知设备；确认后由 request.confirm 投递固定目标，MCP 提案本身不会启动任务。
 
 日志以 mcp.demo.enabled 标记开关，以 mcp.request.resolved、request_id_source=unique_pending 和真实 request_id 标记成功关联；显式请求使用 request_id_source=header。缺失头仍保留在 missing_headers 中，这是诊断事实，在开启模式后不再单独构成拒绝原因。
 
@@ -52,11 +52,11 @@ initialize 与 tools/list 只需认证，不要求录音业务上下文。默认
 3. 平台只对最终非空 ASR 调用 `propose_task_reply`。默认每个工具 POST 携带 `X-Linx-Device-Id`、`X-Linx-Agent-Id`、`X-Linx-Session-Id`、`X-Linx-Request-Id`。前三项按平台文档传递，第四项仍待平台支持。Header 名大小写不敏感；严格模式下缺失、重复或不匹配均拒绝。演示开关仅允许请求 ID 完全缺失时关联唯一待处理请求，不查询任意“最新 request”。
 4. Gateway 校验凭据限定的设备和智能体、原请求归属与存活状态，再保存原文，进入 `awaiting_confirmation`，推送 `request.proposed`。灵矽语音会话与智能体随首次成功提案固定；同请求后续不得更换来源。
 5. 重复 MCP 的相同原文与来源返回已有快照，不重复推送；文字或来源变化返回 CONFLICT。取消/超时后的调用也拒绝，不能污染下一轮。
-6. 固件可通过 `request.get` 恢复数据库快照，`request.cancel` 取消确认前请求。Gateway 当前不支持任务调度，`request.confirm` 返回 DEPENDENCY_UNAVAILABLE，请求保持待确认；不返回假成功。
+6. 固件可通过 `request.get` 恢复数据库快照，`request.cancel` 取消确认前请求。`request.confirm` 在事务内保存唯一 task/投递身份，再向固定 Desktop 发 task.dispatch；后续执行事实推进状态。Desktop 离线时保持待确认，落盘后发送失败或断线保存 unknown，不自动重投。详见 execution.md。
 
 重复 prepare 返回原请求，不更换目标或重置时间。等待文字为 120 秒，待确认为 300 秒；截止时间落盘，启动、每次访问及运行时每秒检查，到期保存 `failed` 并推送 `request.updated`。没有平台明确错误时只记录“未收到文字”，不推断识别失败原因。数据库保留终态与 request_id，不复用旧 ID。目录更新不删除在途请求；接收新文字前再次核实固定 thread/project 仍在目录。
 
-成功结果为标准 MCP `content:[{type:"text",text:"业务 JSON"}],isError:false`；失败为 `isError:true` 与共享业务错误。JSON-RPC id 由官方 SDK 管理，不能用作 request_id。工具保存草稿不会发送任何 Desktop 任务。
+成功结果为标准 MCP `content:[{type:"text",text:"业务 JSON"}],isError:false`；失败为 `isError:true` 与共享业务错误。JSON-RPC id 由官方 SDK 管理，不能用作 request_id。工具保存草稿不会发送 Desktop 任务，用户确认后由独立确认流程投递。
 
 ## 不修改灵矽代码的边界
 
@@ -122,7 +122,7 @@ make build
 
 ## 本次本地验证结果
 
-2026-10-26（受控联调关联）：在独立管理工作树执行 `GOCACHE=/tmp/linxbox-gateway-integration-go-cache GOFLAGS=-buildvcs=false make check build release`，并基于同一 coverage.out 运行 `tools/covergate -base origin/main`，格式、静态检查、全部单元/集成测试、整体/关键包/增量包覆盖率与全部包 race 检测均通过。整体语句覆盖率为 **93.44%（2564/2744）**；请求服务所在包 92.41%、传输包 94.18%、存储包 91.57%，所有关键包和增量包均通过原有 90% 门禁，没有新增统计排除或下调门槛。
+2026-10-26（三项整合）：在独立管理工作树执行 `GOCACHE=/tmp/linxbox-gateway-integration-go-cache GOFLAGS=-buildvcs=false make check build release`，并基于同一 coverage.out 运行 `tools/covergate -base origin/main`，格式、静态检查、全部单元/集成测试、整体/关键包/增量包覆盖率与全部包 race 检测均通过。整体语句覆盖率为 **93.10%（2793/3000）**；请求服务所在包 91.24%、传输包 94.15%、存储包 91.62%，所有关键包和增量包均通过原有 90% 门禁，没有新增统计排除或下调门槛。三项能力在同一测试进程覆盖 MCP 缺头提案 → 确认投递 → Desktop 执行事实 → 固件 completed，详见 execution.md。
 
 联调关联回归覆盖开关默认关闭/显式开启、无 prepare、过期/取消、错误设备/来源、目录与归属变化、损坏数据库多候选拒绝、同轮幂等与重启恢复；两种传输均验证缺头关联，以及显式错误、空值、重复和过期 ID 不回退。该结果不证明缺头模式具有跨轮迟到隔离能力。
 

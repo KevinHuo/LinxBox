@@ -5,7 +5,7 @@ LinxBox Gateway 是用 Go 编写的常驻后端服务：固件（AI Passport）�
 一个监听端口、一个本地 SQLite 数据库；MCP 与 WebSocket 是同一程序的不同入口。
 
 当前实现覆盖工程与契约、绑定与目录，以及历史 / 正文读取路由和新消息通知。
-另已接入 MCP 最终文字提案及请求准备、查询、取消；请求确认、调度与执行事实暂缓。本仓库 `contracts/`
+另已接入 MCP 最终文字提案、请求准备/查询/取消、确认投递和执行事实；见 [MVP 流程](docs/execution.md)。本仓库 `contracts/`
 仍是字段契约的唯一正文，本程序生成的 `internal/contracts/assets/` 为构建资源。
 
 ## 目录
@@ -95,13 +95,13 @@ race 检测与发布构建分开：发布构建不要求 CGO。
 | `WSS /v1/devices/connect` | hello、目录分页、单条会话、历史与正文读取 | 已实现 |
 | `WSS /v1/clients/connect` | hello、绑定、目录同步、query.result、新消息通知 | 已实现 |
 | `GET /healthz` / `GET /readyz` | 存活与就绪探测 | 已实现 |
-| `GET /mcp`、`POST /mcp/message` | 灵矽 SSE MCP，唯一工具 `propose_task_reply` | 已实现 Gateway 接收；真实平台待联调 |
+| `/mcp`、`POST /mcp/message` | Streamable HTTP 与兼容旧 SSE，唯一工具 `propose_task_reply` | 已实现 Gateway 接收；真实平台待联调 |
 | `request.prepare/get/cancel` | 固定目标、读取快照、确认前取消 | 已实现 Gateway 侧 |
-| `request.confirm`、任务调度 | 确认与 `task.*` | 未实现；明确返回依赖不可用，不执行任务 |
+| `request.confirm`、任务调度 | 固定目标投递、`task.*` 与持久状态 | 主机模拟通过；真实三端执行待验收 |
 
 ## 已知限制（与设计文档一致）
 
-- 固件尚未接入 Gateway 录音准备及请求通知；确认投递、执行事实与 unknown 恢复未实现。
+- 固件真实接线与界面验收需独立提供证据；Gateway 的确认投递、执行事实和 unknown 恢复已实现，不能用模拟结果代替真实三端验收。
 - 目录 cursor 绑定设备、Desktop 和目录版本，5 分钟过期；目录变动或 Gateway 重启后从首页重取。
 - 默认每设备最多 4 条、全局最多 128 条在途历史 / 正文查询，15 秒超时；Desktop 断线明确失败，不自动重试。
 - 现有 Desktop 运行代码尚未支持绑定、全量目录与 sync.result，需独立实现 PR。

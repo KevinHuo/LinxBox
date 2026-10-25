@@ -39,6 +39,9 @@ func (s *Server) SetRequests(requests *service.RequestService) error {
 	if err != nil {
 		return err
 	}
+	if err := requests.Recover(context.Background()); err != nil {
+		return err
+	}
 	s.requests = requests
 	e := &mcpEndpoint{server: s, sessions: map[string]*mcpSSESession{}}
 	sdkLogger := slog.New(mcpSDKLogHandler{Handler: s.logger.Handler()})

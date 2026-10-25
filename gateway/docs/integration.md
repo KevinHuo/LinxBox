@@ -109,7 +109,7 @@ summary 最多 120 个 Unicode 码点。Desktop 必须保留轮次边界，不�
 Desktop 离线或查询中断返回 `DEPENDENCY_UNAVAILABLE`，超出并发限制返回 `RESOURCE_EXHAUSTED`。
 
 只读阶段之外，Gateway 已增加 SSE MCP 与 `request.prepare/get/cancel`，见 [MCP 接入说明](mcp.md)。
-`request.confirm` 和调度未实现；`task.*` 既有事件仅识别和记录，尚不推进执行状态。
+当前集成版本已接入 `request.confirm`、固定目标 task.dispatch、task.* 执行事实及 unknown 恢复，详见 [确认执行流程](execution.md)。只读 smoke 不覆盖这些能力；MCP 缺头提案到确认、Desktop 事件和固件终态由独立集成回归验证。
 本轮只读验收仍不能证明真实语音提案、确认投递、执行或任务状态回传已完成。
 
 ## Desktop 接线清单

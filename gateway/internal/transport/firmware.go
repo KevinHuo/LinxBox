@@ -172,7 +172,7 @@ func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.
 		case "request.cancel":
 			request, err = s.requests.Cancel(ctx, p.DeviceID, payload.RequestID)
 		case "request.confirm":
-			err = domain.ErrDependencyUnavailable("任务调度尚未实现，请求未执行")
+			request, err = s.requests.Confirm(ctx, p.DeviceID, payload.RequestID)
 		}
 		sessionID := request.AgentSessionID
 		if sessionID == "" {
