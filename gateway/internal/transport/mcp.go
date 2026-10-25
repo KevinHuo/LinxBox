@@ -301,10 +301,11 @@ func (e *mcpEndpoint) propose(ctx context.Context, req *mcp.CallToolRequest) (*m
 		if err == nil {
 			entry.expectedDevice = e.server.safeMCPID(cred.DeviceID)
 			entry.expectedAgent = e.server.safeMCPID(cred.AgentID)
+			entry.expectedSubject = e.server.safeMCPID(cred.Subject)
 			stage = "context"
 			var device domain.DeviceID
 			device, err = domain.NormalizeMAC(singleHeader(r.Header, "X-Linx-Device-Id"))
-			if err == nil && (string(device) != cred.DeviceID || singleHeader(r.Header, "X-Linx-Agent-Id") != cred.AgentID) {
+			if err == nil && ((cred.Subject == "" && string(device) != cred.DeviceID) || singleHeader(r.Header, "X-Linx-Agent-Id") != cred.AgentID) {
 				err = domain.ErrPermissionDenied("灵矽来源与 MCP 凭据不匹配")
 			}
 			if err == nil {
@@ -330,16 +331,22 @@ func (e *mcpEndpoint) propose(ctx context.Context, req *mcp.CallToolRequest) (*m
 					}
 					callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 					defer cancel()
-					if implicit {
-						result, err = e.server.requests.ProposeImplicit(callCtx, device, cred.AgentID, singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
-						if err == nil {
-							entry.request = e.server.safeMCPID(result.RequestID)
-							e.server.logger.Info("联调模式：已自动关联设备唯一待处理请求并保存文字", append([]any{"event", "mcp.request.resolved"}, entry.fields()...)...)
+					if cred.Subject != "" {
+						if implicit {
+							result, err = e.server.requests.ProposeImplicitForSubject(callCtx, device, domain.Subject(cred.Subject), cred.AgentID, singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
+						} else {
+							result, err = e.server.requests.ProposeForSubject(callCtx, device, domain.Subject(cred.Subject), singleHeader(r.Header, "X-Linx-Request-Id"), cred.AgentID, singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
 						}
+					} else if implicit {
+						result, err = e.server.requests.ProposeImplicit(callCtx, device, cred.AgentID, singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
 					} else {
 						result, err = e.server.requests.Propose(callCtx, device,
 							singleHeader(r.Header, "X-Linx-Request-Id"), cred.AgentID,
 							singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
+					}
+					if implicit && err == nil {
+						entry.request = e.server.safeMCPID(result.RequestID)
+						e.server.logger.Info("联调模式：已自动关联设备唯一待处理请求并保存文字", append([]any{"event", "mcp.request.resolved"}, entry.fields()...)...)
 					}
 					if err != nil && stage != "context" {
 						switch domain.CodeOf(err) {

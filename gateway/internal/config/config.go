@@ -77,10 +77,11 @@ type CredentialsConfig struct {
 	MCP      []MCPCredential     `json:"mcp,omitempty"`
 }
 
-// MCPCredential 将独立的 MCP 凭据限制到一个设备和灵矽智能体。
+// MCPCredential 将独立 MCP 凭据限制到一个设备或账号，并固定灵矽智能体。
 type MCPCredential struct {
 	Token    string `json:"token"`
-	DeviceID string `json:"device_id"`
+	DeviceID string `json:"device_id,omitempty"`
+	Subject  string `json:"subject,omitempty"`
 	AgentID  string `json:"agent_id"`
 }
 
@@ -141,9 +142,14 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取配置 %s: %w", path, err)
 	}
+	return Parse(data)
+}
+
+// Parse 从同一份字节快照解析、规范化并校验配置。
+func Parse(data []byte) (*Config, error) {
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("解析配置 %s: %w", path, err)
+		return nil, fmt.Errorf("解析配置: %w", err)
 	}
 	cfg.normalize()
 	cfg.applyDefaults()
@@ -297,7 +303,14 @@ func (c *Config) Validate() error {
 		if err := checkToken("MCP", m.Token, "mcp:"+m.DeviceID); err != nil {
 			return err
 		}
-		if _, err := domain.NormalizeMAC(m.DeviceID); err != nil {
+		if (m.DeviceID == "") == (m.Subject == "") {
+			return fmt.Errorf("MCP device_id 与 subject 必须且只能填写一个")
+		}
+		if m.Subject != "" {
+			if !domain.ValidateID(m.Subject) {
+				return fmt.Errorf("MCP subject 必须为 1～128 个字符")
+			}
+		} else if _, err := domain.NormalizeMAC(m.DeviceID); err != nil {
 			return fmt.Errorf("MCP device_id 必须为合法 MAC")
 		}
 		if !domain.ValidateID(m.AgentID) {

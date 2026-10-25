@@ -120,17 +120,17 @@ type SessionRow struct {
 // SessionRepo 读写 session_catalog 与 catalog_meta。
 type SessionRepo struct{}
 
-// ReplaceAll 在同一事务内删除并重写 Desktop 目录，并更新目录版本。
+// ReplaceAll 在同一事务内按上传顺序重写 Desktop 目录，并更新目录版本。
 func (SessionRepo) ReplaceAll(ctx context.Context, tx *sql.Tx, desktopClientID string, rows []SessionRow, version int64, now time.Time) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM session_catalog WHERE desktop_client_id = ?`, desktopClientID); err != nil {
 		return err
 	}
-	for _, r := range rows {
+	for position, r := range rows {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO session_catalog(
-			desktop_client_id, agent_session_id, thread_id, project_id, project_name, agent, title, status, summary, updated_at
-		) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			desktop_client_id, agent_session_id, thread_id, project_id, project_name, agent, title, status, summary, updated_at, sort_order
+		) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			r.DesktopClientID, r.AgentSessionID, r.ThreadID, r.ProjectID, r.ProjectName, r.Agent, r.Title, r.Status, r.Summary,
-			now.UTC().Format(time.RFC3339)); err != nil {
+			now.UTC().Format(time.RFC3339), position); err != nil {
 			return err
 		}
 	}
@@ -150,10 +150,11 @@ func (SessionRepo) GetVersion(ctx context.Context, q Queryer, desktopClientID st
 	return v, err
 }
 
-// List 按 offset/limit 分页读取目录，limit+1 用于判断是否还有下一页。
+// List 按上传顺序分页；旧目录尚未重新同步时以 ID 稳定排序。
+// limit+1 用于判断是否还有下一页。
 func (SessionRepo) List(ctx context.Context, q Queryer, desktopClientID string, offset, limit int) ([]SessionRow, error) {
 	rows, err := q.QueryContext(ctx, `SELECT desktop_client_id, agent_session_id, thread_id, project_id, project_name, agent, title, status, summary, updated_at
-		FROM session_catalog WHERE desktop_client_id = ? ORDER BY agent_session_id LIMIT ? OFFSET ?`,
+		FROM session_catalog WHERE desktop_client_id = ? ORDER BY sort_order, agent_session_id LIMIT ? OFFSET ?`,
 		desktopClientID, limit, offset)
 	if err != nil {
 		return nil, err

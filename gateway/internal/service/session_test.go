@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/KevinHuo/LinxBox/gateway/internal/contracts"
@@ -70,6 +71,57 @@ func TestSyncAndList(t *testing.T) {
 	}
 	if _, err := env.sessions.List(env.ctx, "AA:BB:CC:DD:EE:01", "aGVsbG8="); err == nil {
 		t.Fatal("负偏移 cursor 应拒绝")
+	}
+}
+
+func TestSyncPreservesOrderAndInvalidatesReorderedCursor(t *testing.T) {
+	env := newServiceEnv(t)
+	if _, err := env.binding.Bind(env.ctx, "desktop-1", "alice", "AA:BB:CC:DD:EE:01"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"z", "a", "m", "b", "y", "c"}
+	records := make([]contracts.SessionRecord, 0, len(want))
+	for _, id := range want {
+		records = append(records, record(id))
+	}
+	if _, err := env.sessions.Sync(env.ctx, "desktop-1", records); err != nil {
+		t.Fatal(err)
+	}
+	first, err := env.sessions.List(env.ctx, "AA:BB:CC:DD:EE:01", "")
+	if err != nil || first.NextCursor == nil {
+		t.Fatalf("第一页应有续页：%+v %v", first, err)
+	}
+	second, err := env.sessions.List(env.ctx, "AA:BB:CC:DD:EE:01", *first.NextCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, item := range append(first.Items, second.Items...) {
+		got = append(got, item.AgentSessionID)
+	}
+	if !slices.Equal(got, want) || second.NextCursor != nil {
+		t.Fatalf("分页没有保持上传顺序：%v", got)
+	}
+	// 仅重新排列相同记录，也必须更新目录版本并使旧 cursor 失效。
+	slices.Reverse(records)
+	if version, err := env.sessions.Sync(env.ctx, "desktop-1", records); err != nil || version != 2 {
+		t.Fatalf("重排版本错误：%d %v", version, err)
+	}
+	if _, err := env.sessions.List(env.ctx, "AA:BB:CC:DD:EE:01", *first.NextCursor); !errors.Is(err, domain.ErrConflict("x")) {
+		t.Fatalf("重排后旧 cursor 应失效：%v", err)
+	}
+	// 被拒绝的同步不改变刚保存的顺序。
+	if _, err := env.sessions.Sync(env.ctx, "desktop-1", []contracts.SessionRecord{record("a"), record("a")}); err == nil {
+		t.Fatal("重复 ID 应拒绝")
+	}
+	reordered, err := env.sessions.List(env.ctx, "AA:BB:CC:DD:EE:01", "")
+	if err != nil || len(reordered.Items) != 5 {
+		t.Fatalf("重排后的第一页错误：%+v %v", reordered, err)
+	}
+	for i, item := range reordered.Items {
+		if item.AgentSessionID != records[i].AgentSessionID {
+			t.Fatalf("重排顺序错误：第 %d 项为 %s", i, item.AgentSessionID)
+		}
 	}
 }
 

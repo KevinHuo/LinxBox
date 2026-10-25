@@ -3,16 +3,20 @@
 set -euo pipefail
 
 usage() {
-  echo '用法：sudo bash install.sh'
+  echo '用法：sudo bash install.sh [--dynamic-mcp]'
   echo '无需指定 MAC，固件连接后通过 device.hello 自动登记。'
   echo '已有配置和数据库保留；新装生成独立账号接入凭据。'
+  echo '--dynamic-mcp：依据旧设备登记，将已有 MCP token 显式转换为同账号多设备授权。'
 }
 
 if [[ "${1:-}" == '-h' || "${1:-}" == '--help' ]]; then
   usage
   exit 0
 fi
-if [[ $# -gt 0 ]]; then
+LINX_DYNAMIC_MCP=false
+if [[ $# -eq 1 && "$1" == '--dynamic-mcp' ]]; then
+  LINX_DYNAMIC_MCP=true
+elif [[ $# -gt 0 ]]; then
   usage
   exit 2
 fi
@@ -74,6 +78,20 @@ chmod 0640 /etc/linxbox/gateway.json
 
 if systemctl is-active --quiet linxbox-gateway.service; then
   systemctl stop linxbox-gateway.service
+fi
+if [[ "$LINX_DYNAMIC_MCP" == true ]]; then
+  # 同一文件系统内生成受限临时配置，校验成功后原子替换；不直接覆写原文件。
+  LINX_MCP_TEMP_DIR=$(mktemp -d /etc/linxbox/.mcp-upgrade.XXXXXX)
+  trap 'rm -rf -- "$LINX_MCP_TEMP_DIR"' EXIT
+  (cd /opt/linxbox && "$LINX_INSTALL_DIR/linxbox-gateway" \
+    --config /etc/linxbox/gateway.json \
+    --write-dynamic-mcp-config "$LINX_MCP_TEMP_DIR/gateway.json")
+  chown root:linxbox "$LINX_MCP_TEMP_DIR/gateway.json"
+  chmod 0640 "$LINX_MCP_TEMP_DIR/gateway.json"
+  mv -- "$LINX_MCP_TEMP_DIR/gateway.json" /etc/linxbox/gateway.json
+  rmdir -- "$LINX_MCP_TEMP_DIR"
+  trap - EXIT
+  echo '已有 MCP 凭据已改为各自登记账号范围；token 和 agent_id 保持不变。'
 fi
 install -o root -g root -m 0755 "$LINX_INSTALL_DIR/linxbox-gateway" /opt/linxbox/bin/linxbox-gateway
 install -o root -g root -m 0755 "$LINX_INSTALL_DIR/linxbox-smoke" /opt/linxbox/bin/linxbox-smoke

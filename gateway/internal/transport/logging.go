@@ -62,6 +62,7 @@ func peerErrorMessage(message string) (string, bool) {
 	case "会话不属于当前 Desktop", "会话不存在", "消息不存在", "查询失败", "Desktop 查询超时", "Desktop 已断开连接", "无法向 Desktop 发送查询", "Desktop 未连接", "未收到文字", "请求确认已超时":
 		return message, false
 	case "缺少本轮请求或灵矽上下文", "灵矽来源与 MCP 凭据不匹配", "MCP 请求自动关联未开启",
+		"MCP 账号范围无效", "MCP 设备尚未登记", "设备与 MCP 凭据不属于同一账号",
 		"没有可关联的待处理请求，请先 request.prepare", "设备存在多个可关联请求，不能自动选择",
 		"请求文字或灵矽来源已固定", "请求已取消或过期", domain.RequestRecoveryMessage:
 		return message, false

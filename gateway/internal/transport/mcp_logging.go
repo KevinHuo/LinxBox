@@ -57,7 +57,7 @@ type mcpCallLog struct {
 	implicitEnabled                                    bool
 	transport                                          string
 	trace, rpcID, device, agent, voiceSession, request string
-	expectedDevice, expectedAgent                      string
+	expectedDevice, expectedAgent, expectedSubject     string
 	connection                                         uint64
 	missing, duplicate                                 []string
 	arguments                                          json.RawMessage
@@ -126,6 +126,7 @@ func (entry mcpCallLog) fields() []any {
 		"device_id", entry.device, "linx_agent_id", entry.agent, "voice_session_id", entry.voiceSession, "request_id", entry.request,
 		"request_id_source", entry.requestSource, "implicit_request_id_enabled", entry.implicitEnabled,
 		"credential_device_id", entry.expectedDevice, "credential_linx_agent_id", entry.expectedAgent,
+		"credential_subject", entry.expectedSubject,
 		"missing_headers", entry.missing, "duplicate_headers", entry.duplicate, "text_is_string", entry.textIsString,
 		"text_non_blank", entry.textNonBlank, "text_bytes", entry.textBytes, "text_codepoints", entry.textCodepoints, "text_source", "mcp_tool_argument"}
 }
@@ -138,7 +139,7 @@ func (s *Server) logMCPCall(event, stage string, entry mcpCallLog, started time.
 	case "mcp.call.received":
 		fields = append(fields, s.bodyFields("body", entry.arguments)...)
 	case "mcp.call.validated":
-		message = "MCP 来源和参数 Schema 校验通过，开始核对原请求并保存文字"
+		message = "MCP 智能体与参数 Schema 校验通过，开始核对设备账号和原请求"
 	case "mcp.call.completed":
 		message = "MCP 提案已接受，返回当前请求快照"
 		fields = append(fields, "ok", err == nil, "status", result.Status, "agent_session_id", s.safeMCPID(result.AgentSessionID), "duration_ms", elapsedMillis(started))
