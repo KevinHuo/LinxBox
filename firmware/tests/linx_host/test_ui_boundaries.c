@@ -466,7 +466,7 @@ static bool gateway_send(uint32_t generation, const char *json, size_t size, voi
     ++gateway_sends;
     gateway_confirms += strstr(json, "\"type\":\"request.confirm\"") != NULL;
     gateway_request_cancels += strstr(json, "\"type\":\"request.cancel\"") != NULL;
-    assert(!strstr(json, "request.propose") && !strstr(json, "request.confirm"));
+    assert(!strstr(json, "request.propose"));
     return true;
 }
 
@@ -1126,8 +1126,10 @@ static void test_gateway_original_agent_voice_lifecycle(void)
     assert(!strcmp(gateway_last_start.gateway_agent_session_id, remote.view.request.agent_session_id));
     assert(gateway_last_start.context.task_id == 0U);
     unsigned finishes = gateway_finishes, cancels = gateway_cancels, requests_cancelled = gateway_request_cancels;
+    unsigned confirms = gateway_confirms;
     linx_ui_tick(8001U); linx_ui_handle_key(LINX_UI_KEY_OK);
     assert(gateway_finishes == finishes + 1U && ui.gateway_finish_pending);
+    assert(remote.view.request.confirm_requested && !remote.view.request.confirm_sent);
     assert(has_remote_label("正在结束录音"));
     for (unsigned i = 0U; i < 3U; ++i) linx_ui_handle_key(LINX_UI_KEY_OK);
     assert(gateway_finishes == finishes + 1U);
@@ -1146,8 +1148,17 @@ static void test_gateway_original_agent_voice_lifecycle(void)
     assert(gateway_cancels == cancels && gateway_request_cancels == requests_cancelled);
     assert(strstr(gateway_last_send, "request.get"));
     gateway_request_response("awaiting_confirmation"); linx_ui_tick(18001U);
-    assert(remote.view.request.cancel_requested && gateway_request_cancels == requests_cancelled + 1U);
-    assert(gateway_confirms == 0U);
+    assert(!remote.view.request.cancel_requested && gateway_request_cancels == requests_cancelled);
+    assert(remote.view.request.confirm_sent && gateway_confirms == confirms + 1U);
+    assert(strstr(gateway_last_send, "request.confirm"));
+    /* 返回概览后再打开状态、重复 OK 和播完清理均不能取消或重新确认本轮。 */
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.at.page == LINX_UI_RECEIPT);
+    strcpy(remote.view.request.error_message, "任务调度尚未实现，请求未执行");
+    render();
+    assert(has_remote_label(remote.view.request.error_message));
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(!remote.view.request.cancel_requested && gateway_confirms == confirms + 1U);
 
     const linx_gateway_request_status_t running[] = {LINX_GATEWAY_REQUEST_SENDING, LINX_GATEWAY_REQUEST_RUNNING, LINX_GATEWAY_REQUEST_COMPLETED};
     for (unsigned i = 0; i < 3; ++i) {
@@ -1184,7 +1195,28 @@ static void test_gateway_original_agent_voice_lifecycle(void)
     assert(ui.at.page == LINX_UI_OVERVIEW && remote.view.request.cancel_requested && !ui.voice_generation);
     event.generation = previous; event.state = LINX_VOICE_FINISHED; event.error = LINX_VOICE_OK;
     assert(!linx_ui_voice_event(&event));
-    puts("原灵矽同会话UI：真实目标预热、prepare许可、一次OK停录、Agent原声结束返回、快照不驱动播报、未执行安全收尾通过");
+    puts("原灵矽同会话UI：真实目标预热、prepare许可、一次OK停录并确认、迟到文字不取消、原声结束返回和未知状态不重投通过");
+}
+
+static void test_gateway_ok_authorizes_only_after_stop_accepted(void)
+{
+    setup_gateway_one_key_capture();
+    unsigned confirms = gateway_confirms;
+    reject_finish = true;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.voice_state == LINX_VOICE_LISTENING && !remote.view.request.confirm_requested);
+    assert(gateway_confirms == confirms);
+    reject_finish = false;
+    /* 原文先到也必须等用户 OK，不能由 proposed 自动授权。 */
+    remote.view.request.status = LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION;
+    remote.view.request.text_present = true;
+    linx_gateway_client_tick(&remote, 2U);
+    assert(gateway_confirms == confirms);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(ui.voice_state == LINX_VOICE_WAITING && remote.view.request.confirm_requested);
+    assert(remote.view.request.confirm_sent && gateway_confirms == confirms + 1U);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    assert(gateway_confirms == confirms + 1U);
 }
 
 static void test_gateway_error_then_prepare_resets_ui(void)
@@ -1295,6 +1327,7 @@ int main(void)
     test_gateway_voice_pause_context();
     test_gateway_recording_wave_and_timer();
     test_gateway_original_agent_voice_lifecycle();
+    test_gateway_ok_authorizes_only_after_stop_accepted();
     test_gateway_error_then_prepare_resets_ui();
     test_gateway_started_owner_released_after_disconnect();
     linx_ui_deinit();

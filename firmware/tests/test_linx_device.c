@@ -11,9 +11,10 @@ static bool auto_network_ack;
 static bool release_network_on_delay;
 static char recorded_request_id[513];
 
-static void test_lingxi_log(const char *tag, const char *format, ...)
-    __attribute__((format(printf, 2, 3)));
-#define ESP_LOGW(tag, ...) test_lingxi_log(tag, __VA_ARGS__)
+static void test_lingxi_log(char level, const char *tag, const char *format, ...)
+    __attribute__((format(printf, 3, 4)));
+#define ESP_LOGI(tag, ...) test_lingxi_log('I', tag, __VA_ARGS__)
+#define ESP_LOGW(tag, ...) test_lingxi_log('W', tag, __VA_ARGS__)
 #include "sdk_stubs.h"
 
 const char *test_ssid = "";
@@ -112,6 +113,8 @@ static int cached_socket_errno;
 static bool missing_error_handle;
 static unsigned diagnostic_count, tls_error_reads, transport_errno_reads, diagnostic_fault_stage;
 static char diagnostics[16][320];
+static unsigned protocol_log_count;
+static char protocol_logs[128][320];
 
 typedef struct {
     unsigned opcode;
@@ -614,7 +617,7 @@ esp_err_t esp_tls_get_and_clear_last_error(esp_tls_error_handle_t error, int *co
     return result;
 }
 
-static void test_lingxi_log(const char *tag, const char *format, ...)
+static void test_lingxi_log(char level, const char *tag, const char *format, ...)
 {
     char message[320];
     va_list arguments;
@@ -624,7 +627,15 @@ static void test_lingxi_log(const char *tag, const char *format, ...)
     assert(size >= 0 && (size_t)size < sizeof(message));
     assert(!strstr(message, "secret-token") && !strstr(message, "session-1") && !strstr(message, "Authorization"));
     assert(!strstr(message, "existing-net") && !strstr(message, "ab:ab:ab:ab:ab:ab") && !strstr(message, "diagnostic-private"));
+    assert(!strstr(message, "private-text") && !strstr(message, "voice.example.org") && !strstr(message, "real-session-") && !strstr(message, "round-"));
     if (strcmp(tag, "linx_voice")) { assert(!strcmp(tag, "linx_time")); return; }
+    if (level == 'I') {
+        if (!strncmp(message, "protocol ", 9)) {
+            assert(protocol_log_count < sizeof(protocol_logs) / sizeof(protocol_logs[0]));
+            strcpy(protocol_logs[protocol_log_count++], message);
+        }
+        return;
+    }
     assert(diagnostic_count < sizeof(diagnostics) / sizeof(diagnostics[0]));
     strcpy(diagnostics[diagnostic_count++], message);
 }
@@ -753,6 +764,7 @@ static void reset(void)
     cached_tls_error = (struct test_tls_error){0}; cached_socket_errno = 0; missing_error_handle = false;
     diagnostic_count = tls_error_reads = transport_errno_reads = diagnostic_fault_stage = 0;
     memset(diagnostics, 0, sizeof(diagnostics));
+    protocol_log_count = 0; memset(protocol_logs, 0, sizeof(protocol_logs));
     test_ssid = ""; test_password = "";
     existing_ap_netif = false; wifi_mode = WIFI_MODE_STA;
     disconnect_pending_event = sync_pending_event = drop_disconnect = drop_barrier = drop_retry_disconnect = false;
@@ -1826,6 +1838,66 @@ static void test_rolling_lease_and_hard_release(void)
     shutdown_retained();
 }
 
+static bool has_protocol_log(const char *expected)
+{
+    for (unsigned i = 0; i < protocol_log_count; ++i)
+        if (strstr(protocol_logs[i], expected)) return true;
+    return false;
+}
+
+static void test_protocol_diagnostics(void)
+{
+    reset(); begin(); add_text(hello_opus); add_wait(1);
+    add_text(tts_start); add_binary("opus", 4); add_text(tts_stop); execute();
+    assert(protocol_log_count == 6);
+    assert(has_protocol_log("direction=tx type=hello"));
+    assert(has_protocol_log("direction=rx type=hello"));
+    assert(has_protocol_log("direction=tx type=listen.start"));
+    assert(has_protocol_log("direction=tx type=listen.stop"));
+    assert(has_protocol_log("direction=rx type=tts.start"));
+    assert(has_protocol_log("direction=rx type=tts.stop"));
+    for (unsigned i = 0; i < protocol_log_count; ++i) {
+        assert(strstr(protocol_logs[i], " bytes="));
+        assert(strstr(protocol_logs[i], "ok=1 generation=7"));
+    }
+    assert(audio_sends == 1 && audio_writes == 1 && event_counts[LINX_VOICE_FINISHED] == 1);
+
+    /* 日志只使用解析后的枚举，未知状态、私人正文和凭据不能成为日志字段。 */
+    const char *incoming[] = {
+        "{\"type\":\"stt\",\"text\":\"private-text\",\"token\":\"secret-token\",\"session_id\":\"session-1\"}",
+        "{\"type\":\"private-text\",\"text\":\"private-text\"}",
+        "{\"type\":\"tts\",\"state\":\"private-text\",\"text\":\"private-text\"}",
+        "{\"type\":\"tts\",\"state\":false,\"text\":\"private-text\"}",
+        "private-text",
+    };
+    const char *expected[] = {"stt", "unknown", "unknown", "invalid", "invalid"};
+    for (unsigned i = 0; i < sizeof(incoming) / sizeof(incoming[0]); ++i) {
+        reset();
+        voice_session_t session = {.generation = 77, .hello = true, .turn_active = true};
+        strcpy(session.session_id, "session-1");
+        strcpy((char *)session.receiver.data, incoming[i]);
+        session.receiver.used = strlen(incoming[i]);
+        linx_voice_error_t result = message(&session);
+        bool valid = i < 3;
+        assert(result == (valid ? LINX_VOICE_OK : LINX_VOICE_PROTOCOL_FAILED));
+        assert(protocol_log_count == 1);
+        char line[128];
+        snprintf(line, sizeof(line), "direction=rx type=%s bytes=%zu parse_ok=%d generation=77",
+                 expected[i], strlen(incoming[i]), valid);
+        assert(strstr(protocol_logs[0], line));
+    }
+
+    reset(); begin(); failure = "esp_transport_ws_send_raw";
+    execute(); expect_error(LINX_VOICE_NETWORK_FAILED);
+    assert(protocol_log_count == 1 && strstr(protocol_logs[0], "direction=tx type=hello"));
+    assert(strstr(protocol_logs[0], "ok=0 generation=7"));
+    assert(diagnostic_count == 1 && strstr(diagnostics[0], "operation=send phase=hello"));
+
+    reset(); begin_cancelled_turn(0);
+    assert(has_protocol_log("direction=tx type=abort"));
+    shutdown_retained();
+}
+
 static void test_transport_diagnostics(void)
 {
     static const uint8_t close_with_private_reason[] = {0x03, 0xf3, 'd', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', '-', 'p', 'r', 'i', 'v', 'a', 't', 'e'};
@@ -2070,6 +2142,7 @@ int main(void)
     test_draining_start_and_cancel();
     test_cancel_fragment_barrier();
     test_rolling_lease_and_hard_release();
+    test_protocol_diagnostics();
     test_transport_diagnostics();
     reset();
     puts("灵矽设备适配器：生命周期、流式音频、取消及失败清理测试通过");

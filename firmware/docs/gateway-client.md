@@ -1,15 +1,15 @@
 # 固件接入正式 Gateway
 
-Refs #14、#1。固件以 `contracts/` 为唯一字段来源，本文说明设备侧设计及验收边界。当前基线为 `d906469` 的 Go Gateway；旧 Node 演示服务、设备直传识别文字和独立指定播报均不属于本方案。
+Refs #14、#1。已核对 [Issue #14](https://github.com/KevinHuo/LinxBox/issues/14) 的现有消息与恢复语义；其原始设计中的二次确认页面，按本轮明确需求改为“停录 OK 即授权、原文到达后确认”，协议字段不变。固件以 `contracts/` 为唯一字段来源，本文说明设备侧设计及验收边界。当前基线为 `d906469` 的 Go Gateway；旧 Node 演示服务、设备直传识别文字和独立指定播报均不属于本方案。
 
 ## 固定交互与链路
 
 1. 任务目录、概览、最近对话和正文从 Gateway 读取；保留粗体字、波形、大号读秒和可配置长按／双击返回。阅读页只读，从概览的“继续沟通”开启语音。
 2. 进入概览时后台准备灵矽连接，软件不采集麦克风。选择继续沟通后，先向 Gateway `request.prepare` 固定真实 `agent_session_id`，成功后才能开始本轮录音。
-3. 设备在原灵矽 WSS 发送带本轮 `request_id` 的 `listen.start`，流式上传音频。识别原文由灵矽 Agent 经 MCP 转发，设备不上传 `stt.text`，不调用 `request.propose` 或 `request.confirm`。
-4. 短按一次 OK 结束录音，波形和读秒立即冻结；发送 `listen.stop` 后等待原语音会话的回复，不再出现“确认指令”。等待、播放期间 OK 不重录、不重复发送。
-5. 灵矽 Agent 等待 MCP 的真实结果，自行回答“已发送”“已发送 codex”或“未能成功发送，原因…”。设备不选句子、不请求另一轮 TTS、不播放固定回执。
-6. 原语音流完成尾音收尾、音频休眠后，设备返回概览。业务推送不能制造发送成功或语音播放完成。取消／失败／正常结束时清理尚未执行的准备请求；执行中及结果不确定的状态不盲目重发。
+3. 设备在原灵矽 WSS 发送带本轮 `request_id` 的 `listen.start`，流式上传音频。识别原文由灵矽 Agent 经 MCP 转发，设备不上传 `stt.text`，不调用 `request.propose`。
+4. 短按一次 OK 结束录音并授权发送本轮文字，波形和读秒立即冻结。停录命令被接受后登记确认意图；同一 `request_id` 的原文进入 `awaiting_confirmation` 后发送一次 `request.confirm`，原文先到也必须等 OK。不再出现第二次确认页面，等待、播放期间 OK 不重录、不重复发送。
+5. 灵矽 Agent 在原会话中自行回复，设备不选句子、不请求另一轮 TTS、不播放固定回执。MCP 保存原文不等于任务已投递；语音说“已发送”不能代替 Gateway 确认与 Desktop 执行事实。
+6. 原语音流完成尾音收尾、音频休眠后，设备返回概览。业务推送不能制造发送成功或语音播放完成。返回取消时清理尚未执行的准备请求；按 OK 授权的本轮正常播完后继续等待原文和确认结果，不再自动取消。确认已进入发送队列后，超时／断线只查询，不自动重发。
 
 语音和 Gateway 请求标识分别管理。`gateway_agent_session_id` 是连接复用的目标身份；`gateway_request_id` 每次录音更新，只作为本轮关联元数据，不因它变化而重建同目标的灵矽连接。目标切换、连接失效才重新建立。
 
@@ -25,12 +25,24 @@ Refs #14、#1。固件以 `contracts/` 为唯一字段来源，本文说明设�
 | `agent_sessions.list`／`agent_session.get` | 任务目录和固定目标详情 |
 | `messages.list`／`message.content.get` | 历史及 UTF-8 正文分块 |
 | `request.prepare` | 开始录音前固定目标，首次成功只授予一次录音许可 |
+| `request.confirm` | OK 授权后等待本轮原文就绪，发送一次确认；成功应答不等于执行成功 |
 | `request.get` | 断线、超时及请求状态恢复，不重新授予许可 |
 | `request.cancel` | 清理未执行请求，不撤回已投递任务 |
 
 设备不向列表增加 `limit`，不依赖 `last_turn_status`、`delivery_confirmed` 等非正式字段。会话状态只展示服务端契约允许的 idle、running、completed、failed、unknown；unknown 如实显示，不能猜测执行事实。
 
 WSS 鉴权后接收 `device.bound`、`agent_sessions.updated`、`message.available` 和 `request.proposed/updated`，没有额外订阅接口。目录通知合并刷新，正在阅读时新回复只标记并更新目录／详情，不替换原正文和页码。断线后重新 hello、恢复请求、重新读取目录首批，旧代号和旧包 ID 的响应不能覆盖当前页面。
+
+## 串口协议日志
+
+INFO 级别日志覆盖 Gateway 业务收发和灵矽文本控制消息；日志输出到串口，不保存日志历史。
+
+- `linx_gateway` 的 `protocol=rx` 可看到 `request.proposed/updated`、响应所对应的操作、状态与错误码；`protocol=tx_queued type=request.confirm` 表示确认已被本地发送队列接受，`tx_rejected` 表示未入队。
+- `linx_gateway` 的 `wire=tx` 记录实际 WebSocket 写入长度和返回值；`wire=rx` 记录收到完整消息或控制帧。入队、成功写入和服务端成功响应是不同事实；均不能代替 Desktop 接收和执行结果。
+- `linx_voice` 记录发送的 `hello/listen.start/listen.stop/abort`，以及接收的 `hello/stt/tts.start/tts.stop`；未知和无效文本消息只打印固定分类。保留现有音频启动／停止和传输失败记录，音频与心跳不逐包打印。
+- 字段仅包含方向／阶段、连接或语音代号、白名单消息类型、字节数、固定状态／错误码及发送／解析结果；不输出令牌、地址、业务 ID、字幕、指令、回复正文或任意外部错误文字。协议类型与状态日志复用已存在的解析结果，不重新解析或复制整帧。
+
+ESP32-C3 工具链量测：Gateway client 常驻结构从 24,400 增至 24,408 字节（回调指针及对齐共 8 字节）；单次回调记录在栈上占 28 字节。灵矽会话未增加字段或缓存。16 KiB 消息的主机替身测试开启与关闭日志时，动态分配次数和峰值相同。上述数值不包含 ESP-IDF 日志格式化与串口驱动内部开销；串口输出耗时及音频并发下的实际栈水位仍需真机验证。可通过 ESP-IDF 日志等级减少输出。
 
 ## 展示让出内存
 
@@ -72,9 +84,11 @@ LINX_CONTRACT_PYTHON="$PWD/../.local/issue14/contracts-venv/bin/python" ./tools/
 LINX_CONTRACT_PYTHON="$PWD/../.local/issue14/contracts-venv/bin/python" ./tools/validate_go_gateway.sh
 ```
 
-TLS mock 验证真实 C controller、LVGL、分页、推送刷新和单次停录。第二项启动仓库的真实 Go Gateway，模拟 Desktop 查询内容、模拟平台 SSE MCP 和四个逐轮来源头，验证原文不变、目标固定、错轮拒绝以及保存提案不会变成执行成功。抓包逐条按共享 Schema 校验。全部模拟均不访问私人账号或执行真实 Codex 任务。
+TLS mock 验证真实 C controller、LVGL、分页、推送刷新和单次停录。第二项启动仓库的真实 Go Gateway，模拟 Desktop 查询内容、模拟平台 SSE MCP 和四个逐轮来源头，验证原文不变、目标固定、错轮拒绝、OK 后单次确认、播完后迟到原文不丢失，以及服务端拒绝后不伪造投递成功、不自动重投。抓包逐条按共享 Schema 校验。全部模拟均不访问私人账号或执行真实 Codex 任务。
 
-**当前服务端限制：** `d906469` 的 `propose_task_reply` 只持久化到 `awaiting_confirmation`；`request.confirm` 返回 `DEPENDENCY_UNAVAILABLE`，尚未投递 Desktop。此时 Agent 不能说“已发送”，必须依据真实工具结果说明未能发送。硬件不会通过自动确认或旁路补齐这一缺口。
+2026-10-25 本轮验证：静态检查、真实 LVGL 主机回归、Gateway + 灵矽 + WS 配置的 ESP32-C3 固件构建均通过；自有 C 代码行覆盖率 99.38%、分支 93.31%、函数 100%，每个文件均达到 90% 门槛。TLS mock 和本地正式 Go Gateway 集成均验证了单次确认、明确拒绝及无真实任务投递，所有抓包通过共享 Schema 校验。协议日志包含敏感内容排除与分配峰值回归。本轮未重新烧录，未实测实际部署服务、灵矽平台与已绑定另一台电脑的完整确认执行链路。
+
+**当前服务端限制：** `d906469` 的 `propose_task_reply` 只持久化到 `awaiting_confirmation`；`request.confirm` 返回 `DEPENDENCY_UNAVAILABLE`，尚未投递 Desktop。此时 Agent 不能说“已发送”，必须依据真实工具结果说明未能发送。硬件会发送用户授权的确认并保留该错误，在请求状态页显示；不能通过发包补齐服务端调度。其余接口状态见[三端接口清单](interface-status.md)。
 
 **当前平台限制：** [正式 MCP 接入说明](../../gateway/docs/mcp.md)明确要求每轮 `X-Linx-Device-Id/Agent-Id/Session-Id/Request-Id`，其中 request_id 透传及最终 ASR 原话固定路由仍待灵矽平台支持。设备发送 `listen.start.request_id` 不等于平台已经透传；不使用“最新请求”推断，也不让模型猜目标。
 

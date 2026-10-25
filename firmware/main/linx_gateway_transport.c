@@ -6,6 +6,7 @@
 #include <string.h>
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_transport_ssl.h"
 #include "esp_transport_tcp.h"
@@ -192,6 +193,8 @@ static bool send_frame(unsigned opcode, const char *data, size_t size)
 {
     int sent = esp_transport_ws_send_raw(websocket, (ws_transport_opcodes_t)(opcode | WS_TRANSPORT_OPCODES_FIN),
         data, (int)size, IO_TIMEOUT_MS);
+    ESP_LOGI("linx_gateway", "wire=tx generation=%lu opcode=%u bytes=%zu sent=%d",
+             (unsigned long)connection_generation, opcode, size, sent);
     /* 短写的帧不可重新发送，否则可能执行两次。 */
     return sent >= 0 && (size_t)sent == size;
 }
@@ -252,11 +255,15 @@ static bool receive_chunk(unsigned opcode, bool fin, size_t payload, const char 
     if (frame_remaining) return true;
     frame_active = false;
     if (control_frame) {
+        ESP_LOGI("linx_gateway", "wire=rx generation=%lu opcode=%u bytes=%zu",
+                 (unsigned long)connection_generation, frame_opcode, control_used);
         if (frame_opcode == WS_TRANSPORT_OPCODES_CLOSE) return false;
         if (frame_opcode == WS_TRANSPORT_OPCODES_PING &&
             !send_frame(WS_TRANSPORT_OPCODES_PONG, (const char *)control, control_used)) return false;
         if (!fragmented) frame_deadline = 0;
     } else if (frame_fin) {
+        ESP_LOGI("linx_gateway", "wire=rx generation=%lu opcode=%u bytes=%zu",
+                 (unsigned long)connection_generation, WS_TRANSPORT_OPCODES_TEXT, incoming_size);
         incoming[incoming_size] = 0;
         fragmented = false;
         frame_deadline = 0;

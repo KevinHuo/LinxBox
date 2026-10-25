@@ -61,6 +61,24 @@ static unsigned send_count, confirmations, cancellations, preparations;
 static bool accept_send = true;
 static bool injecting_failure;
 static uint32_t clock_now = 10;
+static linx_gateway_log_t protocol_logs[32];
+static size_t protocol_log_count;
+
+static void capture_protocol_log(const linx_gateway_log_t *entry, void *user)
+{
+    assert(user == &client && protocol_log_count < 32U);
+    const char *strings[] = {entry->phase, entry->type, entry->operation, entry->status, entry->error_code};
+    for (size_t i = 0; i < sizeof(strings) / sizeof(strings[0]); ++i) {
+        assert(strings[i] && !strstr(strings[i], "PRIVATE") && !strchr(strings[i], '\n'));
+    }
+    protocol_logs[protocol_log_count++] = *entry;
+}
+
+static const linx_gateway_log_t *last_protocol_log(void)
+{
+    assert(protocol_log_count);
+    return &protocol_logs[protocol_log_count - 1U];
+}
 
 static bool send_json(uint32_t generation, const char *json, size_t size, void *user)
 {
@@ -72,9 +90,10 @@ static bool send_json(uint32_t generation, const char *json, size_t size, void *
     cJSON *root = cJSON_Parse(sent);
     const char *type = cJSON_GetObjectItemCaseSensitive(root, "type")->valuestring;
     assert(linx_gateway_client_validate_json(type, sent, size));
-    assert(strcmp(type, "request.confirm") && strcmp(type, "request.propose"));
+    assert(strcmp(type, "request.propose"));
     assert(!strstr(json, "\"text\":") && !strstr(json, "\"limit\":"));
     cancellations += !strcmp(type, "request.cancel");
+    confirmations += !strcmp(type, "request.confirm");
     preparations += !strcmp(type, "request.prepare");
     cJSON_Delete(root);
     return true;
@@ -346,6 +365,195 @@ static void test_cancel_recovery(void)
     assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CANCEL, NULL, clock_now++));
     assert(error_response("CONFLICT", "已经提交")); assert(strstr(sent, "request.get"));
     assert(response(request("awaiting_confirmation", "原文")));
+}
+
+static void test_confirmation_authorization(void)
+{
+    start(true);
+    assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(linx_gateway_client_claim_capture(&client));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(client.view.request.confirm_requested && !client.view.request.confirm_sent && confirmations == 0);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(notification("request.proposed", request("awaiting_confirmation", "逐字原话")));
+    assert(confirmations == 1 && client.view.request.confirm_sent && strstr(sent, "request.confirm"));
+    assert(!strstr(sent, "逐字原话") && !strstr(sent, "agent_session_id"));
+    for (unsigned i = 0; i < 3U; ++i) {
+        assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+        assert(notification("request.proposed", request("awaiting_confirmation", "逐字原话")));
+    }
+    assert(confirmations == 1);
+    assert(response(request("sending", "逐字原话")));
+    assert(client.view.request.confirm_requested && client.view.request.confirm_sent);
+    assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(notification("request.updated", request("completed", "逐字原话")));
+    assert(!client.view.request.confirm_requested && !client.view.request.confirm_sent);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_PREPARE, NULL, clock_now++));
+    assert(!client.view.request.confirm_requested && !client.view.request.confirm_sent);
+    assert(response(request("awaiting_text", NULL)));
+    assert(notification("request.proposed", request("awaiting_confirmation", "第二条")));
+    assert(confirmations == 1); /* 到达原文不等于用户授权。 */
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(confirmations == 2 && client.pending.operation == OP_CONFIRM);
+}
+
+static void test_confirmation_cancel_and_queue(void)
+{
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CANCEL, NULL, clock_now++));
+    assert(!client.view.request.confirm_requested && cancellations == 1);
+    assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(notification("request.proposed", request("awaiting_confirmation", "取消后迟到")));
+    assert(response(request("cancelled", "取消后迟到")));
+    assert(!confirmations && !client.view.request.confirm_sent);
+
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(notification("request.proposed", request("awaiting_confirmation", "原文先到")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_HISTORY, NULL, clock_now++));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(client.pending.operation == OP_HISTORY && !confirmations);
+    assert(response(page(0, true, NULL)));
+    assert(client.pending.operation == OP_CONFIRM && confirmations == 1);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CANCEL, NULL, clock_now++));
+    assert(!client.view.request.confirm_requested && client.view.request.confirm_sent);
+    assert(response(request("sending", "原文先到")));
+    assert(!cancellations); /* 已发送的确认不能声称被本地取消撤回。 */
+
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(notification("request.proposed", request("awaiting_confirmation", "排队原文")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_HISTORY, NULL, clock_now++));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CANCEL, NULL, clock_now++));
+    assert(response(page(0, true, NULL)));
+    assert(client.pending.operation == OP_CANCEL && cancellations == 1 && !confirmations);
+}
+
+static void reconnect_request(void)
+{
+    linx_gateway_client_disconnected(&client, client.view.generation);
+    linx_gateway_client_connected(&client, client.view.generation + 1U, "AA:BB:CC:DD:EE:FF", clock_now++);
+    assert(client.pending.operation == OP_HELLO);
+    assert(response(parsed("{\"device_id\":\"AA:BB:CC:DD:EE:FF\",\"desktop_client_id\":\"desktop\"}")));
+    assert(client.pending.operation == OP_GET && client.view.request.uncertain);
+}
+
+static void test_confirmation_recovery(void)
+{
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    linx_gateway_client_disconnected(&client, client.view.generation);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(client.view.request.confirm_requested && !client.view.request.confirm_sent);
+    reconnect_request();
+    assert(response(request("awaiting_confirmation", "重连后原文")));
+    assert(client.pending.operation == OP_CONFIRM && confirmations == 1);
+    reconnect_request();
+    assert(response(request("awaiting_confirmation", "重连后原文")));
+    assert(client.pending.operation == OP_SESSIONS && confirmations == 1);
+    assert(response(page(0, false, NULL))); assert(response(session("session")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(confirmations == 1 && !client.pending.operation);
+    assert(notification("request.updated", request("unknown", "重连后原文")));
+    assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(notification("request.updated", request("failed", "重连后原文")));
+    assert(!client.view.request.confirm_requested && !client.view.request.confirm_sent);
+
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(notification("request.proposed", request("awaiting_confirmation", "队列原文")));
+    accept_send = false;
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(client.view.error == LINX_GATEWAY_ERROR_BUSY && !client.view.request.confirm_sent);
+    accept_send = true; linx_gateway_client_tick(&client, clock_now++);
+    assert(client.pending.operation == OP_CONFIRM && confirmations == 1);
+    linx_gateway_client_tick(&client, client.pending.sent_at + LINX_GATEWAY_TIMEOUT_MS);
+    assert(client.pending.operation == OP_GET && client.view.request.uncertain && confirmations == 1);
+    assert(response(request("awaiting_confirmation", "队列原文")));
+    assert(!client.pending.operation && client.view.request.confirm_sent);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_REQUEST_GET, NULL, clock_now++));
+    linx_gateway_client_tick(&client, client.pending.sent_at + LINX_GATEWAY_TIMEOUT_MS);
+    unsigned before = send_count;
+    linx_gateway_client_tick(&client, clock_now++);
+    assert(send_count == before && confirmations == 1 && client.view.request.uncertain);
+
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(notification("request.proposed", request("awaiting_confirmation", "远端错误")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(error_response("DEPENDENCY_UNAVAILABLE", "尚未实现任务调度"));
+    assert(client.pending.operation == OP_GET && client.view.request.uncertain && confirmations == 1);
+    assert(!strcmp(client.view.request.error_code, "DEPENDENCY_UNAVAILABLE"));
+    assert(response(request("awaiting_confirmation", "远端错误")));
+    linx_gateway_client_tick(&client, clock_now++);
+    assert(!client.pending.operation && confirmations == 1);
+    assert(client.view.error == LINX_GATEWAY_ERROR_NONE &&
+        !strcmp(client.view.request.error_code, "DEPENDENCY_UNAVAILABLE") &&
+        !strcmp(client.view.request.error_message, "尚未实现任务调度"));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(confirmations == 1 && !strcmp(client.view.request.error_message, "尚未实现任务调度"));
+    assert(notification("request.updated", request("sending", "远端错误")));
+    assert(!client.view.request.error_code[0] && !client.view.request.error_message[0]);
+    assert(notification("request.updated", request("failed", "远端错误")));
+    assert(!client.view.request.confirm_requested && !client.view.request.confirm_sent);
+}
+
+static void test_protocol_log_privacy(void)
+{
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    strcpy(client.view.request.request_id, "PRIVATE_REQUEST_ID");
+    strcpy(client.view.request.agent_session_id, "PRIVATE_SESSION_ID");
+    strcpy(client.view.request.target_title, "PRIVATE_TARGET_TITLE");
+    client.config.log = capture_protocol_log; protocol_log_count = 0;
+    cJSON *value = request("awaiting_confirmation", "PRIVATE_TEXT\n私人原文");
+    assert(notification("request.proposed", value));
+    const linx_gateway_log_t *entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "rx") && !strcmp(entry->type, "request.proposed") &&
+        !entry->operation[0] && !strcmp(entry->status, "awaiting_confirmation") && !entry->error_code[0]);
+    assert(entry->generation == client.view.generation && entry->size > 0U);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "tx_queued") && !strcmp(entry->type, "request.confirm") &&
+        !strcmp(entry->operation, "request.confirm") && entry->size == strlen(sent));
+    assert(!entry->status[0] && !entry->error_code[0]);
+    assert(error_response("DEPENDENCY_UNAVAILABLE", "PRIVATE_TOKEN Bearer secret\n私人错误"));
+    assert(protocol_log_count >= 2U);
+    entry = &protocol_logs[protocol_log_count - 2U]; /* 错误后会继续排队只读核对。 */
+    assert(!strcmp(entry->phase, "rx") && !strcmp(entry->type, "response") &&
+        !strcmp(entry->operation, "request.confirm") && !entry->status[0] &&
+        !strcmp(entry->error_code, "DEPENDENCY_UNAVAILABLE"));
+    assert(response(request("awaiting_confirmation", "PRIVATE_TEXT")));
+    entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "rx") && !strcmp(entry->operation, "request.get") &&
+        !strcmp(entry->status, "awaiting_confirmation"));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_REQUEST_GET, NULL, clock_now++));
+    assert(!error_response("PRIVATE_CODE\n", "PRIVATE_ERROR"));
+    entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "rx_invalid") && !strcmp(entry->type, "response") &&
+        !strcmp(entry->operation, "request.get") && !entry->status[0] && !entry->error_code[0]);
+    assert(response(request("awaiting_confirmation", "PRIVATE_TEXT")));
+
+    assert(!linx_gateway_client_receive(&client, client.view.generation, "PRIVATE_INVALID", 15U, clock_now++));
+    entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "rx_invalid") && !entry->type[0] && !entry->status[0] && !entry->error_code[0]);
+    value = request("awaiting_confirmation", "PRIVATE_TEXT");
+    cJSON_SetValuestring(cJSON_GetObjectItemCaseSensitive(value, "status"), "PRIVATE_STATUS\n");
+    assert(!notification("request.proposed", value));
+    entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "rx_invalid") && !strcmp(entry->type, "request.proposed") &&
+        !entry->status[0] && !entry->error_code[0]);
+    assert(!notification("PRIVATE_TYPE\n", parsed("{\"error\":{\"code\":\"PRIVATE_CODE\"}}")));
+    assert(!last_protocol_log()->type[0] && !last_protocol_log()->error_code[0]);
+    assert(!linx_gateway_client_receive(&client, client.view.generation + 1U, "PRIVATE_STALE", 13U, clock_now++));
+    assert(!strcmp(last_protocol_log()->phase, "rx_ignored") && !last_protocol_log()->type[0]);
+    assert(!response(request("awaiting_confirmation", "PRIVATE_UNPAIRED")));
+    assert(!strcmp(last_protocol_log()->phase, "rx_ignored") &&
+        !strcmp(last_protocol_log()->type, "response") && !last_protocol_log()->operation[0]);
+    client.config.log = NULL;
+
+    start(true); client.config.log = capture_protocol_log; protocol_log_count = 0; accept_send = false;
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_REFRESH, NULL, clock_now++));
+    entry = last_protocol_log();
+    assert(!strcmp(entry->phase, "tx_rejected") && !strcmp(entry->type, "agent_sessions.list") && entry->size > 0U);
+    client.config.log = NULL; accept_send = true;
 }
 
 static void test_request_snapshot_recovery(void)
@@ -934,6 +1142,14 @@ static void test_borrowed_frame_heap_budget(void)
     budget_end(); assert(ok && client.view.request.text_present);
     assert(client.view.request.status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION);
     assert(budget_peak < budget_limit && !budget_denied);
+    size_t peak_without_log = budget_peak;
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    client.config.log = capture_protocol_log; protocol_log_count = 0;
+    budget_begin(-1);
+    assert(linx_gateway_client_receive(&client, client.view.generation, frame, size, clock_now++));
+    budget_end();
+    assert(protocol_log_count == 1U && budget_calls == allocations && budget_peak == peak_without_log);
+    client.config.log = NULL; /* 日志不增加解析次数、动态分配或整帧副本。 */
     for (size_t fail_at = 0; fail_at < allocations; ++fail_at) {
         start(true); prepare(); assert(response(request("awaiting_text", NULL)));
         const linx_gateway_request_t before = client.view.request;
@@ -953,6 +1169,8 @@ int main(int argc, char **argv)
     test_formal_tail_validation_and_transient_drop();
     test_binding_and_errors(); test_pages_and_notifications(); test_content();
     test_mcp_snapshot_merge(); test_cancel_recovery(); test_request_snapshot_recovery();
+    test_confirmation_authorization(); test_confirmation_cancel_and_queue(); test_confirmation_recovery();
+    test_protocol_log_privacy();
     test_capacity_and_pairing(); test_strict_json(); test_state_matrix(); test_allocation_failures(); test_lexer_bounds(); test_interleaving_and_limits(); test_boot_and_early_snapshot(); test_rejected_prepare_release(); test_history_owner_failure(); test_content_pending_and_transport_error();
     linx_gateway_client_deinit(&client);
     if (argc > 1) { test_fixtures(argv[1]); }

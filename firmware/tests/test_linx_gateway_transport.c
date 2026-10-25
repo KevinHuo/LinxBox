@@ -1,9 +1,13 @@
 #include <assert.h>
 #include <setjmp.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #define LINX_GATEWAY_TRANSPORT_TEST 1
+static void gateway_test_log(const char *tag, const char *format, ...)
+    __attribute__((format(printf, 2, 3)));
+#define ESP_LOGI(tag, ...) gateway_test_log(tag, __VA_ARGS__)
 #include "sdk_stubs.h"
 static void *mock_realloc(void *pointer, size_t size);
 static void *mock_malloc(size_t size);
@@ -15,6 +19,21 @@ static void mock_free(void *pointer);
 #undef realloc
 #undef malloc
 #undef free
+
+static unsigned tx_logs, rx_logs;
+static char last_log[160];
+static void gateway_test_log(const char *tag, const char *format, ...)
+{
+    assert(strcmp(tag, "linx_gateway") == 0);
+    va_list arguments;
+    va_start(arguments, format);
+    int length = vsnprintf(last_log, sizeof(last_log), format, arguments);
+    va_end(arguments);
+    assert(length >= 0 && (size_t)length < sizeof(last_log));
+    assert(!strstr(last_log, "private-body") && !strstr(last_log, "device-token"));
+    tx_logs += strstr(last_log, "wire=tx") != NULL;
+    rx_logs += strstr(last_log, "wire=rx") != NULL;
+}
 
 bool test_gateway_enable = true;
 bool test_gateway_allow_ws;
@@ -445,8 +464,28 @@ static void test_mailbox_backoff_and_worker(void)
     task_function(NULL); assert(task_deletes == 1 && !atomic_load(&started));
     assert(linx_gateway_transport_init() && tasks == 2);
 }
+static void test_wire_log_is_bounded_and_excludes_payload(void)
+{
+    reset(); connect_ready();
+    tx_logs = rx_logs = 0U;
+    const char *body = "private-body device-token";
+    size_t size = strlen(body);
+    assert(linx_gateway_transport_send(connection_generation, body, size, NULL));
+    transport_tick();
+    assert(tx_logs == 1U && strstr(last_log, "sent=25"));
+    supply(WS_TRANSPORT_OPCODES_TEXT, true, (int)size, body, 8);
+    assert(rx_logs == 0U);
+    supply(WS_TRANSPORT_OPCODES_TEXT, true, (int)size, body + 8, (int)size - 8);
+    assert(rx_logs == 1U && strstr(last_log, "bytes=25"));
+    take(LINX_GATEWAY_TRANSPORT_FRAME); linx_gateway_transport_release();
+    failure = "send";
+    assert(!send_frame(WS_TRANSPORT_OPCODES_TEXT, body, size));
+    assert(tx_logs == 2U && strstr(last_log, "sent=24"));
+}
+
 int main(void)
 {
+    test_wire_log_is_bounded_and_excludes_payload();
     test_dynamic_send_slot();
     test_configuration(); test_ws_configuration(); test_connect_failures(); test_send_and_lifecycle();
     test_frames(); test_receive_memory_release(); test_infrastructure_headroom(); test_bad_frames(); test_mailbox_backoff_and_worker(); reset();

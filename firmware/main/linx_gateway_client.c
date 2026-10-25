@@ -12,10 +12,10 @@ _Static_assert(LINX_GATEWAY_SESSION_MAX <= LINX_GATEWAY_CONTRACT_SESSION_MAX, "S
 _Static_assert(LINX_GATEWAY_HISTORY_MAX <= LINX_GATEWAY_CONTRACT_HISTORY_MAX, "Schema 历史容量发生变化");
 
 enum { OP_NONE, OP_HELLO, OP_SESSIONS, OP_DETAIL, OP_HISTORY, OP_CONTENT,
-       OP_PREPARE, OP_CANCEL, OP_GET };
+       OP_PREPARE, OP_CONFIRM, OP_CANCEL, OP_GET };
 static const char *const operations[] = { "", "device.hello", "agent_sessions.list",
     "agent_session.get", "messages.list", "message.content.get", "request.prepare",
-    "request.cancel", "request.get" };
+    "request.confirm", "request.cancel", "request.get" };
 static const char *const request_statuses[] = { "", "awaiting_text", "awaiting_confirmation",
     "sending", "running", "completed", "failed", "cancelled", "unknown" };
 
@@ -292,6 +292,31 @@ static const char *string(const cJSON *object, const char *name)
     return cJSON_IsString(value) ? value->valuestring : "";
 }
 
+static const char *known_value(const char *value, const char *const *allowed, size_t count)
+{
+    for (size_t i = 0; i < count; ++i) if (!strcmp(value, allowed[i])) return allowed[i];
+    return "";
+}
+
+static void protocol_log(const linx_gateway_client_t *client, uint32_t generation, const char *phase,
+                         const char *type, unsigned operation, size_t size, const cJSON *data, const cJSON *error)
+{
+    if (!client->config.log) return;
+    static const char *const notices[] = {"response", "device.bound", "request.proposed", "request.updated",
+        "agent_sessions.updated", "message.available"};
+    static const char *const codes[] = {"INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED", "NOT_FOUND",
+        "CONFLICT", "DEPENDENCY_UNAVAILABLE", "RESOURCE_EXHAUSTED", "INTERNAL"};
+    const char *message_type = known_value(type, operations, sizeof(operations) / sizeof(operations[0]));
+    if (!*message_type) message_type = known_value(type, notices, sizeof(notices) / sizeof(notices[0]));
+    const linx_gateway_log_t entry = {
+        .phase = phase, .type = message_type, .operation = operations[operation],
+        .status = known_value(string(data, "status"), request_statuses, sizeof(request_statuses) / sizeof(request_statuses[0])),
+        .error_code = known_value(string(error, "code"), codes, sizeof(codes) / sizeof(codes[0])),
+        .generation = generation, .size = size,
+    };
+    client->config.log(&entry, client->config.user);
+}
+
 static void copy_string(char *out, const char *in) { memmove(out, in, strlen(in) + 1); }
 
 static bool fits(const cJSON *object, const char *name, size_t capacity)
@@ -388,7 +413,10 @@ static bool send_operation(linx_gateway_client_t *client, unsigned operation, co
     if (!cJSON_AddItemToObject(root, "payload", payload)) { cJSON_Delete(payload); ok = false; }
     char *json = ok ? cJSON_PrintUnformatted(root) : NULL;
     if (!json) { cJSON_Delete(root); return fail(client, LINX_GATEWAY_ERROR_MEMORY, "消息内存不足"); }
-    bool accepted = client->config.send && client->config.send(client->view.generation, json, strlen(json), client->config.user);
+    size_t size = strlen(json);
+    bool accepted = client->config.send && client->config.send(client->view.generation, json, size, client->config.user);
+    protocol_log(client, client->view.generation, accepted ? "tx_queued" : "tx_rejected", operations[operation],
+                 operation, size, NULL, NULL);
     cJSON_free(json); cJSON_Delete(root);
     if (!accepted) { return fail(client, LINX_GATEWAY_ERROR_BUSY, "发送队列繁忙，请重试"); }
     client->pending.operation = operation;
@@ -400,6 +428,7 @@ static bool send_operation(linx_gateway_client_t *client, unsigned operation, co
     client->pending.offset = offset; client->pending.sent_at = now; client->pending.generation = client->view.generation;
     client->view.loading = true;
     if (operation == OP_PREPARE) { client->prepare_sent = true; }
+    if (operation == OP_CONFIRM) { client->view.request.confirm_sent = true; }
     if (operation == OP_CANCEL) { client->view.request.cancel_sent = true; }
     changed(client);
     return true;
@@ -475,6 +504,10 @@ static void schedule(linx_gateway_client_t *client, uint32_t now)
     if (request->cancel_requested && !request->cancel_sent && !request->uncertain &&
         (request->status == LINX_GATEWAY_REQUEST_AWAITING_TEXT || request->status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION)) {
         send_operation(client, OP_CANCEL, "", "", "", 0, now); return;
+    }
+    if (request->valid && request->confirm_requested && !request->confirm_sent && !request->cancel_requested &&
+        !request->uncertain && request->text_present && request->status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION) {
+        send_operation(client, OP_CONFIRM, "", "", "", 0, now); return;
     }
     if (request->valid && !client->prepare_sent && !request->cancel_requested) {
         send_operation(client, OP_PREPARE, request->agent_session_id, "", "", 0, now); return;
@@ -567,8 +600,11 @@ static bool request_apply(linx_gateway_client_t *client, const cJSON *data, unsi
     if (request->status == LINX_GATEWAY_REQUEST_NONE) { copy_string(request->target_title, string(data, "target_title")); }
     request->status = status;
     request->text_present |= text_present;
-    copy_string(request->error_code, string(error, "code"));
-    copy_string(request->error_message, string(error, "message"));
+    /* 只读核对仍待确认时，不能清除明确的确认失败。 */
+    if (!(request->confirm_sent && status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION && cJSON_IsNull(error))) {
+        copy_string(request->error_code, string(error, "code"));
+        copy_string(request->error_message, string(error, "message"));
+    }
     bool was_uncertain = request->uncertain;
     request->uncertain = false;
     if (operation == OP_PREPARE && status == LINX_GATEWAY_REQUEST_AWAITING_TEXT && !was_uncertain &&
@@ -577,6 +613,7 @@ static bool request_apply(linx_gateway_client_t *client, const cJSON *data, unsi
         request->capture_pending = false;
     }
     if (terminal(status)) {
+        request->confirm_requested = request->confirm_sent = false;
         client->recovery_needed = false;
         if (client->pending.operation >= OP_PREPARE && !strcmp(client->pending.request, request->request_id)) { pending_clear(client); }
     }
@@ -701,7 +738,10 @@ static bool remote_error(linx_gateway_client_t *client, unsigned operation, cons
         client->recovery_needed = false;
         client->prepare_rejected = false;
     }
-    if (operation == OP_CANCEL || operation == OP_PREPARE) {
+    if (operation == OP_CONFIRM) {
+        copy_string(request->error_code, code); copy_string(request->error_message, string(error, "message"));
+    }
+    if (operation == OP_CANCEL || operation == OP_PREPARE || operation == OP_CONFIRM) {
         request->uncertain = true; request->capture_pending = false;
         client->recovery_needed = true;
     }
@@ -711,30 +751,50 @@ static bool remote_error(linx_gateway_client_t *client, unsigned operation, cons
 bool linx_gateway_client_receive(linx_gateway_client_t *client, uint32_t generation,
                                  const char *bytes, size_t size, uint32_t now)
 {
-    if (!client || !client->view.connected || generation != client->view.generation) { return false; }
-    if (!preflight(bytes, size)) { return fail(client, LINX_GATEWAY_ERROR_INVALID, "服务消息格式无效或超出解析上限"); }
+    if (!client) return false;
+    if (!client->view.connected || generation != client->view.generation) {
+        protocol_log(client, generation, "rx_ignored", "", OP_NONE, size, NULL, NULL); return false;
+    }
+    if (!preflight(bytes, size)) {
+        protocol_log(client, generation, "rx_invalid", "", OP_NONE, size, NULL, NULL);
+        return fail(client, LINX_GATEWAY_ERROR_INVALID, "服务消息格式无效或超出解析上限");
+    }
     cJSON *root = parse(bytes, size);
-    if (!root) { return fail(client, LINX_GATEWAY_ERROR_MEMORY, "服务消息内存不足"); }
+    if (!root) {
+        protocol_log(client, generation, "rx_invalid", "", OP_NONE, size, NULL, NULL);
+        return fail(client, LINX_GATEWAY_ERROR_MEMORY, "服务消息内存不足");
+    }
     const char *type = string(root, "type");
-    bool valid = false;
+    bool valid = false, ignored = false;
+    unsigned logged_operation = OP_NONE;
+    const cJSON *logged_data = NULL, *logged_error = NULL;
     if (!strcmp(type, "response")) {
         unsigned operation = client->pending.operation;
         if (!operation || generation != client->pending.generation || strcmp(string(root, "reply_to"), client->pending.id)) {
+            protocol_log(client, generation, "rx_ignored", "response", OP_NONE, size, NULL, NULL);
             cJSON_Delete(root); return false;
         }
+        logged_operation = operation;
         char definition[64]; snprintf(definition, sizeof(definition), "%s.response", operations[operation]);
         if (definition_valid(definition, root)) {
             const cJSON *payload = field(root, "payload");
             if (cJSON_IsTrue(field(payload, "ok"))) {
+                if (operation >= OP_PREPARE) {
+                    logged_data = field(payload, "data"); logged_error = field(logged_data, "error");
+                }
                 valid = success_apply(client, operation, field(payload, "data"));
                 if (valid) { clear_error(client); }
-            } else { valid = remote_error(client, operation, field(payload, "error")); }
+            } else {
+                logged_error = field(payload, "error");
+                valid = remote_error(client, operation, logged_error);
+            }
             if (valid) { pending_clear(client); }
         } else { fail(client, LINX_GATEWAY_ERROR_INVALID, "服务应答不符合原操作契约"); }
     } else if (definition_valid(type, root)) {
         const cJSON *payload = field(root, "payload");
         if (!strcmp(type, "device.bound")) { valid = binding_apply(client, payload); }
         else if (client->view.bound && (!strcmp(type, "request.proposed") || !strcmp(type, "request.updated"))) {
+            logged_data = payload; logged_error = field(payload, "error");
             valid = request_apply(client, payload, OP_NONE);
         } else if (client->view.bound && !strcmp(type, "agent_sessions.updated")) {
             client->sessions_dirty = true; client->detail_dirty = *client->view.selected_session_id != '\0'; valid = true;
@@ -744,8 +804,10 @@ bool linx_gateway_client_receive(linx_gateway_client_t *client, uint32_t generat
                 client->history_dirty = *client->view.history_session_id != '\0';
             }
             valid = true;
-        }
+        } else ignored = true;
     } else { fail(client, LINX_GATEWAY_ERROR_INVALID, "服务通知不符合契约"); }
+    protocol_log(client, generation, valid ? "rx" : ignored ? "rx_ignored" : "rx_invalid", type,
+                 logged_operation, size, logged_data, logged_error);
     cJSON_Delete(root);
     if (valid) { changed(client); schedule(client, now); }
     return valid;
@@ -765,10 +827,19 @@ bool linx_gateway_client_action(linx_gateway_client_t *client, linx_gateway_acti
     if (!client) { return false; }
     linx_gateway_view_t *view = &client->view;
     linx_gateway_request_t *request = &view->request;
+    if (action == LINX_GATEWAY_ACTION_CONFIRM) {
+        if (!view->configured) { return fail(client, LINX_GATEWAY_ERROR_UNCONFIGURED, "服务未配置"); }
+        if (!request->valid || request->cancel_requested ||
+            (request->status != LINX_GATEWAY_REQUEST_AWAITING_TEXT && request->status != LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION)) {
+            return fail(client, LINX_GATEWAY_ERROR_INVALID, "当前请求不能确认");
+        }
+        request->confirm_requested = true;
+        clear_error(client); changed(client); schedule(client, now); return true;
+    }
     if (action == LINX_GATEWAY_ACTION_CANCEL && request->valid &&
         (request->status == LINX_GATEWAY_REQUEST_NONE || request->status == LINX_GATEWAY_REQUEST_AWAITING_TEXT ||
          request->status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION)) {
-        request->capture_pending = false; request->cancel_requested = true;
+        request->capture_pending = false; request->confirm_requested = false; request->cancel_requested = true;
         if (!client->prepare_sent) { request->valid = false; }
         changed(client); schedule(client, now); return true;
     }

@@ -55,6 +55,15 @@ static void gateway_poll(uint32_t now_ms)
 #include <stdatomic.h>
 
 static const char *TAG = "linx";
+#if CONFIG_LINX_GATEWAY_ENABLE
+static void gateway_log(const linx_gateway_log_t *entry, void *user)
+{
+    (void)user;
+    ESP_LOGI("linx_gateway", "protocol=%s generation=%lu type=%s operation=%s bytes=%zu status=%s error=%s",
+             entry->phase, (unsigned long)entry->generation, entry->type, entry->operation,
+             entry->size, entry->status, entry->error_code);
+}
+#endif
 static const uint32_t DOUBLE_CLICK_MS = 300U;
 typedef struct {
     bsp_btn_t key;
@@ -138,7 +147,8 @@ void app_main(void)
     uint64_t instance_id = ((uint64_t)esp_random() << 32U) | esp_random();
     if (instance_id == 0U) instance_id = 1U;
     const linx_gateway_client_config_t gateway_config = {
-        .configured = true, .instance_id = instance_id, .send = linx_gateway_transport_send, .user = NULL};
+        .configured = true, .instance_id = instance_id, .send = linx_gateway_transport_send,
+        .user = NULL, .log = gateway_log};
     linx_gateway_client_init(&s_gateway, &gateway_config);
     if (!linx_gateway_transport_init()) {
         ESP_LOGE(TAG, "Gateway worker allocation failed");

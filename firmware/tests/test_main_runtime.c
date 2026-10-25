@@ -769,6 +769,10 @@ bool linx_gateway_transport_send(uint32_t generation, const char *json, size_t s
 void linx_gateway_client_init(linx_gateway_client_t *client, const linx_gateway_client_config_t *config)
 {
     assert(!locked && config->send == linx_gateway_transport_send && config->configured && config->instance_id);
+    assert(config->log);
+    const linx_gateway_log_t entry = {.phase = "tx_queued", .generation = 1U, .type = "request.confirm",
+        .operation = "request.confirm", .size = 64U, .status = "", .error_code = ""};
+    config->log(&entry, config->user);
     gateway_client = client;
     client->view.configured = config->configured;
 }
@@ -896,13 +900,20 @@ UBaseType_t uxTaskGetStackHighWaterMark(void *task)
 
 void device_test_log(char level, const char *tag, const char *format, ...)
 {
-    assert(strcmp(tag, "linx") == 0);
     char message[160];
     va_list arguments;
     va_start(arguments, format);
     int length = vsnprintf(message, sizeof(message), format, arguments);
     va_end(arguments);
     assert(length >= 0 && (size_t)length < sizeof(message));
+#if CONFIG_LINX_GATEWAY_ENABLE
+    if (!strcmp(tag, "linx_gateway")) {
+        assert(level == 'I');
+        assert(!strcmp(message, "protocol=tx_queued generation=1 type=request.confirm operation=request.confirm bytes=64 status= error="));
+        return;
+    }
+#endif
+    assert(strcmp(tag, "linx") == 0);
     if (level == 'I') {
         ++info_logs;
         if (strncmp(message, "heap free=", 10) == 0) {

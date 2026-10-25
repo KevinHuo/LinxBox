@@ -62,6 +62,8 @@ typedef struct {
     bool uncertain;
     bool capture_pending;
     bool capture_claimed;
+    bool confirm_requested; /* 本轮已由用户授权；取消或终态清除。 */
+    bool confirm_sent; /* 发送队列已接受；超时/重连保留，终态清除。 */
     bool cancel_requested;
     bool cancel_sent;
     char error_code[32];
@@ -99,10 +101,18 @@ typedef struct {
 typedef bool (*linx_gateway_send_fn)(uint32_t generation, const char *json,
                                      size_t size, void *user);
 typedef struct {
+    const char *phase, *type, *operation, *status, *error_code;
+    uint32_t generation;
+    size_t size;
+} linx_gateway_log_t;
+/* 同步借用小记录；字符串仅来自本地协议常量，不包含身份、凭据或正文。 */
+typedef void (*linx_gateway_log_fn)(const linx_gateway_log_t *entry, void *user);
+typedef struct {
     bool configured;
     uint64_t instance_id; /* 每次进程/设备启动生成的非零随机值；重连保持。 */
     linx_gateway_send_fn send;
     void *user;
+    linx_gateway_log_fn log; /* 可选；NULL 不记录，不为日志复制或重新解析整帧。 */
 } linx_gateway_client_config_t;
 
 typedef enum {
@@ -117,6 +127,7 @@ typedef enum {
     LINX_GATEWAY_ACTION_CONTENT_NEXT,
     LINX_GATEWAY_ACTION_CONTENT_PREVIOUS,
     LINX_GATEWAY_ACTION_PREPARE,
+    LINX_GATEWAY_ACTION_CONFIRM,
     LINX_GATEWAY_ACTION_CANCEL,
     LINX_GATEWAY_ACTION_REQUEST_GET
 } linx_gateway_action_t;
@@ -164,7 +175,9 @@ bool linx_gateway_client_receive(linx_gateway_client_t *client, uint32_t generat
                                  const char *bytes, size_t size, uint32_t now);
 void linx_gateway_client_tick(linx_gateway_client_t *client, uint32_t now);
 /* SELECT/PREPARE/HISTORY 的 target 为 session ID；CONTENT 的 target 为 message ID。
- * 其余动作 target=NULL。动作只登记有界意图；tick/receive 自动调度。 */
+ * 其余动作 target=NULL。动作只登记有界意图；tick/receive 自动调度。
+ * CONFIRM 可在等待原文或离线时登记，原文到达后只发送一次；
+ * 已接受发送的确认在超时/重连后仅 get 核对，不自动重投。 */
 bool linx_gateway_client_action(linx_gateway_client_t *client, linx_gateway_action_t action,
                                 const char *target, uint32_t now);
 const linx_gateway_view_t *linx_gateway_client_view(const linx_gateway_client_t *client);

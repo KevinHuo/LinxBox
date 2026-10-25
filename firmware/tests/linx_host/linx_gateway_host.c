@@ -168,6 +168,9 @@ static void snapshot(const char *name)
     cJSON_AddBoolToObject(out, "bound", v->bound);
     cJSON_AddNumberToObject(out, "error", v->error);
     cJSON_AddNumberToObject(out, "request_status", v->request.status);
+    cJSON_AddBoolToObject(out, "confirm_requested", v->request.confirm_requested);
+    cJSON_AddBoolToObject(out, "confirm_sent", v->request.confirm_sent);
+    cJSON_AddStringToObject(out, "request_error_code", v->request.error_code);
     cJSON_AddNumberToObject(out, "sessions_depth", client.sessions_depth);
     cJSON_AddNumberToObject(out, "history_depth", client.history_depth);
     cJSON_AddNumberToObject(out, "voice_starts", voice_starts);

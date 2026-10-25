@@ -778,7 +778,8 @@ static linx_voice_error_t transport_failure(voice_session_t *session, const char
     return LINX_VOICE_NETWORK_FAILED;
 }
 
-static linx_voice_error_t send_frame(voice_session_t *session, unsigned opcode, void *data, size_t size)
+static linx_voice_error_t send_frame(voice_session_t *session, unsigned opcode, void *data, size_t size,
+                                    const char *protocol_type)
 {
     if (!session_current(session) ||
         (session->turn_active && !session->draining && opcode != WS_TRANSPORT_OPCODES_PONG &&
@@ -786,6 +787,9 @@ static linx_voice_error_t send_frame(voice_session_t *session, unsigned opcode, 
     /* ESP-IDF 会原地 mask，data 必须是可写 RAM，不能传常量或再次复用旧消息。 */
     int sent = esp_transport_ws_send_raw(session->ws, (ws_transport_opcodes_t)(opcode | WS_TRANSPORT_OPCODES_FIN),
                                          data, (int)size, SEND_TIMEOUT_MS);
+    if (protocol_type)
+        ESP_LOGI("linx_voice", "protocol direction=tx type=%s bytes=%zu ok=%d generation=%u",
+                 protocol_type, size, sent == (int)size, (unsigned)session->generation);
     return sent == (int)size ? LINX_VOICE_OK
         : transport_failure(session, "send", sent, opcode, (int)size, -1);
 }
@@ -796,7 +800,8 @@ static linx_voice_error_t listen_start(voice_session_t *session)
     if (!linx_build_listen_request(session->scratch, sizeof(session->scratch), session->session_id,
                                    session->gateway_request_id))
         return LINX_VOICE_PROTOCOL_FAILED;
-    linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
+    linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch,
+                                          strlen(session->scratch), "listen.start");
     if (result == LINX_VOICE_OK && current(session->generation)) {
         session->waiting = false;
         session->speaking = false;
@@ -836,7 +841,7 @@ static linx_voice_error_t websocket_start(voice_session_t *session, const linx_r
     if (!linx_build_hello(session->scratch, sizeof(session->scratch), context)) return LINX_VOICE_PROTOCOL_FAILED;
     linx_receiver_init(&session->receiver);
     session->last_activity = esp_timer_get_time();
-    return send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
+    return send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch), "hello");
 }
 
 static linx_voice_error_t audio_start(voice_session_t *session)
@@ -900,8 +905,21 @@ static linx_voice_error_t message(voice_session_t *session)
     if (session->receiver.kind == WS_TRANSPORT_OPCODES_BINARY)
         return session->draining || atomic_load(&cancel_turn_pending) ? LINX_VOICE_OK : play_packet(session);
     linx_message_t parsed;
-    if (!linx_parse_message((char *)session->receiver.data, session->receiver.used, &parsed))
-        return LINX_VOICE_PROTOCOL_FAILED;
+    bool valid = linx_parse_message((char *)session->receiver.data, session->receiver.used, &parsed);
+    /* 复用解析枚举；不再解析 JSON，也不记录会话号、字幕或未知外部字段。 */
+    const char *type = "invalid";
+    if (valid) {
+        switch (parsed.kind) {
+        case LINX_HELLO: type = "hello"; break;
+        case LINX_STT: type = "stt"; break;
+        case LINX_TTS_START: type = "tts.start"; break;
+        case LINX_TTS_STOP: type = "tts.stop"; break;
+        default: type = "unknown"; break;
+        }
+    }
+    ESP_LOGI("linx_voice", "protocol direction=rx type=%s bytes=%zu parse_ok=%d generation=%u",
+             type, session->receiver.used, valid, (unsigned)session->generation);
+    if (!valid) return LINX_VOICE_PROTOCOL_FAILED;
     if (!session->hello) {
         if (parsed.kind != LINX_HELLO) return LINX_VOICE_PROTOCOL_FAILED;
         session->hello = true;
@@ -970,7 +988,7 @@ static linx_voice_error_t receive(voice_session_t *session)
         session->control_used += (size_t)size;
         if (session->receiver.control_remaining) return LINX_VOICE_OK;
         linx_voice_error_t result = opcode == WS_TRANSPORT_OPCODES_PING
-            ? send_frame(session, WS_TRANSPORT_OPCODES_PONG, session->control, session->control_used)
+            ? send_frame(session, WS_TRANSPORT_OPCODES_PONG, session->control, session->control_used, NULL)
             : LINX_VOICE_OK;
         session->control_used = 0;
         return result;
@@ -1000,7 +1018,7 @@ static linx_voice_error_t conversation(voice_session_t *session)
                 if (!linx_build_listen(session->scratch, sizeof(session->scratch), session->session_id, false))
                     return LINX_VOICE_PROTOCOL_FAILED;
                 linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT,
-                                                      session->scratch, strlen(session->scratch));
+                                                      session->scratch, strlen(session->scratch), "listen.stop");
                 if (result != LINX_VOICE_OK) return result;
                 session->waiting = true;
                 session->submitted = true;
@@ -1010,7 +1028,7 @@ static linx_voice_error_t conversation(voice_session_t *session)
                 esp_err_t result = bsp_audio_read(session->microphone, sizeof(session->microphone));
                 if (result != ESP_OK) return sdk_error(result, LINX_VOICE_AUDIO_FAILED);
                 linx_voice_error_t sent = send_frame(session, WS_TRANSPORT_OPCODES_BINARY,
-                                                    session->microphone, sizeof(session->microphone));
+                                                    session->microphone, sizeof(session->microphone), NULL);
                 if (sent != LINX_VOICE_OK) return sent;
             }
         }
@@ -1031,9 +1049,13 @@ static linx_voice_error_t transport_reset(voice_session_t *session)
     linx_voice_error_t result = LINX_VOICE_OK;
     if (session->ws) {
         if (session->hello && session->turn_active && !session->completed &&
-            linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
-            esp_transport_ws_send_raw(session->ws, WS_TRANSPORT_OPCODES_TEXT | WS_TRANSPORT_OPCODES_FIN,
-                                      session->scratch, (int)strlen(session->scratch), READ_TIMEOUT_MS);
+            linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id)) {
+            size_t size = strlen(session->scratch);
+            int sent = esp_transport_ws_send_raw(session->ws, WS_TRANSPORT_OPCODES_TEXT | WS_TRANSPORT_OPCODES_FIN,
+                                                 session->scratch, (int)size, READ_TIMEOUT_MS);
+            ESP_LOGI("linx_voice", "protocol direction=tx type=abort bytes=%zu ok=%d generation=%u",
+                     size, sent == (int)size, (unsigned)session->generation);
+        }
         esp_transport_close(session->ws);
         esp_transport_destroy(session->ws);
         session->ws = NULL;
@@ -1191,7 +1213,8 @@ static linx_voice_error_t cancel_turn(voice_session_t *session)
         session->draining = true;
         if (!linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
             result = LINX_VOICE_PROTOCOL_FAILED;
-        else result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
+        else result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch,
+                                 strlen(session->scratch), "abort");
     }
     linx_voice_error_t slept = turn_sleep(session);
     if (result == LINX_VOICE_OK) result = slept;

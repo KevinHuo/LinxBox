@@ -156,9 +156,14 @@ test('正式 Go WSS 展示、MCP 原文和单次停录，不把保存当投递',
     input({ event: 'voice', generation: recording.voice_generation, state: 4, error: 0 });
     assert.equal((await snapshot()).page_name, 'voice');
     input({ event: 'voice', generation: recording.voice_generation, state: 5, error: 0 });
-    await state(s => s.page_name === 'overview' && s.request_status === 7);
+    await state(s => s.page_name === 'overview' && s.request_status === 2 &&
+      s.confirm_sent && s.request_error_code === 'DEPENDENCY_UNAVAILABLE');
     const outgoing = trace.filter(t => t.direction === 'device').map(t => t.packet);
-    assert(!outgoing.some(p => ['request.propose', 'request.confirm'].includes(p.type)));
+    assert(!outgoing.some(p => p.type === 'request.propose'));
+    const confirmations = outgoing.filter(p => p.type === 'request.confirm');
+    assert.equal(confirmations.length, 1);
+    assert.deepEqual(confirmations[0].payload, { request_id: recording.request_id });
+    assert(!outgoing.some(p => p.type === 'request.cancel'));
     assert(outgoing.every(p => !('limit' in p.payload)));
     assert(!desktopMessages.some(p => p.type === 'task.dispatch'), '当前服务只保存提案，不能伪造投递');
     if (process.env.LINX_GATEWAY_TEST_OUTPUT) writeFileSync(join(process.env.LINX_GATEWAY_TEST_OUTPUT, 'go-trace.json'), JSON.stringify(trace, null, 2));

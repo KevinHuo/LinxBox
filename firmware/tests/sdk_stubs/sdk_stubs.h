@@ -186,7 +186,9 @@ int esp_transport_ws_get_read_payload_len(esp_transport_handle_t transport);
 bool esp_transport_ws_get_fin_flag(esp_transport_handle_t transport);
 typedef int esp_log_level_t;
 #define ESP_LOG_NONE 0
+#ifndef ESP_LOGI
 #define ESP_LOGI(...) ((void)0)
+#endif
 #ifndef ESP_LOGW
 #define ESP_LOGW(...) ((void)0)
 #endif

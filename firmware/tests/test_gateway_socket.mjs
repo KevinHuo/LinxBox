@@ -239,9 +239,8 @@ test('目录、正文和推送刷新不改变阅读，单次 OK 只结束原语�
       await key('ok'); await wait(s => s.voice_finishes === 1);
       clock += 1000; input({ event: 'tick', now_ms: clock });
       voice(capture, 3); await snapshot('08-waiting');
-      // 模拟平台在 MCP 收到原文，不从设备上传。这里只保存，不模拟发送成功。
-      mock.propose(capture.request_id, '请保留原来的语音交互。');
-      await wait(s => s.request_status === 2);
+      // OK 授权本轮；文字未到时不发 confirm，不从设备上传识别原文。
+      assert.equal((await snapshot()).confirm_requested, true);
       assert.equal((await snapshot()).page_name, 'voice');
       await key('ok'); assert.equal((await snapshot()).voice_starts, 1);
       assert.equal(calls('request.propose').length, 0);
@@ -250,12 +249,17 @@ test('目录、正文和推送刷新不改变阅读，单次 OK 只结束原语�
       assert.equal((await snapshot()).page_name, 'voice');
       voice(capture, 5); await wait(s => s.page_name === 'overview');
       await snapshot('10-returned');
-      // 取消残留待确认草稿，绝不靠一次自动 confirm 绕过正式服务。
-      await wait(s => mock.requests.get(capture.request_id).status === 'cancelled');
+      // 原声播完后才收到原文，仍沿用本轮授权；服务端缺调度时保留真实错误。
+      assert.equal(mock.requests.get(capture.request_id).status, 'awaiting_text');
+      mock.propose(capture.request_id, '请保留原来的语音交互。');
+      await wait(s => s.request_status === 2 && s.confirm_sent && s.request_error_code === 'DEPENDENCY_UNAVAILABLE');
+      assert.equal(calls('request.confirm').length, 1);
+      assert.equal(calls('request.cancel').length, 0);
+      assert.deepEqual(calls('request.confirm')[0].packet.payload, { request_id: capture.request_id });
       mock.disconnect(); await wait(s => !s.connected); await snapshot('11-disconnected');
       await connect(); await wait(s => s.bound && !s.loading); await snapshot('12-reconnected');
       assert.equal(calls('request.propose').length, 0);
-      assert.equal(calls('request.confirm').length, 0);
+      assert.equal(calls('request.confirm').length, 1);
       assert(mock.trace.filter(x => x.direction === 'device').every(x => !('limit' in x.packet.payload)));
       writeFileSync(join(output, 'trace.json'), JSON.stringify(mock.trace, null, 2));
     } finally {

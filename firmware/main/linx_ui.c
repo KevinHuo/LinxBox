@@ -1239,7 +1239,8 @@ static void gateway_render_request(void)
         stopped ? (ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "本次未能完成，按OK配网" : "本轮已结束，按OK返回") :
         ui.at.page == LINX_UI_VOICE ? "正在登记本条指令" : "状态来自工作电脑";
     remote_text(status, 16, 159, 208, 40, COLOR_ACCENT_TEXT);
-    remote_text(stopped ? voice_error() : ui.gateway->view.error_message, 16, 207, 208, 40, COLOR_MUTED);
+    remote_text(stopped ? voice_error() : request->error_message[0] ? request->error_message :
+                ui.gateway->view.error_message, 16, 207, 208, 40, COLOR_MUTED);
     footer(ui.at.page != LINX_UI_VOICE ? "OK核对状态\n长按OK 返回" : stopped ?
         (ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "OK手机配网\n长按OK 取消" : "OK取消并返回\n长按OK 取消") :
         "等待登记完成\n长按OK 取消");
@@ -1398,6 +1399,7 @@ static bool gateway_key(linx_ui_key_t key)
                 if (ui.gateway_recording_started) ui.gateway_recorded_ms = ui.now_ms - ui.voice_ms;
                 ui.gateway_finish_pending = true;
                 ui.voice_state = LINX_VOICE_WAITING;
+                gateway_action(LINX_GATEWAY_ACTION_CONFIRM, NULL);
             }
             else if (ui.voice_state == LINX_VOICE_ERROR || ui.voice_state == LINX_VOICE_CLOSED) {
                 bool configure = ui.voice_error == LINX_VOICE_NOT_CONFIGURED;
@@ -1407,7 +1409,8 @@ static bool gateway_key(linx_ui_key_t key)
             }
             break;
         case LINX_UI_RECEIPT:
-            if (v->request.status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION && !v->request.cancel_requested)
+            if (v->request.status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION && !v->request.cancel_requested &&
+                !v->request.confirm_requested && !v->request.confirm_sent)
                 gateway_action(LINX_GATEWAY_ACTION_CANCEL, NULL);
             else gateway_action(LINX_GATEWAY_ACTION_REQUEST_GET, NULL);
             break;
@@ -1461,11 +1464,12 @@ static void gateway_sync(void)
             ui.voice_error = LINX_VOICE_NO_MEMORY;
         } else ui.connection_generation = ui.voice_generation;
     }
-    /* 真实语音播完后只核对/释放未执行请求；快照绝不驱动录音或声音完成。 */
+    /* 原声播完不撤销 OK 的授权，后到原文仍由同一 request_id 确认。 */
     if (ui.gateway_voice_finished && v->connected && v->bound && !v->loading &&
         v->error == LINX_GATEWAY_ERROR_NONE && !v->request.uncertain && v->request.status != LINX_GATEWAY_REQUEST_UNKNOWN) {
         ui.gateway_voice_finished = false;
         if (v->request.valid && !v->request.cancel_requested &&
+            !v->request.confirm_requested && !v->request.confirm_sent &&
             (v->request.status == LINX_GATEWAY_REQUEST_NONE || v->request.status == LINX_GATEWAY_REQUEST_AWAITING_TEXT ||
              v->request.status == LINX_GATEWAY_REQUEST_AWAITING_CONFIRMATION))
             gateway_action(LINX_GATEWAY_ACTION_CANCEL, NULL);
