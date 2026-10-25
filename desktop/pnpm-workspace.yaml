@@ -1,0 +1,10 @@
+# pnpm 11 reads build-script decisions from this file.
+#
+# electron downloads its prebuilt binary in a postinstall script and esbuild
+# links its platform binary the same way, so both need their scripts.
+# electron-winstaller is a Windows packaging helper; the Desktop ships a macOS
+# target only, so its install script is explicitly denied.
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: false

@@ -22,6 +22,13 @@
 .coverage.*
 coverage.xml
 
+# Nested package outputs (desktop)
+dist/
+dist-preload/
+release/
+coverage/
+.electron-cache/
+
 # Dependency and tool caches; refine after stack selection
 node_modules/
 .venv/
@@ -36,6 +43,9 @@ __pycache__/
 .idea/
 *.swp
 *.swo
+
+# Codex capability probe output
+codex-capabilities.json
 
 # Local integration files
 .local/

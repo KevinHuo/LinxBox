@@ -1,0 +1,25 @@
+appId: com.qiniu.linxbox.desktop
+productName: LinxBox
+copyright: Copyright © 2026 Qiniu
+
+directories:
+  output: release
+  buildResources: build-resources
+
+files:
+  - dist/**/*
+  - dist-preload/**/*
+  - package.json
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dir
+  # Signing and notarisation belong to the feature-enablement gate and are not
+  # configured here. A development build must not pass itself off as a
+  # release build.
+  identity: null
+  hardenedRuntime: false
+
+electronDownload:
+  cache: .electron-cache
