@@ -28,6 +28,7 @@ import {
 } from './view-model.js';
 
 const bridge = getBridge();
+const deviceStorageKey = 'linxbox.device.facts';
 
 const state = {
   view: 'pair' as AppView,
@@ -81,7 +82,7 @@ function showToast(message: string): void {
   toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2600);
 }
 
-/** Keep product configuration inside the LinxBox workspace, not global settings. */
+/** Keep WSS and project configuration inside the Linx Box home page. */
 function placeBoxSettings(): void {
   const target = qs('#box-settings');
   const settings = qs<HTMLElement>('[data-view="settings"]');
@@ -125,7 +126,8 @@ function go(view: AppView): void {
 
 /** Render the head pill and the home headline from the connection fact. */
 function renderHeadPill(): void {
-  const pill = headPill(state.connection);
+  const deviceBound = state.device.mac !== null;
+  const pill = headPill(state.connection, deviceBound);
   const element = qs('#head-pill');
   const text = qs('#head-pill-txt');
   element?.classList.toggle('is-on', pill.on);
@@ -134,7 +136,7 @@ function renderHeadPill(): void {
   }
   const title = qs('#home-title');
   if (title) {
-    title.textContent = homeHeadline(state.connection);
+    title.textContent = homeHeadline(state.connection, deviceBound);
   }
 }
 
@@ -172,7 +174,7 @@ function renderDevice(): void {
   }
   const sub = qs('#device-sub');
   if (sub) {
-    sub.textContent = deviceSubtitle(state.connection);
+    sub.textContent = deviceSubtitle(state.connection, state.device.mac !== null);
   }
   const paired = qs('#device-paired-at');
   const mac = qs('#device-mac');
@@ -181,6 +183,25 @@ function renderDevice(): void {
   if (paired) paired.textContent = format(state.device.pairedAt);
   if (mac) mac.textContent = state.device.mac ?? '—';
   if (synced) synced.textContent = format(state.device.syncedAt);
+}
+
+function persistDeviceFacts(): void {
+  try {
+    window.localStorage.setItem(deviceStorageKey, JSON.stringify(state.device));
+  } catch {
+    // Renderer storage is only a cross-window display cache.
+  }
+}
+
+function restoreDeviceFacts(): void {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null');
+    if (value && typeof value === 'object') {
+      state.device = value as typeof state.device;
+    }
+  } catch {
+    // Ignore unavailable or malformed renderer storage.
+  }
 }
 
 /** Render the settings view from the current preferences. */
@@ -274,6 +295,7 @@ function renderAll(): void {
   renderDevice();
   renderSettings();
   renderConnection();
+  persistDeviceFacts();
 }
 
 /** Apply the appearance theme to the document. */
@@ -293,6 +315,11 @@ function applyTheme(theme: AppearanceFacts['theme']): void {
  * client reports that honestly instead of pretending a device confirmed.
  */
 async function startPairing(): Promise<void> {
+  if (!state.gateway.connected) {
+    showToast('请先在设置中配置并连接 Gateway WSS');
+    go('settings');
+    return;
+  }
   const input = qs<HTMLInputElement>('#mac-input');
   const mac = normalizeMacAddress(input?.value ?? '');
   if (!isValidMacAddress(mac)) {
@@ -308,10 +335,11 @@ async function startPairing(): Promise<void> {
     return;
   }
   state.device = { mac, pairedAt: new Date().toISOString(), syncedAt: new Date().toISOString() };
+  persistDeviceFacts();
   renderDevice();
   const note = qs('#pairing-note');
   if (note) note.textContent = `设备 ${mac} 已配对成功`;
-  go('home');
+      go(state.device.mac !== null ? 'home' : 'pair');
   showToast('设备配对成功');
 }
 
@@ -328,6 +356,8 @@ function cancelPairing(): void {
  * that needs the pairing contract.
  */
 function unpair(): void {
+  state.device = { mac: null, pairedAt: null, syncedAt: null };
+  persistDeviceFacts();
   go('pair');
   showToast('已退出配对 · 设备不再连接这台 Mac');
 }
@@ -412,7 +442,7 @@ async function testConnection(): Promise<void> {
 function wireEvents(): void {
   qsa<HTMLButtonElement>('.rail-item').forEach((button) => {
     button.addEventListener('click', () => {
-      go(button.dataset['app'] === 'settings' ? 'settings' : 'home');
+      go(button.dataset['app'] === 'settings' ? 'settings' : state.device.mac !== null ? 'home' : 'pair');
     });
   });
 
@@ -431,16 +461,8 @@ function wireEvents(): void {
     });
   });
 
-  qsa<HTMLButtonElement>('[data-switch="startup"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      // Launch at login is a system-level preference. It is not wired to a
-      // channel yet, so the switch reports that it is not in effect.
-      showToast('开机自启尚未接入系统设置');
-    });
-  });
-
   qsa<HTMLButtonElement>('[data-back="main"]').forEach((button) => {
-    button.addEventListener('click', () => go('home'));
+    button.addEventListener('click', () => go(state.device.mac !== null ? 'home' : 'pair'));
   });
 
   qs('#btn-start')?.addEventListener('click', () => {
@@ -577,6 +599,7 @@ function applyGatewayStatus(payload: unknown): void {
 async function main(): Promise<void> {
   placeBoxSettings();
   wireEvents();
+  restoreDeviceFacts();
   bridge?.onConnectionChanged((payload) => applyGatewayStatus(payload));
   bridge?.onTaskChanged(() => {
     void refreshFromBridge();
