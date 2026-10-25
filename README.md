@@ -52,9 +52,7 @@ LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目�
 
 ## 演示视频
 
-当前仓库尚未提供可访问的录制 demo 视频或视频链接。上方图片为产品示意图，`docs/linx-box-ui/` 下的 HTML 为界面原型，均不代表真实设备的录屏或端到端验收。
-
-后续提供视频时，应在本节补充实际链接、对应代码或镜像版本、演示场景及验证范围；模拟数据演示与真实固件、灵矽、Gateway、Desktop 联动需分别标明。
+[观看 LinxBox demo 视频（MOV）](https://docs.qnsdk.com/c7fa3b6bf1f35d715a72b06713dbc030.mov)
 
 ## 当前分工
 
