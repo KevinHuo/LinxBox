@@ -233,7 +233,7 @@ Linux amd64／arm64 的 Gateway 和 smoke 工具均使用 CGO_ENABLED=0 静态�
 
 request.state 的 response_body 改为实际 FirmwareResponseBody（ok/data/error）；失败时展示实际错误，而非全为空的 Request。通知日志对 Gateway 产生的固定状态错误保留安全原文，并标明 state_error_source=gateway；未知对端异常、文字、路径和凭据继续脱敏。
 
-服务器可先根据日志中的旧请求定位持久身份。使用配置 database.path；默认路径的只读检查示例（需 sqlite3）如下，不读取识别正文、标题或结果内容：
+服务器可先根据日志中的旧请求定位持久身份。使用配置 database.path；默认路径的只读检查示例（需 sqlite3）如下，不读取识别正文、标题或结果内容。示例 MAC 是虚构值，仅在自己的管理终端替换查询条件，不将真实设备身份写回共享文档：
 
 ```sh
 sudo sqlite3 -readonly /var/lib/linxbox/gateway.db <<'SQL'
@@ -241,7 +241,7 @@ SELECT r.request_id, r.agent_session_id, r.status, r.error_code,
        e.task_id, e.turn_id, e.last_event_sequence, e.terminal
 FROM requests r
 LEFT JOIN request_executions e ON e.request_id = r.request_id
-WHERE r.device_id = '4C:11:AE:32:D2:38'
+WHERE r.device_id = '02:00:00:00:00:01'
   AND r.status IN ('awaiting_text','awaiting_confirmation','sending','running','unknown');
 SQL
 ```

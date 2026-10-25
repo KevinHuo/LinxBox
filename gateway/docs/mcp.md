@@ -6,9 +6,17 @@ MCP 工具负责接收每轮最终 ASR 原文并保存为待确认请求，包�
 
 ## Gateway 配置
 
-在部署配置中增加 `credentials.mcp`，每项包含独立 `token`、目标设备的规范 MAC `device_id`（设备通过 hello 登记） 和灵矽 `agent_id`。同一 token 不能用于设备或 Desktop；凭据不写入请求数据库。省略或空数组保留只读服务，全部 MCP 调用返回 401。
+设备 WS 连接通过 hello 自动登记身份，无需服务端预填 MAC；这不等于 MCP 凭据已获得同账号全部设备的权限。当前主线的 MCP 凭据仍限制到单台设备和指定灵矽智能体，账号范围的动态 MCP 接入尚未合入主线，不能仅修改配置就启用。
 
-灵矽侧服务地址配置为公网 HTTPS `https://<网关域名>/mcp`，通过 `Authorization: Bearer <独立 MCP token>` 认证。自定义 MCP 页面选择 `Streamable HTTP`、`Normal`，Query 留空，Header 设置 Authorization。联调实例可沿用 `http://124.220.162.10:8787/mcp` 和专用测试凭据；此地址不使用 ws/wss。
+灵矽侧服务地址填写自己的 HTTPS Gateway 地址，例如 `https://gateway.example.com/mcp`，通过 `Authorization: Bearer <独立 MCP token>` 认证。示例域名不对应实际服务。自定义 MCP 页面选择 `Streamable HTTP`、`Normal`，Query 留空，Header 设置 Authorization；此入口不使用 ws/wss。
+
+### 旧版单设备配置兼容
+
+本节说明当前主线支持的单设备 MCP 配置，供部署维护者使用；普通设备使用者不需要填写服务器配置。在 `credentials.mcp` 中设置独立 token、设备登记对应的 `device_id` 及灵矽 agent_id；真实值只留在自己的受限配置中。同一 token 不能用于设备或 Desktop。省略或空数组拒绝全部 MCP 访问。
+
+不同安装包的授权能力以对应源码和配置示例为准；不要向当前主线安装脚本传入尚未支持的动态授权升级参数，也不要把本地试验包能力当作已发布功能。
+
+## 传输与会话
 
 | 传输方式 | 入口与会话 |
 | --- | --- |
@@ -29,7 +37,7 @@ initialize 与 tools/list 只需认证，不要求录音业务上下文。默认
 
 ## 无请求 ID 的受控联调模式
 
-用户已选择优先演示，可在 gateway.json **顶层**增加以下配置（与 credentials 同级，区别于 credentials.mcp 凭据数组）：
+需要受控串行演示时，可在 gateway.json **顶层**增加以下配置（与 credentials 同级，区别于 credentials.mcp 凭据数组）：
 
 ```json
 "mcp": {

@@ -7,7 +7,7 @@ macOS 本地客户端：Electron UI、Main/Daemon 进程边界、本地项目授
 **这是开发中的客户端实现，线上 Gateway 已接入，完整生产链路仍需按部署环境验收。**
 
 - 开发 Issue：[Task #9 实现 LinxBox Desktop 本地客户端与 Companion Daemon](https://github.com/KevinHuo/LinxBox/issues/9)
-- 执行 Spec：`SPEC-0003`（`Proposed`），状态未 `Accepted`
+- 字段规格：[三端共享消息契约](../contracts/README.md)；设计关联 [Issue #14](https://github.com/KevinHuo/LinxBox/issues/14)，执行与恢复见 [Gateway 流程说明](../gateway/docs/execution.md)
 - 出站 Gateway client、Codex app-server adapter 和 Electron UI 已接线并有自动化测试
 - Electron main 已支持线上 Gateway WSS；SQLite schema 已定义，真实业务持久化仍按部署需求验收
 
@@ -17,7 +17,7 @@ macOS 本地客户端：Electron UI、Main/Daemon 进程边界、本地项目授
 
 ```text
 desktop/
-├── contracts/        契约草稿切片（SPEC-0001 占位，待迁出）
+├── contracts/        本地 TypeScript 类型与校验，字段须对齐根目录 contracts/
 ├── daemon/           Gateway/Codex adapter 与领域层：delivery / policy / projector / registry / schema
 ├── main/             Electron 主进程：安全策略、IPC allowlist、本地状态、悬浮窗与外观偏好
 ├── preload/          预加载桥接：固定方法集，无通用 invoke
@@ -33,7 +33,7 @@ desktop/
 
 | 视图       | 内容                                                                                      |
 | ---------- | ----------------------------------------------------------------------------------------- |
-| 未配对     | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口                                   |
+| 未配对     | 三步配对引导、设备 MAC 输入及绑定结果提示                                                 |
 | 已配对主页 | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步）                               |
 | 全局设置   | 灵矽连接（Gateway 地址与 token）、本地项目授权、外观（暖白 / 深色）、开机自启、悬浮窗开关 |
 
@@ -110,11 +110,11 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 当前 Gateway ↔ Desktop 输入、输出、示例和实际接入范围见
 [Gateway / Desktop API（当前实现整理）](GATEWAY_API.md)。该文档只整理当前代码事实，不建立或修改共享契约。
 
-`contracts/` 是 SPEC-0001 的**本地占位切片**，内容转写自 SPEC-0003 起草的 MVP 契约基线（`feat/9-desktop-client` 分支上的 `docs/contracts/`）。
+字段契约的唯一正文是仓库根目录的 [contracts/](../contracts/README.md)，其中 `desktop-gateway.schema.json` 定义 Desktop 网络帧、共享对象及方向；[确认执行说明](../gateway/docs/execution.md)记录请求流程、状态和当前实现边界。
 
-- 状态是 `Proposed`，**不是权威契约**
-- SPEC-0001 落地后，`contracts/` 必须改为引用共享 schema，而不是保留第二份事实源
-- 契约标识：`Gateway/Desktop 1.0`、`task-domain/v1`、`task-result/v1`
+本目录的 `contracts/` 保存 Desktop 使用的 TypeScript 类型、运行时校验和领域规则，须与共享 Schema 对齐，不另立字段契约。契约标识包括 `Gateway/Desktop 1.0`、`task-domain/v1`、`task-result/v1`。
+
+早期说明中的 `SPEC-0001` / `SPEC-0003` 是历史草稿编号，当前仓库没有对应的独立规格正文，不再将其作为运行、实现或验收的前置入口。现有契约和实现文档不意味着真实三端链路已验收。
 
 ## 已实现 / 未实现
 
@@ -123,7 +123,7 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - TypeScript strict + pnpm + Electron 工具链，统一检查与覆盖率命令
 - Electron 安全壳、preload 桥接、渲染层与"设置与诊断"页
 - IPC allowlist 与运行时校验（含越权负例）
-- 契约草稿切片：`Gateway/Desktop 1.0` 帧、`task-domain/v1` 状态机、`task-result/v1`
+- 本地类型、运行时校验与领域规则：`Gateway/Desktop 1.0` 帧、`task-domain/v1` 状态机、`task-result/v1`
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
 - **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
 - **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + Gateway 连接环境切换

@@ -50,11 +50,15 @@ LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目�
 
 首版阅读页仅展示文字，阅读时不会开启录音；图片浏览和设备间对讲尚未提供。详细操作见[固件使用说明](firmware/README.md#灵矽配置与操作)。
 
+## 演示视频
+
+[观看 LinxBox demo 视频](https://docs.qnsdk.com/linxbox-demo.mp4)
+
 ## 当前分工
 
 | 范围                  | 负责人                                          |
 | --------------------- | ----------------------------------------------- |
-| 项目 Leader、设备固件 | [KevinHuo](https://github.com/KevinHuo)         |
+| 设备固件 | [KevinHuo](https://github.com/KevinHuo)         |
 | MCP Gateway           | [BoleLiu](https://github.com/BoleLiu)           |
 | macOS 客户端          | [yydounai1234](https://github.com/yydounai1234) |
 
@@ -80,8 +84,6 @@ LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目�
 | [`firmware/`](firmware/README.md) | LinX 固件应用、硬件接入配置、配网、语音入口、资源和主机测试 |
 | [`contracts/`](contracts/README.md) | 固件/Gateway/Desktop/MCP 共享 JSON Schema、fixture 和校验器 |
 | [`docs/`](docs/architecture.md) | 架构设计、运行说明及联调资料 |
-
-固件与云端、电脑端在同一 Git 仓库管理。固件使用 **[FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)** 作为固定上游依赖，锁定提交 [`006c2279852e352a8433b2c21e5e09be2ca36f77`](https://github.com/FoloToy/ai-passport/commit/006c2279852e352a8433b2c21e5e09be2ca36f77)，采用 MIT 许可证；驱动、原有测试和构建校验工具从主仓库 `.local/dependencies/ai-passport/<提交号>/` 缓存读取，不重复复制维护。
 
 当前硬件为 **FoloToy AI Passport**，ESP32-C3、8 MB Flash、无 PSRAM，使用 ESP-IDF 5.5.3。`firmware/hardware/folotoy/ai-passport/` 维护品牌型号接入配置；`firmware/main/` 维护 LinX 界面、导航、阅读、手机配网、联网与语音运行。语音协议部分参考固定版本的小智源码，保留来源及许可；关闭真实语音开关可恢复离线演示，尚未实现设备间对讲。来源与边界见[固件说明](firmware/README.md#上游来源与本地定制)。
 
@@ -110,8 +112,8 @@ cd firmware
 
 ## 架构与运行
 
-- [架构设计](docs/architecture.md)：模块职责、数据流、安全边界和当前限制。
-- [运行说明](docs/runbook.md)：使用已部署 Gateway 启动 Desktop、本地部署 Gateway、固件验证和排障步骤。
+- [架构设计](docs/architecture.md)：总体拓扑、模块职责、规格与分工入口、数据流、安全边界和当前限制。
+- [运行说明](docs/runbook.md)：启动 Desktop、编译打包和常规部署 Gateway、固件构建／烧录入口及排障步骤。
 
 ## 代码
 
@@ -125,4 +127,4 @@ cd firmware
 
 ## 共享协议契约
 
-固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由及 [MCP 文字提案接收](gateway/docs/mcp.md)。固件按正式契约读取内容、处理通知，并在录音前固定目标；灵矽原会话负责 MCP 调用及自然语音反馈，不使用设备直传识别文字或独立播报。接入与限制见[固件接入说明](firmware/docs/gateway-client.md)。
+固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由、[MCP 文字提案接收](gateway/docs/mcp.md)及[用户确认后的投递与执行恢复](gateway/docs/execution.md)。固件按正式契约读取内容、处理通知，并在录音前固定目标；灵矽原会话负责 MCP 调用及自然语音反馈，不使用设备直传识别文字或独立播报。接入与限制见[固件接入说明](firmware/docs/gateway-client.md)。

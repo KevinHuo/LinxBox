@@ -93,6 +93,48 @@ HTTPS 和 WSS 使用证书与主机名校验；网络时间无法满足校验条
 
 `build/`、`managed_components/`、本地 `sdkconfig`、Python 缓存和上游缓存均可按配置重新生成，不属于保留的源码目录。重新获取尚未缓存的组件可能需要联网。升级上游必须明确修改锁定提交、审查差异，并运行完整门禁和截图比较；不要直接编辑缓存。
 
+## 烧录与串口查看
+
+以下命令会实际写入设备，应由操作者确认设备、镜像版本和数据影响后执行。设备需通过 USB 数据线连接；先激活 ESP-IDF **5.5.3** 环境，检查 `idf.py --version`，不要直接使用其他版本的工具链。
+
+需要启用真实 Gateway 目录与请求时，先从固件目录执行 `idf.py -B build/device menuconfig`，在“LinX 网络与语音”启用 Gateway，填写自己的 WSS 地址及独立设备凭据；默认关闭时保留独立语音与演示目录。设备身份自动上报，不填写 MAC；配置详情见[Gateway 接入说明](docs/gateway-client.md#部署后配置)。
+
+在仓库根目录进入固件工程，生成可用于烧录的本地构建目录：
+
+```sh
+cd firmware
+idf.py -B build/device build
+```
+
+默认目标由 `sdkconfig.defaults` 固定为 ESP32-C3、8 MB Flash；如已有本地 `sdkconfig`，需确认没有覆盖这些硬件配置。`validate.sh --firmware` 使用临时构建并清理，不能假设它会保留可直接用于 `idf.py flash` 的构建目录。
+
+在 macOS 用 `ls /dev/cu.usbmodem*` 查看设备串口；Linux 使用实际的 `/dev/ttyACM*` 或 `/dev/ttyUSB*`。将下方变量替换为真实设备路径。
+
+首次安装或需要更新启动程序、分区表时：
+
+```sh
+LINX_PORT=/dev/cu.usbmodemXXXX
+idf.py -B build/device -p "$LINX_PORT" flash monitor
+```
+
+已安装同一分区布局、只更新应用时，使用下面的命令替代上面的 `flash monitor`：
+
+```sh
+idf.py -B build/device -p "$LINX_PORT" app-flash monitor
+```
+
+当前 [partitions.csv](partitions.csv) 中 NVS 位于 `0x9000`，应用 `factory` 分区位于 `0x10000`。`app-flash` 只更新应用，保留 NVS 中的 Wi-Fi 和返回手势；前提是设备原有分区表与本工程一致。首次 `flash` 会写入启动程序、分区表和应用，已有其他固件的设备不能据此保证旧设置仍可用。
+
+退出串口监视器使用 `Ctrl+]`。只查看运行日志而不重新写入时：
+
+```sh
+idf.py -B build/device -p "$LINX_PORT" monitor
+```
+
+烧录后按[灵矽配置与操作](#灵矽配置与操作)完成配网和录放音验证。写入成功不代表与实际 Cloud MCP Gateway 的连接或真实 Codex 任务链路已验收。合并镜像 `build/FoloToy-AI-Passport-full.bin` 包含多个区域及中间填充，直接写入可能覆盖 NVS，不应作为保留设备设置的应用更新方式。
+
+命令依据 [ESP-IDF 5.5.3 的 idf.py 说明](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32c3/api-guides/tools/idf-py.html)及对应版本的[烧录目标定义](https://github.com/espressif/esp-idf/blob/v5.5.3/components/esptool_py/project_include.cmake)核对。本节补充操作说明，不新增真机烧录或验收记录；历史真机结果见[应用验收记录](main/README.md#验收状态)。
+
 ## 测试覆盖率
 
 根目录的 Firmware line coverage 徽章是最近记录的**行覆盖率快照**，不会随 CI 自动改写。下表来自 2026-10-25 主线提交 `53f73185a10db549e013dd1f70b1d8942d9c8f64` 的 [GitHub Actions 成功运行](https://github.com/KevinHuo/LinxBox/actions/runs/40168389839)，使用 ESP-IDF 5.5.3、Clang／LLVM 18：
