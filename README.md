@@ -1,6 +1,6 @@
 # LinxBox
 
-[![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.35%25-brightgreen)](desktop/README.md#测试覆盖率)
+[![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.26%25-brightgreen)](desktop/README.md#测试覆盖率)
 
 LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任务，经 Cloud MCP Gateway 路由到 macOS 客户端，再由本机已授权的 Code Agent 执行。
 
@@ -63,4 +63,4 @@ cd firmware
 
 | 路径       | 内容                                                                                        | 状态                                                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `desktop/` | macOS 桌面客户端：Electron UI、Gateway WSS client、Codex app-server adapter、任务与结果视图 | 开发中；语句覆盖率 98.35%，尚未接真实云端 Gateway 或持久化；安装、检查、测试、覆盖率与打包命令见 [desktop/README.md](desktop/README.md) |
+| `desktop/` | macOS 桌面客户端：Electron UI（灵矽 AI 应用栏 + 灵矽 Box）、悬浮窗、Gateway WSS client、Codex app-server adapter、任务与结果视图 | 开发中；语句覆盖率 98.26%，尚未接真实云端 Gateway 或持久化；安装、检查、测试、覆盖率与打包命令见 [desktop/README.md](desktop/README.md) |

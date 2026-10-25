@@ -55,6 +55,17 @@ await build({
   logLevel: 'warning',
 });
 
+await build({
+  entryPoints: [join(root, 'renderer', 'float.ts')],
+  outfile: join(root, 'dist', 'renderer', 'float.js'),
+  bundle: true,
+  platform: 'browser',
+  format: 'iife',
+  target: 'es2023',
+  sourcemap: true,
+  logLevel: 'warning',
+});
+
 const preloadRoot = join(root, 'dist-preload');
 mkdirSync(preloadRoot, { recursive: true });
 writeFileSync(
@@ -64,7 +75,7 @@ writeFileSync(
 
 const rendererDir = join(root, 'dist', 'renderer');
 mkdirSync(rendererDir, { recursive: true });
-for (const asset of ['index.html', 'styles.css']) {
+for (const asset of ['index.html', 'styles.css', 'float.html', 'float.css']) {
   copyFileSync(join(root, 'renderer', asset), join(rendererDir, asset));
 }
 

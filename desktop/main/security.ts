@@ -12,6 +12,17 @@ export const RENDERER_PROTOCOL = 'file';
 /** Origin of the bundled renderer document. */
 export const RENDERER_ORIGIN = `${RENDERER_PROTOCOL}://`;
 
+/**
+ * Size of the floating panel.
+ *
+ * The panel is wider than the ball so the expanded card fits inside the same
+ * window: the ball sits in its bottom-right corner. The height covers the
+ * card content (head, application selector, three status rows and two action
+ * buttons) plus the ball below it.
+ */
+export const FLOAT_PANEL_WIDTH = 320;
+export const FLOAT_PANEL_HEIGHT = 430;
+
 /** Schemes the Desktop is allowed to hand to the system browser. */
 export const EXTERNAL_SCHEMES = ['https:'] as const;
 
@@ -36,8 +47,54 @@ export function buildBrowserWindowOptions(
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: '#0b0f12',
-    title: 'LinxBox',
+    backgroundColor: '#f7f2e8',
+    title: '灵矽 AI · 桌面客户端',
+    webPreferences: {
+      preload: options.preloadPath,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      webviewTag: false,
+      spellcheck: false,
+    },
+  };
+}
+
+/**
+ * Build the `BrowserWindow` options for the floating ball.
+ *
+ * The floating window is a frameless, transparent, always-on-top panel that
+ * holds the ball and its expanded card. It never takes keyboard focus away
+ * from the app the user is working in, and it is skipped in the window list
+ * and the Dock.
+ *
+ * The renderer inside it is sandboxed exactly like the main window: the ball
+ * may show local status, never read a token or reach the filesystem.
+ */
+export function buildFloatWindowOptions(
+  options: BrowserPolicyOptions,
+): BrowserWindowConstructorOptions {
+  return {
+    width: FLOAT_PANEL_WIDTH,
+    height: FLOAT_PANEL_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    title: '灵矽 AI 悬浮窗',
     webPreferences: {
       preload: options.preloadPath,
       sandbox: true,

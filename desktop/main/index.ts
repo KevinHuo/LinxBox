@@ -5,7 +5,7 @@
  * pure modules under `main/` and `shared/`. The policy it applies comes from
  * `main/security.ts` and the channel list from `shared/ipc.ts`.
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,9 @@ import {
   isPermissionRequestAllowed,
   isWindowOpenAllowed,
   buildBrowserWindowOptions,
+  buildFloatWindowOptions,
+  FLOAT_PANEL_HEIGHT,
+  FLOAT_PANEL_WIDTH,
   toExternalOpenUrl,
 } from './security.js';
 import {
@@ -41,6 +44,18 @@ import {
 } from '../shared/ipc.js';
 import { createLogger } from '../shared/logger.js';
 import { CodexSession } from './codex-session.js';
+import {
+  clampFloatPosition,
+  createAppearanceState,
+  createFloatState,
+  defaultFloatPosition,
+  readAppearanceView,
+  readFloatView,
+  saveAppearance,
+  FLOAT_BALL_SIZE,
+  type AppearanceState,
+  type FloatState,
+} from './preferences.js';
 
 const logger = createLogger('desktop.main');
 
@@ -49,11 +64,15 @@ const logger = createLogger('desktop.main');
 const packageRoot = fileURLToPath(new URL('../..', import.meta.url));
 const preloadPath = join(packageRoot, 'dist-preload', 'preload', 'index.js');
 const rendererPath = join(packageRoot, 'dist', 'renderer', 'index.html');
+const floatRendererPath = join(packageRoot, 'dist', 'renderer', 'float.html');
 
 const state: DesktopState = createDesktopState({ desktopVersion: app.getVersion() });
 const codexSession = new CodexSession();
+const appearance: AppearanceState = createAppearanceState();
+const floatState: FloatState = createFloatState();
 
 let mainWindow: BrowserWindow | null = null;
+let floatWindow: BrowserWindow | null = null;
 
 /** Resolve the realpath of a directory chosen in the system dialog. */
 function canonicalizeDirectory(candidate: string): string {
@@ -153,6 +172,99 @@ function handleTasksCancel(payload: unknown): unknown {
 
 function handleDiagnosticsRead(): unknown {
   return readDiagnostics(state);
+}
+
+function handleAppearanceRead(): unknown {
+  return { ok: true, data: readAppearanceView(appearance) };
+}
+
+function handleAppearanceSave(payload: unknown): unknown {
+  const parsed = parseIpcRequest('appearance.save', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const result = saveAppearance(appearance, parsed.data as { theme: string });
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: result.code ?? 'INVALID_ARGUMENT',
+      message: result.message ?? '保存失败',
+    };
+  }
+  return { ok: true, data: readAppearanceView(appearance) };
+}
+
+function handleFloatRead(): unknown {
+  return { ok: true, data: readFloatView(floatState) };
+}
+
+/**
+ * Show or hide the floating ball.
+ *
+ * The state is kept even while the window is hidden, so the settings page can
+ * show the current choice and the ball can come back where the user left it.
+ */
+function handleFloatSetVisible(payload: unknown): unknown {
+  const parsed = parseIpcRequest('window.float.setVisible', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { visible } = parsed.data as { visible: boolean };
+  floatState.visible = visible;
+
+  if (visible) {
+    const window = ensureFloatWindow();
+    if (floatState.position === null) {
+      const workArea = screen.getPrimaryDisplay().workArea;
+      floatState.position = defaultFloatPosition(workArea);
+    }
+    applyFloatPosition();
+    window.show();
+  } else if (floatWindow !== null && !floatWindow.isDestroyed()) {
+    floatWindow.hide();
+  }
+
+  return { ok: true, data: readFloatView(floatState) };
+}
+
+/**
+ * Move the floating ball.
+ *
+ * The reported position is clamped into the display work area, so a drag can
+ * never leave the ball outside the reachable screen.
+ */
+function handleFloatMove(payload: unknown): unknown {
+  const parsed = parseIpcRequest('window.float.move', payload);
+  if (!parsed.ok) {
+    return { ok: false, code: parsed.code, message: parsed.message };
+  }
+  const { x, y } = parsed.data as { x: number; y: number };
+
+  if (floatWindow !== null && !floatWindow.isDestroyed()) {
+    const workArea = screen.getDisplayMatching(floatWindow.getBounds()).workArea;
+    floatState.position = clampFloatPosition({ x, y }, workArea);
+    applyFloatPosition();
+  }
+
+  return { ok: true, data: readFloatView(floatState) };
+}
+
+/**
+ * Apply the stored ball position to the panel window.
+ *
+ * The panel is larger than the ball: the ball sits in its bottom-right
+ * corner, so the window origin is offset by the difference between the two
+ * sizes.
+ */
+function applyFloatPosition(): void {
+  if (floatWindow === null || floatWindow.isDestroyed() || floatState.position === null) {
+    return;
+  }
+  const { x, y } = floatState.position;
+  floatWindow.setPosition(
+    Math.round(x - (FLOAT_PANEL_WIDTH - FLOAT_BALL_SIZE)),
+    Math.round(y - (FLOAT_PANEL_HEIGHT - FLOAT_BALL_SIZE)),
+  );
 }
 
 function handleCodexProbe(): unknown {
@@ -313,6 +425,11 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'tasks.get': (payload) => handleTasksGet(payload),
   'tasks.cancel': (payload) => handleTasksCancel(payload),
   'diagnostics.read': () => handleDiagnosticsRead(),
+  'appearance.read': () => handleAppearanceRead(),
+  'appearance.save': (payload) => handleAppearanceSave(payload),
+  'window.float.read': () => handleFloatRead(),
+  'window.float.setVisible': (payload) => handleFloatSetVisible(payload),
+  'window.float.move': (payload) => handleFloatMove(payload),
 };
 
 /** Register one handler per allowlisted channel. */
@@ -333,7 +450,6 @@ function registerIpcHandlers(): void {
 
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow(buildBrowserWindowOptions({ preloadPath }));
-
   window.once('ready-to-show', () => {
     logger.info('主窗口已就绪', { version: state.desktopVersion });
     window.show();
@@ -374,6 +490,44 @@ function createMainWindow(): BrowserWindow {
   });
 
   void window.loadFile(rendererPath);
+  return window;
+}
+
+/**
+ * Create the floating panel if it does not exist yet.
+ *
+ * The panel holds the ball in its bottom-right corner and the expanded card
+ * above it. The window itself is transparent and frameless, so only the
+ * painted content is visible on the desktop.
+ */
+function ensureFloatWindow(): BrowserWindow {
+  if (floatWindow !== null && !floatWindow.isDestroyed()) {
+    return floatWindow;
+  }
+
+  const window = new BrowserWindow(buildFloatWindowOptions({ preloadPath }));
+
+  window.setAlwaysOnTop(true, 'floating');
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  window.webContents.on('did-fail-load', (_event, code, description, url) => {
+    logger.error('悬浮窗加载失败', { code, description, url });
+  });
+
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!isNavigationAllowed(url, window.webContents.getURL())) {
+      event.preventDefault();
+      logger.warn('拒绝悬浮窗导航', { url });
+    }
+  });
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(isPermissionRequestAllowed());
+  });
+
+  void window.loadFile(floatRendererPath);
+  floatWindow = window;
   return window;
 }
 

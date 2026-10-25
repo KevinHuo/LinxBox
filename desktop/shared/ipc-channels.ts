@@ -31,6 +31,11 @@ export const IPC_METHODS = [
   'tasks.cancel',
   'tasks.get',
   'tasks.list',
+  'appearance.read',
+  'appearance.save',
+  'window.float.move',
+  'window.float.read',
+  'window.float.setVisible',
 ] as const;
 
 export type IpcMethod = (typeof IPC_METHODS)[number];

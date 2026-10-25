@@ -20,11 +20,25 @@ Gateway，也没有创建业务数据库。这些本地结果不能描述为生�
 desktop/
 ├── contracts/        契约草稿切片（SPEC-0001 占位，待迁出）
 ├── daemon/           Gateway/Codex adapter 与领域层：delivery / policy / projector / registry / schema
-├── main/             Electron 主进程：安全策略、IPC allowlist、本地状态
+├── main/             Electron 主进程：安全策略、IPC allowlist、本地状态、悬浮窗与外观偏好
 ├── preload/          预加载桥接：固定方法集，无通用 invoke
-├── renderer/         渲染层：展示模型 + 一次性用户意图
+├── renderer/         渲染层：主窗口与悬浮窗的展示模型 + 一次性用户意图
 └── shared/           IPC 契约与脱敏日志
 ```
+
+## 界面结构
+
+客户端采用「灵矽 AI 应用栏 + 灵矽 Box 应用」两层结构，配色沿用固件端暖白色板（`firmware/main/linx_ui.c` 的 `COLOR_*`）。
+
+主窗口三个视图：
+
+| 视图         | 内容                                                       |
+| ------------ | ---------------------------------------------------------- |
+| 未配对       | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口     |
+| 已配对主页   | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步） |
+| 全局设置     | 外观（暖白 / 深色）、开机自启、悬浮窗开关                 |
+
+悬浮窗是独立的透明置顶 `BrowserWindow`：右下角常驻小球，点击展开状态卡片，拖拽可移动位置。位置由主进程持有并限制在显示器工作区内。
 
 ## 环境要求
 
@@ -62,12 +76,12 @@ pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statem
 
 | 指标       | 覆盖率 |
 | ---------- | -----: |
-| Statements | 98.35% |
-| Branches   | 93.48% |
-| Functions  | 98.55% |
-| Lines      | 98.33% |
+| Statements | 98.26% |
+| Branches   | 93.44% |
+| Functions  | 98.59% |
+| Lines      | 98.24% |
 
-最近验证：2026-10-24，24 个测试文件通过、1 个跳过；485 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+最近验证：2026-10-25，25 个测试文件通过、1 个跳过；518 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
 
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 

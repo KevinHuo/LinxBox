@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildBrowserWindowOptions,
+  buildFloatWindowOptions,
+  FLOAT_PANEL_HEIGHT,
+  FLOAT_PANEL_WIDTH,
   isNavigationAllowed,
   isPermissionRequestAllowed,
   isWindowOpenAllowed,
@@ -23,6 +26,43 @@ describe('buildBrowserWindowOptions', () => {
     expect(preferences?.webviewTag).toBe(false);
     expect(preferences?.experimentalFeatures).toBe(false);
     expect(preferences?.preload).toBe('/tmp/preload.js');
+  });
+});
+
+describe('buildFloatWindowOptions', () => {
+  it('runs the floating renderer sandboxed and isolated from Node', () => {
+    const options = buildFloatWindowOptions({ preloadPath: '/tmp/preload.js' });
+    const preferences = options.webPreferences;
+
+    expect(preferences?.sandbox).toBe(true);
+    expect(preferences?.contextIsolation).toBe(true);
+    expect(preferences?.nodeIntegration).toBe(false);
+    expect(preferences?.nodeIntegrationInWorker).toBe(false);
+    expect(preferences?.nodeIntegrationInSubFrames).toBe(false);
+    expect(preferences?.webSecurity).toBe(true);
+    expect(preferences?.allowRunningInsecureContent).toBe(false);
+    expect(preferences?.webviewTag).toBe(false);
+    expect(preferences?.experimentalFeatures).toBe(false);
+    expect(preferences?.preload).toBe('/tmp/preload.js');
+  });
+
+  it('is a frameless transparent panel that never joins the window list', () => {
+    const options = buildFloatWindowOptions({ preloadPath: '/tmp/preload.js' });
+
+    expect(options.frame).toBe(false);
+    expect(options.transparent).toBe(true);
+    expect(options.skipTaskbar).toBe(true);
+    expect(options.alwaysOnTop).toBe(true);
+    expect(options.resizable).toBe(false);
+    expect(options.movable).toBe(false);
+    expect(options.fullscreenable).toBe(false);
+  });
+
+  it('sizes the panel so the expanded card fits above the ball', () => {
+    const options = buildFloatWindowOptions({ preloadPath: '/tmp/preload.js' });
+
+    expect(options.width).toBe(FLOAT_PANEL_WIDTH);
+    expect(options.height).toBe(FLOAT_PANEL_HEIGHT);
   });
 });
 

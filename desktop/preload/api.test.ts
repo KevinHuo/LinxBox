@@ -30,6 +30,11 @@ describe('preload bridge', () => {
     await api.getTask({ taskId: 'tsk_1' });
     await api.cancelTask({ taskId: 'tsk_1' });
     await api.readDiagnostics();
+    await api.readAppearance();
+    await api.saveAppearance({ theme: 'dark' });
+    await api.readFloatWindow();
+    await api.setFloatWindowVisible({ visible: true });
+    await api.moveFloatWindow({ x: 10, y: 20 });
 
     expect(calls.map((call) => call.channel)).toEqual([
       'linxbox.v1.codex.probe',
@@ -51,6 +56,11 @@ describe('preload bridge', () => {
       'linxbox.v1.tasks.get',
       'linxbox.v1.tasks.cancel',
       'linxbox.v1.diagnostics.read',
+      'linxbox.v1.appearance.read',
+      'linxbox.v1.appearance.save',
+      'linxbox.v1.window.float.read',
+      'linxbox.v1.window.float.setVisible',
+      'linxbox.v1.window.float.move',
     ]);
   });
 
@@ -64,14 +74,19 @@ describe('preload bridge', () => {
         'interruptCodexTurn',
         'listCodexProjects',
         'listCodexSessions',
+        'moveFloatWindow',
+        'readAppearance',
         'readCodexConversation',
         'probeCodex',
         'readCodexSession',
         'readCodexTurn',
+        'readConnection',
+        'readFloatWindow',
         'grantProject',
         'listProjects',
         'listTasks',
-        'readConnection',
+        'saveAppearance',
+        'setFloatWindowVisible',
         'startCodexTurn',
         'readDiagnostics',
         'revokeProject',

@@ -31,6 +31,11 @@ export interface LinxboxApi {
   getTask(payload: unknown): Promise<unknown>;
   cancelTask(payload: unknown): Promise<unknown>;
   readDiagnostics(): Promise<unknown>;
+  readAppearance(): Promise<unknown>;
+  saveAppearance(payload: unknown): Promise<unknown>;
+  readFloatWindow(): Promise<unknown>;
+  setFloatWindowVisible(payload: unknown): Promise<unknown>;
+  moveFloatWindow(payload: unknown): Promise<unknown>;
 }
 
 /**
@@ -63,6 +68,11 @@ export function createLinxboxApi(invoke: InvokeFn): LinxboxApi {
     getTask: (payload) => call('tasks.get', payload),
     cancelTask: (payload) => call('tasks.cancel', payload),
     readDiagnostics: () => call('diagnostics.read'),
+    readAppearance: () => call('appearance.read'),
+    saveAppearance: (payload) => call('appearance.save', payload),
+    readFloatWindow: () => call('window.float.read'),
+    setFloatWindowVisible: (payload) => call('window.float.setVisible', payload),
+    moveFloatWindow: (payload) => call('window.float.move', payload),
   };
 }
 

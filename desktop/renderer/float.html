@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <title>灵矽 AI 悬浮窗</title>
+    <link rel="stylesheet" href="./float.css" />
+  </head>
+  <body>
+    <!-- 展开卡片：位于小球上方 -->
+    <aside class="float-card" id="float-card" aria-label="灵矽 AI 悬浮窗">
+      <div class="fc-head">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="17" height="17">
+            <rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28" />
+            <path
+              d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2M11.9 7.2a7 7 0 0 1 0 9.6"
+              fill="none"
+              stroke="#F7F2E8"
+              stroke-width="2.1"
+              stroke-linecap="round"
+            />
+            <circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8" />
+          </svg>
+        </span>
+        <div><strong>灵矽 AI</strong><span>桌面客户端 · 常驻后台</span></div>
+      </div>
+
+      <div class="fc-body">
+        <div class="fc-app-wrap">
+          <button class="fc-app" id="fc-app" type="button" aria-expanded="false">
+            <span>当前应用</span>
+            <b
+              >灵矽 Box<svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 9l6 6 6-6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                /></svg
+            ></b>
+          </button>
+          <ul class="fc-app-list" id="fc-app-list" aria-label="选择应用">
+            <li>
+              <button type="button" data-app="box" class="is-selected">
+                <i aria-hidden="true"></i>灵矽 Box <em>运行中</em>
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div class="fc-row">
+          <span>设备</span
+          ><b><i aria-hidden="true"></i><span id="fc-device">灵矽设备 · 等待</span></b>
+        </div>
+        <div class="fc-row"><span>最近动态</span><b id="fc-last">暂无任务</b></div>
+        <div class="fc-row"><span>待执行指令</span><b id="fc-pending">0 条</b></div>
+      </div>
+
+      <div class="fc-actions">
+        <button class="btn btn-primary" id="btn-open-main" type="button">打开主界面</button>
+        <button class="btn btn-quiet" id="btn-pause" type="button">暂停提醒</button>
+      </div>
+    </aside>
+
+    <!-- 常驻小球：位于面板右下角 -->
+    <button
+      class="float-ball"
+      id="float-ball"
+      type="button"
+      aria-label="灵矽 AI 悬浮窗"
+      aria-expanded="false"
+    >
+      <span class="f-dot" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28" />
+        <path
+          d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2M11.9 7.2a7 7 0 0 1 0 9.6"
+          fill="none"
+          stroke="#F7F2E8"
+          stroke-width="2.1"
+          stroke-linecap="round"
+        />
+        <circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8" />
+      </svg>
+    </button>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="./float.js"></script>
+  </body>
+</html>
