@@ -12,7 +12,11 @@
  * daemon layer, and the local project grants stay on this machine.
  */
 import { GatewayClient, type SocketFactory } from '../daemon/gateway-client/client.js';
-import { TaskDispatcher, type CodexRunner, type DispatchedTaskEvent } from '../daemon/gateway-client/dispatcher.js';
+import {
+  TaskDispatcher,
+  type CodexRunner,
+  type DispatchedTaskEvent,
+} from '../daemon/gateway-client/dispatcher.js';
 import { homedir } from 'node:os';
 import {
   buildAgentSessionsSyncFrame,
@@ -23,9 +27,15 @@ import {
   publicError,
 } from '../daemon/gateway-client/frames.js';
 import type { CodexDomainEvent } from '../daemon/codex-adapter/events.js';
-import type { AgentSessionCatalogItem, Disposition, GatewayFrame, ProjectCapability } from '../contracts/index.js';
+import type {
+  AgentSessionCatalogItem,
+  Disposition,
+  GatewayFrame,
+  ProjectCapability,
+} from '../contracts/index.js';
 import type { CodexSession } from './codex-session.js';
 import { readUtf8Chunk } from '../daemon/gateway-client/content-chunks.js';
+import type { Logger } from '../shared/logger.js';
 
 /** The local facts the manager needs from the desktop state. */
 export interface GatewayConnectionConfig {
@@ -62,7 +72,9 @@ export interface GatewayConnectionManagerOptions {
   /** Called whenever the connection status changes. */
   readonly onStatusChange?: (status: GatewayConnectionStatus) => void;
   readonly onTaskEvent?: (event: DispatchedTaskEvent) => void;
-  readonly onProjectChange?: (frame: Extract<GatewayFrame, { type: 'project.upsert' | 'project.revoke' }>) => void;
+  readonly onProjectChange?: (
+    frame: Extract<GatewayFrame, { type: 'project.upsert' | 'project.revoke' }>,
+  ) => void;
   /** Desktop version reported in the hello frame. */
   readonly desktopVersion?: string;
   /**
@@ -74,6 +86,8 @@ export interface GatewayConnectionManagerOptions {
   readonly socketFactory?: SocketFactory;
   /** How the dispatcher resolves a project, overridable for tests. */
   readonly resolveProjectOverride?: ProjectResolver;
+  /** Structured WSS diagnostics. Omit to keep tests and embedded uses quiet. */
+  readonly logger?: Logger;
 }
 
 /**
@@ -120,9 +134,20 @@ export class GatewayConnectionManager {
   private readonly managedThreads = new Map<string, string>();
   private syncInFlight: Promise<void> | null = null;
   private publishedProjects = new Map<string, PublishedProject>();
-  private readonly gatewayProjectMetadata = new Map<string, { displayName: string; capabilities: readonly ProjectCapability[]; availability: 'online' | 'offline'; grantVersion: number }>();
+  private readonly gatewayProjectMetadata = new Map<
+    string,
+    {
+      displayName: string;
+      capabilities: readonly ProjectCapability[];
+      availability: 'online' | 'offline';
+      grantVersion: number;
+    }
+  >();
   private readonly blockedThreads = new Set<string>();
-  private readonly bindingWaiters = new Map<string, { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
+  private readonly bindingWaiters = new Map<
+    string,
+    { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }
+  >();
 
   constructor(options: GatewayConnectionManagerOptions) {
     this.options = options;
@@ -156,6 +181,7 @@ export class GatewayConnectionManager {
       token: config.accessToken,
       desktopVersion: this.options.desktopVersion ?? '0.1.0',
       capabilities: ['project_registry', 'codex_app_server'],
+      ...(this.options.logger === undefined ? {} : { logger: this.options.logger }),
       ...(this.options.socketFactory === undefined
         ? {}
         : { socketFactory: this.options.socketFactory }),
@@ -165,12 +191,13 @@ export class GatewayConnectionManager {
       resolveProject: (projectId) =>
         this.gatewayProjectMetadata.get(projectId)?.availability === 'offline'
           ? null
-          :
-        this.options.resolveProject(projectId) ??
-        (() => {
-          const project = this.publishedProjects.get(projectId);
-          return project === undefined ? null : { rootPath: project.rootPath, enabled: project.enabled };
-        })(),
+          : (this.options.resolveProject(projectId) ??
+            (() => {
+              const project = this.publishedProjects.get(projectId);
+              return project === undefined
+                ? null
+                : { rootPath: project.rootPath, enabled: project.enabled };
+            })()),
       defaultCwd: homedir(),
       resolveAgentSession: (agentSessionId) => {
         const target = this.agentSessions.get(agentSessionId);
@@ -261,7 +288,10 @@ export class GatewayConnectionManager {
         if (event.frame.type === 'project.upsert' || event.frame.type === 'project.revoke') {
           if (event.frame.type === 'project.upsert') {
             const current = this.gatewayProjectMetadata.get(event.frame.payload.project_id);
-            if (current === undefined || event.frame.payload.grant_version >= current.grantVersion) {
+            if (
+              current === undefined ||
+              event.frame.payload.grant_version >= current.grantVersion
+            ) {
               this.gatewayProjectMetadata.set(event.frame.payload.project_id, {
                 displayName: event.frame.payload.display_name,
                 capabilities: event.frame.payload.capabilities,
@@ -271,7 +301,10 @@ export class GatewayConnectionManager {
             }
           } else {
             const current = this.gatewayProjectMetadata.get(event.frame.payload.project_id);
-            if (current === undefined || event.frame.payload.grant_version >= current.grantVersion) {
+            if (
+              current === undefined ||
+              event.frame.payload.grant_version >= current.grantVersion
+            ) {
               this.gatewayProjectMetadata.set(event.frame.payload.project_id, {
                 displayName: current?.displayName ?? event.frame.payload.project_id,
                 capabilities: current?.capabilities ?? [],
@@ -304,11 +337,15 @@ export class GatewayConnectionManager {
           .find((item) => item.role === 'assistant' && item.id.length > 0);
         if (message === undefined) continue;
         if (this.client !== client || !this.connected) return;
-        client.send(buildMessageAvailableFrame({
-          messageId: this.nextMessageId(), sequence: this.nextSequence(),
-          agentSessionId: `codex_${threadId}`,
-          availableMessageId: message.id, sentAt: new Date().toISOString(),
-        }));
+        client.send(
+          buildMessageAvailableFrame({
+            messageId: this.nextMessageId(),
+            sequence: this.nextSequence(),
+            agentSessionId: `codex_${threadId}`,
+            availableMessageId: message.id,
+            sentAt: new Date().toISOString(),
+          }),
+        );
         return;
       } catch {
         // Retry briefly because the provider may persist the final transcript
@@ -317,7 +354,9 @@ export class GatewayConnectionManager {
     }
   }
 
-  private async handleHistoryQuery(frame: Extract<GatewayFrame, { type: 'messages.list' | 'message.content.get' }>): Promise<void> {
+  private async handleHistoryQuery(
+    frame: Extract<GatewayFrame, { type: 'messages.list' | 'message.content.get' }>,
+  ): Promise<void> {
     const client = this.client;
     if (!client) return;
     try {
@@ -326,46 +365,110 @@ export class GatewayConnectionManager {
       const session = await this.options.session.readSession(published.threadId);
       if (!session) throw new Error('会话不存在');
       if (frame.type === 'messages.list') {
-        const items = session.turns.flatMap((turn) => turn.messages)
+        const items = session.turns
+          .flatMap((turn) => turn.messages)
           .filter((message) => message.role === 'user' || message.role === 'assistant')
           .slice(-16)
-          .map((message) => ({ message_id: message.id, role: message.role, summary: message.text.slice(0, 120) }));
-        client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), data: { items, next_cursor: null } }));
+          .map((message) => ({
+            message_id: message.id,
+            role: message.role,
+            summary: message.text.slice(0, 120),
+          }));
+        client.send(
+          buildQueryResultFrame({
+            messageId: this.nextMessageId(),
+            sequence: this.nextSequence(),
+            replyToMessageId: frame.message_id,
+            sentAt: new Date().toISOString(),
+            data: { items, next_cursor: null },
+          }),
+        );
       } else {
-        const message = session.turns.flatMap((turn) => turn.messages).find((item) => item.id === frame.payload.message_id);
+        const message = session.turns
+          .flatMap((turn) => turn.messages)
+          .find((item) => item.id === frame.payload.message_id);
         if (!message) throw new Error('消息不存在');
         const offset = frame.payload.offset ?? 0;
         const chunk = readUtf8Chunk(message.text, offset);
-        client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), data: { text: chunk.text, next_offset: chunk.nextOffset } }));
+        client.send(
+          buildQueryResultFrame({
+            messageId: this.nextMessageId(),
+            sequence: this.nextSequence(),
+            replyToMessageId: frame.message_id,
+            sentAt: new Date().toISOString(),
+            data: { text: chunk.text, next_offset: chunk.nextOffset },
+          }),
+        );
       }
     } catch (error) {
-      client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), error: { code: 'NOT_FOUND', message: error instanceof Error ? error.message : '查询失败' } }));
+      if (
+        frame.type === 'messages.list' &&
+        error instanceof Error &&
+        error.message.includes('list_turns is not supported yet')
+      ) {
+        client.send(
+          buildQueryResultFrame({
+            messageId: this.nextMessageId(),
+            sequence: this.nextSequence(),
+            replyToMessageId: frame.message_id,
+            sentAt: new Date().toISOString(),
+            data: { items: [], next_cursor: null },
+          }),
+        );
+        return;
+      }
+      client.send(
+        buildQueryResultFrame({
+          messageId: this.nextMessageId(),
+          sequence: this.nextSequence(),
+          replyToMessageId: frame.message_id,
+          sentAt: new Date().toISOString(),
+          error: {
+            code: 'NOT_FOUND',
+            message: error instanceof Error ? error.message : '查询失败',
+          },
+        }),
+      );
     }
   }
 
   bindDevice(macAddress: string): Promise<unknown> {
     const client = this.client;
     if (!this.connected || client === null) {
-      return Promise.resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 尚未连接' } });
+      return Promise.resolve({
+        ok: false,
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 尚未连接' },
+      });
     }
     const messageId = this.nextMessageId();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.bindingWaiters.delete(messageId);
-        resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 配对响应超时' } });
+        resolve({
+          ok: false,
+          error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 配对响应超时' },
+        });
       }, 10_000);
       this.bindingWaiters.set(messageId, { resolve, timer });
       try {
-        client.send(buildDeviceBindFrame({
-          messageId,
-          sequence: this.nextSequence(),
-          macAddress,
-          sentAt: new Date().toISOString(),
-        }));
+        client.send(
+          buildDeviceBindFrame({
+            messageId,
+            sequence: this.nextSequence(),
+            macAddress,
+            sentAt: new Date().toISOString(),
+          }),
+        );
       } catch (error) {
         clearTimeout(timer);
         this.bindingWaiters.delete(messageId);
-        resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: error instanceof Error ? error.message : 'Gateway 配对发送失败' } });
+        resolve({
+          ok: false,
+          error: {
+            code: 'DEPENDENCY_UNAVAILABLE',
+            message: error instanceof Error ? error.message : 'Gateway 配对发送失败',
+          },
+        });
       }
     });
   }
@@ -379,7 +482,10 @@ export class GatewayConnectionManager {
     this.agentSessions.clear();
     for (const waiter of this.bindingWaiters.values()) {
       clearTimeout(waiter.timer);
-      waiter.resolve({ ok: false, error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 连接已断开' } });
+      waiter.resolve({
+        ok: false,
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'Gateway 连接已断开' },
+      });
     }
     this.bindingWaiters.clear();
     if (this.config !== null) {
@@ -404,33 +510,57 @@ export class GatewayConnectionManager {
       return;
     }
     const configured = (this.options.listProjects?.() ?? []).filter((project) => project.enabled);
-    const projects = configured.length > 0
-      ? configured
-      : (await this.withTimeout(this.options.session.listProjects(), 2000, [])).flatMap((project) =>
-          project.roots[0]
-            ? [{ projectId: project.projectId, displayName: project.name, rootPath: project.roots[0], enabled: true }]
-            : [],
-        );
-    const effectiveProjects = projects.length > 0
-      ? projects
-      : [{ projectId: 'codex-default', displayName: 'Codex 默认项目', rootPath: homedir(), enabled: true }];
-    this.publishedProjects = new Map(effectiveProjects.map((project) => [project.projectId, project]));
+    const projects =
+      configured.length > 0
+        ? configured
+        : (await this.withTimeout(this.options.session.listProjects(), 2000, [])).flatMap(
+            (project) =>
+              project.roots[0]
+                ? [
+                    {
+                      projectId: project.projectId,
+                      displayName: project.name,
+                      rootPath: project.roots[0],
+                      enabled: true,
+                    },
+                  ]
+                : [],
+          );
+    const effectiveProjects =
+      projects.length > 0
+        ? projects
+        : [
+            {
+              projectId: 'codex-default',
+              displayName: 'Codex 默认项目',
+              rootPath: homedir(),
+              enabled: true,
+            },
+          ];
+    this.publishedProjects = new Map(
+      effectiveProjects.map((project) => [project.projectId, project]),
+    );
 
     try {
       for (const project of effectiveProjects) {
         if (!this.managedThreads.has(project.projectId)) {
-          let threadId = '';
+          let threadId: string | null = null;
           try {
-            threadId = await this.withTimeout(
+            const createdThreadId = await this.withTimeout(
               this.options.session.createSession(project.rootPath),
               2000,
-              '',
+              null,
             );
+            threadId = typeof createdThreadId === 'string' ? createdThreadId.trim() || null : null;
           } catch {
             // A project can still receive a new task when Codex has no
             // browsable session yet; thread creation happens when dispatching.
           }
-          this.managedThreads.set(project.projectId, threadId);
+          // An empty thread id is not a valid SessionRecord. Leave the
+          // project untracked so a later sync can retry creation.
+          if (threadId !== null) {
+            this.managedThreads.set(project.projectId, threadId);
+          }
         }
       }
       if (!this.connected || this.client !== client) {
@@ -462,9 +592,12 @@ export class GatewayConnectionManager {
           project_name: project.displayName,
           agent: 'codex',
           title: session.title,
-          status: session.status === 'running' || session.status === 'completed' || session.status === 'failed'
-            ? session.status
-            : 'idle',
+          status:
+            session.status === 'running' ||
+            session.status === 'completed' ||
+            session.status === 'failed'
+              ? session.status
+              : 'idle',
           summary: '本机 Codex 已有对话',
         });
         next.set(agentSessionId, {
@@ -475,7 +608,7 @@ export class GatewayConnectionManager {
       }
       for (const project of effectiveProjects) {
         const threadId = this.managedThreads.get(project.projectId);
-        if (threadId === undefined) {
+        if (threadId === undefined || threadId.trim() === '') {
           continue;
         }
         const agentSessionId = `codex_${project.projectId}`;

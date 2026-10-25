@@ -46,6 +46,7 @@ describe('connection', () => {
   it('never exposes the raw token', () => {
     const state = createDesktopState();
     saveConnection(state, {
+      profile: 'online',
       gatewayUrl: 'wss://example.com/ws',
       accessToken: 'super-secret-token',
       computerName: 'demo mac',

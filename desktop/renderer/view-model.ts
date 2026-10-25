@@ -26,6 +26,10 @@ export interface ConnectionFacts {
   readonly gatewayUrl: string | null;
   readonly tokenHint: string | null;
   readonly computerName: string | null;
+  readonly activeProfile?: 'local' | 'online';
+  readonly profiles?: Readonly<
+    Record<'local' | 'online', { readonly gatewayUrl: string; readonly tokenHint: string | null }>
+  >;
 }
 
 /** The live status of the Gateway connection. */

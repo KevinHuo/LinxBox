@@ -12,6 +12,8 @@
  * Reconnection is exponential with a cap. A reconnect resumes from the last
  * acknowledged sequence, so the Gateway can replay whatever was missed.
  */
+import { inspect } from 'node:util';
+
 import {
   buildAckFrame,
   buildHelloFrame,
@@ -26,6 +28,7 @@ import type {
   GatewayFrame,
   PublicError,
 } from '../../contracts/index.js';
+import type { Logger } from '../../shared/logger.js';
 
 /** The subset of the WebSocket API the client relies on. */
 export interface SocketLike {
@@ -61,6 +64,8 @@ export interface GatewayClientOptions {
   readonly socketFactory?: SocketFactory;
   readonly now?: () => Date;
   readonly random?: () => number;
+  /** Optional structured logger supplied by the Electron wiring layer. */
+  readonly logger?: Logger;
 }
 
 /**
@@ -127,6 +132,10 @@ export class GatewayClient {
     try {
       socket = factory(url, protocols);
     } catch (error) {
+      this.options.logger?.error('WSS 连接创建失败', {
+        url,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
       this.emit({
         type: 'rejected',
         error: publicError(
@@ -142,6 +151,7 @@ export class GatewayClient {
 
     socket.addEventListener('open', () => {
       this.attempts = 0;
+      this.options.logger?.info('WSS 已连接', { url });
       this.sendHello();
       this.emit({ type: 'connected' });
       this.startHeartbeat();
@@ -151,14 +161,16 @@ export class GatewayClient {
       this.handleMessage(event.data);
     });
 
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', (event) => {
       this.stopHeartbeat();
       this.socket = null;
+      this.options.logger?.warn('WSS 已断开', { url, code: event.code });
       this.emit({ type: 'disconnected', reason: 'Gateway 连接已关闭' });
       this.scheduleReconnect();
     });
 
     socket.addEventListener('error', () => {
+      this.options.logger?.error('WSS 连接异常', { url });
       this.emit({
         type: 'rejected',
         error: publicError('DEPENDENCY_UNAVAILABLE', 'Gateway 连接异常', 'gateway'),
@@ -172,7 +184,12 @@ export class GatewayClient {
     if (socket === null || socket.readyState !== 1) {
       return;
     }
-    socket.send(JSON.stringify(frame));
+    const data = JSON.stringify(frame);
+    socket.send(data);
+    console.warn('[desktop.gateway.raw] desktop->gateway');
+    console.warn(
+      inspect(frame, { depth: null, colors: true, maxArrayLength: null, maxStringLength: null }),
+    );
   }
 
   /** Acknowledge a delivery. */
@@ -245,10 +262,20 @@ export class GatewayClient {
   }
 
   private handleMessage(data: unknown): void {
+    const text = typeof data === 'string' ? data : String(data);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(typeof data === 'string' ? data : String(data));
+      parsed = JSON.parse(text);
+      console.warn('[desktop.gateway.raw] gateway->desktop');
+      console.warn(
+        inspect(parsed, { depth: null, colors: true, maxArrayLength: null, maxStringLength: null }),
+      );
     } catch {
+      console.warn('[desktop.gateway.raw] gateway->desktop 非法 JSON', text);
+      this.options.logger?.warn('WSS 收到非法 JSON', {
+        direction: 'gateway->desktop',
+        bytes: Buffer.byteLength(text),
+      });
       this.emit({
         type: 'rejected',
         error: publicError('INVALID_ARGUMENT', 'Gateway 帧不是合法 JSON', 'gateway'),
@@ -257,6 +284,11 @@ export class GatewayClient {
     }
     const result = parseInboundFrame(parsed);
     if (!result.ok) {
+      this.options.logger?.warn('WSS 收到无效帧', {
+        direction: 'gateway->desktop',
+        reason: result.error.message,
+        bytes: Buffer.byteLength(text),
+      });
       this.emit({ type: 'rejected', error: result.error });
       return;
     }
