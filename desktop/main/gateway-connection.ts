@@ -94,6 +94,7 @@ export function createCodexRunner(session: CodexSession): CodexRunner {
     },
     on: (listener: (event: CodexDomainEvent) => void) => session.on(listener),
     status: () => session.status(),
+    interrupt: (turnId) => session.interrupt(turnId),
   };
 }
 

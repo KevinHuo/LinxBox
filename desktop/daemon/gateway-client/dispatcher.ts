@@ -54,6 +54,7 @@ export interface CodexRunner {
   sessionCwd(threadId: string): Promise<string | null>;
   on(listener: (event: CodexDomainEvent) => void): () => void;
   status(): CodexTurnState;
+  interrupt?: (turnId: string) => Promise<void>;
 }
 
 /** A locally authorised project. */
@@ -268,7 +269,17 @@ export class TaskDispatcher {
     return reservation;
   }
 
-  private handleCancel(_payload: TaskCancelPayload): DispatchOutcome {
+  private handleCancel(payload: TaskCancelPayload): DispatchOutcome {
+    const active = this.active;
+    if (active === null || active.taskId !== payload.task_id || active.turnId === null) {
+      return { disposition: 'rejected', error: '没有可取消的本机任务' };
+    }
+    if (this.options.runner.interrupt === undefined) {
+      return { disposition: 'rejected', error: '本机 Codex 不支持取消' };
+    }
+    void this.options.runner.interrupt(active.turnId).catch(() => {
+      // Provider state will converge through the normal terminal/interrupted event.
+    });
     return { disposition: 'accepted', error: null };
   }
 
