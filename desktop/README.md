@@ -4,15 +4,14 @@ macOS 本地客户端：Electron UI、Main/Daemon 进程边界、本地项目授
 
 ## 状态
 
-**这是 Proposed 阶段的实现，不是已验收的客户端。**
+**这是开发中的客户端实现，线上 Gateway 已接入，完整生产链路仍需按部署环境验收。**
 
 - 开发 Issue：[Task #9 实现 LinxBox Desktop 本地客户端与 Companion Daemon](https://github.com/KevinHuo/LinxBox/issues/9)
 - 执行 Spec：`SPEC-0003`（`Proposed`），状态未 `Accepted`
-- 出站 Gateway client、Codex app-server adapter 和 Electron UI 已有本地实现与自动化测试
-- Electron main 尚未正式接线 Gateway client；SQLite schema 已定义但尚未执行真实持久化
+- 出站 Gateway client、Codex app-server adapter 和 Electron UI 已接线并有自动化测试
+- Electron main 已支持线上 Gateway WSS；SQLite schema 已定义，真实业务持久化仍按部署需求验收
 
-当前真实驱动过本机 Codex app-server，并通过 mock Gateway 验证 WSS 链路；没有连过真实云端
-Gateway，也没有创建业务数据库。这些本地结果不能描述为生产链路已经验收。
+当前已可连接部署中的 Gateway，并真实驱动本机 Codex app-server；线上凭据、网络稳定性、真实设备和完整语音链路仍需在目标环境验收。
 
 ## 目录结构
 
@@ -125,14 +124,13 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - 契约草稿切片：`Gateway/Desktop 1.0` 帧、`task-domain/v1` 状态机、`task-result/v1`
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
 - **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
-- **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + mock Gateway 联调脚本
+- **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + Gateway 连接环境切换
 - **WSS 指令不重复授权**：Electron 收到 Gateway 的 `task.dispatch` 后直接交给本机 Codex；Electron 的本地项目目录授权不是执行前置条件。已发布会话沿用 Codex 自己记录的工作目录，普通新任务使用 Desktop 默认工作目录。
-- **会话目录联调**：Electron 把已授权项目内的 Codex 会话以 `agent_sessions.sync` 全量同步给 mock Gateway，控制台按会话下达续接任务
+- **会话目录同步**：Electron 把已授权项目内的 Codex 会话以 `agent_sessions.sync` 全量同步给 Gateway，按会话目标续接任务
 - **本机会话浏览**：读 Codex 的会话列表与聊天记录（`thread/list` / `thread/read`），**本地读取、不调用模型，没有额度也能用**
 
 未实现（属于后续 Slice）：
 
-- 真实云端 Gateway（当前只有本地 mock）
 - SQLite 真实持久化与迁移执行
 - 结果投影接入真实任务（`result-projector` 已就绪，尚未接上真实 turn 的产物）
 
