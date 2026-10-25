@@ -188,6 +188,8 @@ describe('outbound frame builders', () => {
         summary: '完成',
         result: null,
         error: null,
+        thread_id: 'th_1',
+        turn_id: 'tn_1',
       },
       sentAt: '2026-10-24T01:00:00Z',
     });

@@ -159,6 +159,19 @@ export interface TaskEventPayload {
   readonly summary: string;
   readonly result: TaskResult | null;
   readonly error: PublicError | null;
+  /**
+   * The provider thread this task actually runs in.
+   *
+   * `null` until the Desktop has started the turn. It is the only stable
+   * handle the Gateway can use to locate the local conversation.
+   */
+  readonly thread_id: string | null;
+  /**
+   * The provider turn this task actually runs as.
+   *
+   * `null` until the Desktop has started the turn.
+   */
+  readonly turn_id: string | null;
 }
 
 export interface GatewayPayloadByType {

@@ -33,6 +33,18 @@ export interface CodexRunner {
     cwd: string;
     clientMessageId: string;
   }): Promise<{ threadId: string; turnId: string }>;
+  /**
+   * Run a new turn inside an existing provider thread.
+   *
+   * The dispatcher only calls this for a continuation whose parent session is
+   * known locally, so the reply keeps the parent conversation history.
+   */
+  continueTurn(input: {
+    threadId: string;
+    prompt: string;
+    cwd: string;
+    clientMessageId: string;
+  }): Promise<{ threadId: string; turnId: string }>;
   on(listener: (event: CodexDomainEvent) => void): () => void;
   status(): CodexTurnState;
 }
@@ -86,6 +98,13 @@ export class TaskDispatcher {
   private readonly now: () => Date;
   /** `message_id` values already accepted, so a replay never runs twice. */
   private readonly handled = new Map<string, DispatchOutcome>();
+  /**
+   * `task_id` to the provider thread the task ran in.
+   *
+   * A continuation is resolved through this map. It is process local for now;
+   * a persistent mapping is tracked in #11.
+   */
+  private readonly taskThreads = new Map<string, string>();
   private eventCounter = 0;
   private unsubscribe: (() => void) | null = null;
   private active: ActiveDispatchContext | null = null;
@@ -133,6 +152,18 @@ export class TaskDispatcher {
       return outcome;
     }
 
+    const taskId = payload.task_id;
+    // A continuation has to land in the parent conversation. When the parent
+    // is unknown locally the request is refused: falling back to a new session
+    // would silently answer the wrong conversation.
+    const continuationThreadId = this.resolveContinuationThread(payload.continuation);
+    if (payload.continuation !== null && continuationThreadId === null) {
+      const outcome = this.reject('原任务不存在或不可续接');
+      this.handled.set(messageId, outcome);
+      this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
+      return outcome;
+    }
+
     if (this.active !== null) {
       const outcome = this.reject('客户端正在执行另一项任务');
       this.handled.set(messageId, outcome);
@@ -140,7 +171,6 @@ export class TaskDispatcher {
       return outcome;
     }
 
-    const taskId = payload.task_id;
     // Reserve the message before the provider side effect. A concurrent replay
     // can now only observe the reservation and cannot start a second turn.
     const reservation: DispatchOutcome = { disposition: 'accepted', error: null };
@@ -152,22 +182,29 @@ export class TaskDispatcher {
     this.subscribeToRunner();
 
     try {
-      const started = await this.options.runner.startTurn({
-        prompt: payload.prompt,
-        cwd: project.rootPath,
-        clientMessageId: messageId,
-      });
+      const started =
+        continuationThreadId === null
+          ? await this.options.runner.startTurn({
+              prompt: payload.prompt,
+              cwd: project.rootPath,
+              clientMessageId: messageId,
+            })
+          : await this.options.runner.continueTurn({
+              threadId: continuationThreadId,
+              prompt: payload.prompt,
+              cwd: project.rootPath,
+              clientMessageId: messageId,
+            });
       if (this.active === context) {
         context.threadId = started.threadId;
         context.turnId = started.turnId;
+        this.taskThreads.set(taskId, started.threadId);
         this.emit(taskId, 'task.started', {
           state: 'running',
           stage: 'preparing',
           summary: '已在本机启动 Codex 任务',
           result: null,
           error: null,
-          threadId: started.threadId,
-          turnId: started.turnId,
         });
       }
     } catch {
@@ -310,6 +347,22 @@ export class TaskDispatcher {
     );
   }
 
+  /**
+   * Resolve the provider thread a continuation has to run in.
+   *
+   * Returns `null` when the request is not a continuation, and also when the
+   * parent task is unknown locally. The caller refuses such a request instead
+   * of starting a fresh conversation.
+   */
+  private resolveContinuationThread(
+    continuation: TaskDispatchPayload['continuation'],
+  ): string | null {
+    if (continuation === null) {
+      return null;
+    }
+    return this.taskThreads.get(continuation.parent_task_id) ?? null;
+  }
+
   private safeSummary(text: string, fallback: string): string {
     const sanitized = sanitizeVoiceSummary(text);
     return sanitized.length === 0 ? fallback : sanitized;
@@ -330,8 +383,6 @@ export class TaskDispatcher {
       summary: string;
       result: TaskResult | null;
       error: TaskEventPayload['error'];
-      threadId?: string;
-      turnId?: string;
     },
   ): void {
     const isTerminal = type !== 'task.started' && type !== 'task.progress';
@@ -343,6 +394,10 @@ export class TaskDispatcher {
       this.terminalEmitted = true;
     }
     this.eventCounter += 1;
+    // The active context is the only place that knows which provider thread
+    // and turn the task really runs in, so the identifiers are read here
+    // instead of being threaded through every call site.
+    const active = this.active;
     const payload: TaskEventPayload = {
       task_id: taskId,
       event_id: `evt_${this.now().getTime().toString(36)}_${this.eventCounter.toString(36)}`,
@@ -353,6 +408,8 @@ export class TaskDispatcher {
       summary: body.summary,
       result: body.result,
       error: body.error,
+      thread_id: active?.threadId ?? null,
+      turn_id: active?.turnId ?? null,
     };
     this.options.onEvent({ type, payload });
   }

@@ -27,6 +27,7 @@ interface Harness {
   readonly dispatcher: TaskDispatcher;
   readonly events: DispatchedTaskEvent[];
   readonly started: { prompt: string; cwd: string }[];
+  readonly continued: { threadId: string; prompt: string; cwd: string }[];
   emit(event: CodexDomainEvent): void;
 }
 
@@ -35,6 +36,7 @@ function createHarness(
 ): Harness {
   const events: DispatchedTaskEvent[] = [];
   const started: { prompt: string; cwd: string }[] = [];
+  const continued: { threadId: string; prompt: string; cwd: string }[] = [];
   const listeners = new Set<(event: CodexDomainEvent) => void>();
 
   const state: CodexTurnState = {
@@ -53,6 +55,10 @@ function createHarness(
       started.push({ prompt: input.prompt, cwd: input.cwd });
       return Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' });
     },
+    continueTurn: (input) => {
+      continued.push({ threadId: input.threadId, prompt: input.prompt, cwd: input.cwd });
+      return Promise.resolve({ threadId: input.threadId, turnId: 'tn_2' });
+    },
     on: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -70,6 +76,7 @@ function createHarness(
     dispatcher,
     events,
     started,
+    continued,
     emit: (event) => {
       for (const listener of listeners) {
         listener(event);
@@ -87,6 +94,58 @@ describe('TaskDispatcher', () => {
     expect(outcome.disposition).toBe('accepted');
     expect(harness.started).toEqual([{ prompt: '做点事', cwd: '/tmp/app' }]);
     expect(harness.events.map((event) => event.type)).toContain('task.started');
+  });
+
+  it('reports the executed thread and turn on the started event', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+
+    await harness.dispatcher.handle(dispatchFrame);
+
+    const started = harness.events.find((event) => event.type === 'task.started');
+    expect(started?.payload.thread_id).toBe('th_1');
+    expect(started?.payload.turn_id).toBe('tn_1');
+  });
+
+  it('refuses a continuation with an unknown parent instead of starting a new session', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: { ...dispatchFrame.payload, continuation: { parent_task_id: 'tsk_missing' } },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('原任务不存在或不可续接');
+    expect(harness.started).toHaveLength(0);
+    expect(harness.continued).toHaveLength(0);
+  });
+
+  it('continues the parent conversation when the parent task is known', async () => {
+    const harness = createHarness({ projects: { prj_1: { rootPath: '/tmp/app', enabled: true } } });
+
+    await harness.dispatcher.handle(dispatchFrame);
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'completed',
+      error: null,
+    });
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: {
+        ...dispatchFrame.payload,
+        task_id: 'tsk_2',
+        continuation: { parent_task_id: 'tsk_1' },
+      },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('accepted');
+    expect(harness.continued).toEqual([{ threadId: 'th_1', prompt: '做点事', cwd: '/tmp/app' }]);
+    expect(harness.started).toHaveLength(1);
   });
 
   it('rejects a dispatch for an unknown project', async () => {
@@ -132,6 +191,7 @@ describe('TaskDispatcher', () => {
             resolveStart = resolve;
           });
         },
+        continueTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' }),
         on: () => () => undefined,
         status: () => ({
           threadId: null,
@@ -165,6 +225,10 @@ describe('TaskDispatcher', () => {
       resolveProject: () => ({ rootPath: '/tmp/app', enabled: true }),
       runner: {
         startTurn: () =>
+          new Promise((_resolve, reject) => {
+            rejectStart = reject;
+          }),
+        continueTurn: () =>
           new Promise((_resolve, reject) => {
             rejectStart = reject;
           }),
@@ -390,6 +454,7 @@ describe('TaskDispatcher cancel and failure paths', () => {
       resolveProject: () => ({ rootPath: '/tmp/app', enabled: true }),
       runner: {
         startTurn: () => Promise.reject(new Error('provider unavailable')),
+        continueTurn: () => Promise.reject(new Error('provider unavailable')),
         on: () => () => undefined,
         status: () => ({
           threadId: null,
@@ -419,6 +484,7 @@ describe('TaskDispatcher cancel and failure paths', () => {
         projectId === 'prj_1' ? { rootPath: '/tmp/app', enabled: true } : null,
       runner: {
         startTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' }),
+        continueTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_2' }),
         on: (listener) => {
           listeners.add(listener);
           return () => listeners.delete(listener);

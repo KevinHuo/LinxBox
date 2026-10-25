@@ -60,6 +60,7 @@ const dispatcher = new TaskDispatcher({
   resolveProject: (projectId) => projects.get(projectId) ?? null,
   runner: {
     startTurn: (input) => session.startTurn(input.prompt, input.cwd),
+    continueTurn: (input) => session.continueSession(input.threadId, input.prompt),
     on: (listener) => session.on(listener),
     status: () => session.status(),
   },
@@ -83,7 +84,7 @@ const client = new GatewayClient({
   url: `ws://127.0.0.1:${port}/v1/clients/connect`,
   token: DEFAULT_TOKEN,
   desktopVersion: '0.1.0',
-  capabilities: ['project_registry', 'codex_app_server', 'task_cancel'],
+  capabilities: ['project_registry', 'codex_app_server'],
   heartbeatMs: 5000,
 });
 

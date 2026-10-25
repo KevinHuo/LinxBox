@@ -103,7 +103,7 @@ payload：
 | `prompt`              | string         | 是   | 可以为空字符串；当前直接传给 Codex                                               |
 | `acceptance_criteria` | string[]       | 是   | 验收条件列表                                                                     |
 | `policy_version`      | string         | 是   | 非空策略版本；当前只作审计信息透传，不参与执行授权判断                           |
-| `continuation`        | object \| null | 是   | 新任务为 `null`；续接任务为 `{ "parent_task_id": "..." }`；当前实现未消费该字段  |
+| `continuation`        | object \| null | 是   | 新任务为 `null`；续接任务为 `{ "parent_task_id": "..." }`，用于定位父任务会话    |
 
 完整示例：
 
@@ -138,7 +138,10 @@ payload：
 6. 去重记录当前只在内存中，Desktop 重启后不会保留。
 7. `capabilities` 与 `policy_version` 当前不参与执行判断，只随包记录。Gateway 不能因为下发了
    `["read"]` 就认为 Desktop 只读执行。
-8. `continuation` 当前未被消费，`dispatch` 一律新起 Codex 会话；追问不会落到指定会话。
+8. `continuation` 不为 `null` 时，Desktop 用 `parent_task_id` 查本机已执行的父任务，命中则在同一
+   Codex 会话里续接新轮次；查不到时返回 `rejected`，原因“原任务不存在或不可续接”，**不会回落到新建
+   会话**。该映射当前只在内存中，Desktop 重启后需要 Gateway 重新下发。
+9. `task.started` 及其后的事件都会带上实际执行的 `thread_id` 与 `turn_id`，Gateway 用它定位本机会话。
 
 ### 4.3 `task.cancel`
 
@@ -308,6 +311,8 @@ payload：
 | `summary`        | string              | 是   | 可展示摘要；自由文本先移除路径、凭据、代码块、diff 和堆栈，再截断到 120 字符 |
 | `result`         | TaskResult \| null  | 是   | 当前 dispatcher 始终发送 `null`                                              |
 | `error`          | PublicError \| null | 是   | 失败/中断错误；正常事件为 `null`                                             |
+| `thread_id`      | string \| null      | 是   | 本机实际执行的 Codex 会话 ID；未开始时为 `null`                              |
+| `turn_id`        | string \| null      | 是   | 本机实际执行的 Codex 轮次 ID；未开始时为 `null`                              |
 
 ```json
 {
@@ -432,9 +437,11 @@ Desktop -> Gateway  task.completed | task.failed | task.interrupted
 8. `presentation.upsert` / `presentation.revoke` / `command.receipt` 只有类型占位。
 9. 当前运行时只保留 `gateway-client/frames.ts` 作为入站 parser；类型契约仍声明
    `project.upsert` / `project.revoke`，但 parser 尚未实现，后续共享 schema 需要收敛这处差异。
-10. `continuation` 尚未接入执行路径：`dispatch` 一律新起 Codex 会话，追问不保证落到指定会话。
+10. `continuation` 已接入执行路径，但 `parent_task_id → 会话` 的映射只在内存中，Desktop 重启后失效，
+    需要 Gateway 重新下发；持久映射与 `conversation_id` 统一标识见 #11 / #14。
 11. `capabilities` 与 `policy_version` 当前只随包透传，不参与执行授权判断。
-12. `task.started` 尚未上报实际执行的 thread / turn ID；`TaskEventPayload` 当前也没有这两个字段。
+12. `task_id → thread_id / turn_id` 的持久映射尚未实现，Gateway 侧会话标识统一为 `conversation_id` 的
+    方向见 #14。
 
 ## 9. Codex 数据对 Issue #4 展示的覆盖
 
