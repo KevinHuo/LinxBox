@@ -336,7 +336,7 @@ function handleFloatRead(): unknown {
 
 function handleMainWindowFocus(): unknown {
   if (mainWindow === null || mainWindow.isDestroyed()) {
-    return { ok: false, code: 'NOT_FOUND', message: '主窗口不存在' };
+    mainWindow = createMainWindow();
   }
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
