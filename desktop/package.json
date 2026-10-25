@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@rolldown/binding-darwin-x64": "1.2.15",
     "@types/node": "26.6.5",
     "@types/ws": "8.18.1",
     "@vitest/coverage-v8": "5.0.5",

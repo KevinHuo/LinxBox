@@ -64,13 +64,13 @@ const CONTRACT_ERROR_CODE = z.enum([
   'INTERNAL',
 ]);
 
-const envelopeSchema = z.looseObject({
+const envelopeSchema = z.strictObject({
   protocol_version: z.string(),
-  message_id: z.string().min(1),
+  message_id: z.string().min(1).max(128),
   sequence: z.number().int().nonnegative(),
   type: z.string().min(1),
-  sent_at: z.string().min(1),
-  expires_at: z.string().optional(),
+  sent_at: z.iso.datetime({ offset: true }),
+  expires_at: z.iso.datetime({ offset: true }).optional(),
   payload: z.unknown(),
 });
 
