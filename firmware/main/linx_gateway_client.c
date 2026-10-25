@@ -727,14 +727,17 @@ static bool remote_error(linx_gateway_client_t *client, unsigned operation, cons
     const char *code = string(error, "code");
     if (operation == OP_PREPARE && request->status == LINX_GATEWAY_REQUEST_NONE &&
         (!strcmp(code, "NOT_FOUND") || !strcmp(code, "INVALID_ARGUMENT") ||
-         !strcmp(code, "UNAUTHENTICATED") || !strcmp(code, "PERMISSION_DENIED"))) {
+         !strcmp(code, "UNAUTHENTICATED") || !strcmp(code, "PERMISSION_DENIED") || !strcmp(code, "CONFLICT"))) {
         client->prepare_rejected = true;
         copy_string(request->error_code, code); copy_string(request->error_message, string(error, "message"));
     }
     if (operation == OP_GET && !strcmp(code, "NOT_FOUND") && client->prepare_rejected &&
-        request->status == LINX_GATEWAY_REQUEST_NONE && !request->cancel_sent) {
-        /* 明确拒绝 + 只读确认未创建：仅释放本地名额，保留原始失败，不伪造 Request.failed。 */
+        request->status == LINX_GATEWAY_REQUEST_NONE && !request->confirm_requested && !request->confirm_sent &&
+        !request->cancel_sent && !request->capture_claimed) {
+        /* 准备明确拒绝 + 核对不存在：仅释放未录音、未提交的本地名额，保留原始错误。 */
         request->valid = false; request->uncertain = false; request->capture_pending = false;
+        request->cancel_requested = false; request->request_id[0] = '\0';
+        client->prepare_sent = false;
         client->recovery_needed = false;
         client->prepare_rejected = false;
     }
@@ -801,6 +804,8 @@ bool linx_gateway_client_receive(linx_gateway_client_t *client, uint32_t generat
         } else if (client->view.bound && !strcmp(type, "message.available")) {
             if (!strcmp(string(payload, "agent_session_id"), client->view.selected_session_id)) {
                 client->view.new_reply = true; client->detail_dirty = true;
+                copy_string(client->view.reply_message_id, string(payload, "message_id"));
+                ++client->view.reply_revision;
                 client->history_dirty = *client->view.history_session_id != '\0';
             }
             valid = true;
@@ -878,6 +883,7 @@ bool linx_gateway_client_action(linx_gateway_client_t *client, linx_gateway_acti
         if (action == LINX_GATEWAY_ACTION_SELECT) {
             if (strcmp(session, view->selected_session_id)) {
                 view->detail_valid = false; view->target_unavailable = false; view->new_reply = false;
+                view->reply_message_id[0] = '\0';
             }
             copy_string(view->selected_session_id, session); client->detail_dirty = false;
             set_intent(client, OP_DETAIL, session, "", "", 0);
@@ -886,7 +892,7 @@ bool linx_gateway_client_action(linx_gateway_client_t *client, linx_gateway_acti
                 /* 跨目标时原子清空缓存与游标，不能把旧 message_id 标成新会话的消息。 */
                 view->message_count = 0; view->messages_omitted = false; view->history_next_cursor[0] = '\0';
             }
-            copy_string(view->history_session_id, session); client->history_depth = 0; client->history_dirty = false; view->new_reply = false;
+            copy_string(view->history_session_id, session); client->history_depth = 0; client->history_dirty = false;
             set_intent(client, OP_HISTORY, session, "", "", 0);
         }
     } else if (action == LINX_GATEWAY_ACTION_CONTENT || action == LINX_GATEWAY_ACTION_CONTENT_NEXT || action == LINX_GATEWAY_ACTION_CONTENT_PREVIOUS) {
@@ -962,4 +968,17 @@ void linx_gateway_client_drop_transient(linx_gateway_client_t *client, bool hist
 bool linx_gateway_client_content_pending(const linx_gateway_client_t *client)
 {
     return client && (client->pending.operation == OP_CONTENT || client->intent.operation == OP_CONTENT);
+}
+
+bool linx_gateway_client_mark_reply_read(linx_gateway_client_t *client, uint32_t reply_revision)
+{
+    if (!client) return false;
+    linx_gateway_view_t *view = &client->view;
+    if (!view->new_reply || view->reply_revision != reply_revision ||
+        !view->content_valid || !view->content[0] || linx_gateway_client_content_pending(client) ||
+        strcmp(view->content_session_id, view->selected_session_id) ||
+        strcmp(view->content_message_id, view->reply_message_id)) return false;
+    view->new_reply = false;
+    changed(client);
+    return true;
 }

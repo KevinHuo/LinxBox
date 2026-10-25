@@ -85,6 +85,8 @@ typedef struct {
     char selected_session_id[LINX_GATEWAY_ID_CAPACITY];
     linx_gateway_session_t detail;
     bool detail_valid, target_unavailable, new_reply;
+    char reply_message_id[LINX_GATEWAY_ID_CAPACITY];
+    uint32_t reply_revision;
     linx_gateway_message_t messages[LINX_GATEWAY_HISTORY_MAX];
     size_t message_count;
     bool messages_omitted; /* 本批预览可省略后续轮次，不声称本地完整历史分页。 */
@@ -187,6 +189,8 @@ bool linx_gateway_client_claim_capture(linx_gateway_client_t *client);
 void linx_gateway_client_drop_transient(linx_gateway_client_t *client, bool history);
 /* 背景查询不阻止正文导航；仅已有正文查询/意图时阻止重复跨块。 */
 bool linx_gateway_client_content_pending(const linx_gateway_client_t *client);
+/* 正文成功展示后调用；只清除打开时对应版本的新回复提示。 */
+bool linx_gateway_client_mark_reply_read(linx_gateway_client_t *client, uint32_t reply_revision);
 /* 同一严格解析器供共享契约 fixtures 一致性测试使用。 */
 bool linx_gateway_client_validate_json(const char *definition, const char *bytes, size_t size);
 
