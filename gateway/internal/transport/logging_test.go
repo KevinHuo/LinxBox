@@ -121,20 +121,34 @@ func TestRequestLogsCorrelateWithoutPayloads(t *testing.T) {
 			if record["connection_id"] == nil || record["client_id"] != "desktop-1" || record["device_id"] != "AA:BB:CC:DD:EE:01" {
 				t.Fatal("查询须固定双方关联", record)
 			}
-			if record["request_id"] == "history-log" && record["query_id"] == queryID && record["ok"] == true {
+			if record["message_id"] == "history-log" && record["query_id"] == queryID && record["ok"] == true {
 				correlated = true
+				if record["trace_id"] != traceID(uint64(record["connection_id"].(float64)), "history-log") || record["agent_session_id"] != "sess-1" {
+					t.Fatal("查询结果必须包含统一追踪短号和实际目标", record)
+				}
+				if record["body"].(map[string]any)["agent_session_id"] != "sess-1" {
+					t.Fatal("默认日志必须体现请求 body", record)
+				}
 			}
-			if record["request_id"] == "body-log" && record["error_code"] == "DEPENDENCY_UNAVAILABLE" {
+			if record["message_id"] == "body-log" && record["error_code"] == "DEPENDENCY_UNAVAILABLE" {
 				failed = true
+				if record["error_message"] == "" || record["error_source"] != "desktop" || record["error_detail_redacted"] != true {
+					t.Fatal("对端失败必须有可读原因、来源和脱敏标记", record)
+				}
 			}
-			if record["request_id"] == "timeout-log" && record["error_code"] == "DEPENDENCY_UNAVAILABLE" && record["end_reason"] == "timeout" {
+			if record["message_id"] == "timeout-log" && record["error_code"] == "DEPENDENCY_UNAVAILABLE" && record["end_reason"] == "timeout" {
 				timedOut = true
 			}
 		}
 	}
-	for _, event := range []string{"connection.auth_failed", "device.awaiting_hello", "device.registered", "request.received", "request.invalid", "request.dispatched", "device.binding", "catalog.synced", "query.forwarded", "query.result_received", "response.enqueued"} {
+	for _, event := range []string{"connection.auth_failed", "device.awaiting_hello", "device.registered", "request.received", "request.invalid", "device.binding", "catalog.synced", "query.forwarded"} {
 		if !seen[event] {
 			t.Error("缺少联调事件", event)
+		}
+	}
+	for _, event := range []string{"request.dispatched", "query.result_received", "response.enqueued"} {
+		if seen[event] {
+			t.Error("机械分发、接收确认和入队细节应位于 debug", event)
 		}
 	}
 	if !correlated || !failed || !timedOut {
@@ -150,5 +164,67 @@ func TestRequestLogsCorrelateWithoutPayloads(t *testing.T) {
 func TestWebsocketCloseCode(t *testing.T) {
 	if websocketCloseCode(errors.New("read failed")) != 0 || websocketCloseCode(&websocket.CloseError{Code: 1000, Text: "private"}) != 1000 {
 		t.Fatal("只提取关闭码，不记录对端关闭原因")
+	}
+}
+
+func TestReadableLifecycleAndDesktopNotFound(t *testing.T) {
+	s := newPipeServer(t)
+	capture := &logCapture{}
+	s.logger = slog.New(slog.NewJSONHandler(capture, nil))
+	fw := pipeDial(t, s, "/v1/devices/connect", "dev-token")
+	pipeWrite(t, fw, firmwareWire("device.hello", "hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}))
+	pipeRead(t, fw, "response")
+	dt := pipeDial(t, s, "/v1/clients/connect", "dt-token")
+	pipeWrite(t, dt, desktopWire("device.bind", "bind", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}))
+	pipeRead(t, dt, "binding.result")
+	pipeRead(t, fw, "device.bound")
+	pipeWrite(t, dt, desktopWire("agent_sessions.sync", "sync", map[string]any{"items": []any{sessionPayload(1)}}))
+	pipeRead(t, dt, "agent_sessions.sync.result")
+	pipeRead(t, fw, "agent_sessions.updated")
+	for _, operation := range []string{"request.prepare", "request.get", "request.cancel"} {
+		payload := map[string]any{"request_id": "business-log"}
+		if operation == "request.prepare" {
+			payload["agent_session_id"] = "sess-1"
+		}
+		pipeWrite(t, fw, firmwareWire(operation, operation+"-packet", payload))
+		pipeRead(t, fw, "response")
+	}
+	pipeWrite(t, fw, firmwareWire("messages.list", "history-not-found", map[string]any{"agent_session_id": "sess-1"}))
+	query := pipeRead(t, dt, "messages.list")
+	var queryID string
+	if err := json.Unmarshal(query["message_id"], &queryID); err != nil {
+		t.Fatal(err)
+	}
+	pipeWrite(t, dt, desktopWire("query.result", "desktop-error-packet", map[string]any{"reply_to_message_id": queryID, "ok": false, "error": map[string]any{"code": "NOT_FOUND", "message": "会话不存在"}}))
+	pipeRead(t, fw, "response")
+	records := waitLog(t, capture, "query.completed")
+	queryRecords, warnings, states := 0, 0, 0
+	for _, record := range records {
+		if record["event"] == "request.state" {
+			states++
+			if record["agent_session_id"] != "sess-1" || record["request_id"] != "business-log" {
+				t.Fatal("get/cancel 应记录保存的目标和业务 ID", record)
+			}
+			if record["type"] == "request.cancel" && !strings.Contains(record["msg"].(string), "已取消") {
+				t.Fatal("状态需要中文摘要", record)
+			}
+		}
+		if record["message_id"] == "history-not-found" {
+			queryRecords++
+			if record["level"] == "WARN" {
+				warnings++
+			}
+			if record["event"] == "query.completed" {
+				if record["error_message"] != "会话不存在" || record["error_source"] != "desktop" || record["desktop_message_id"] != "desktop-error-packet" {
+					t.Fatal("错误应说明来源、原因和对端包 ID", record)
+				}
+				if !strings.Contains(record["msg"].(string), "失败：会话不存在") {
+					t.Fatal("应直接读懂失败原因", record)
+				}
+			}
+		}
+	}
+	if states != 3 || queryRecords != 3 || warnings != 1 {
+		t.Fatal("一轮查询应只有接收、转发、最终结果；同一失败只输出一条 WARN", states, queryRecords, warnings)
 	}
 }

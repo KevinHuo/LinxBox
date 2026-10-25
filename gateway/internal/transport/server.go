@@ -56,15 +56,7 @@ func NewServer(cfg *config.Config, logger *slog.Logger, validator *contracts.Val
 	}
 	s.queries = service.NewQueryRouter(validator, cfg.Timeouts.QueryTimeout.Std(), cfg.Limits.MaxPendingQueries, cfg.Limits.MaxDeviceQueries,
 		func(q service.Query, data json.RawMessage, err error) {
-			attrs := []any{"event", "query.completed", "query_id", q.ID, "request_id", q.FirmwareID, "type", q.Operation,
-				"device_id", q.DeviceID, "client_id", q.DesktopID, "connection_id", q.DeviceGeneration,
-				"desktop_connection_id", q.DesktopGeneration, "duration_ms", time.Since(q.StartedAt).Milliseconds(), "end_reason", q.EndReason, "ok", err == nil}
-			if err != nil {
-				// Desktop 返回的错误文案可能包含私人内容，只记录错误码。
-				s.logger.Warn("查询结束", append(attrs, "error_code", domain.CodeOf(err))...)
-			} else {
-				s.logger.Info("查询结束", attrs...)
-			}
+			s.logQueryCompletion(q, data, err)
 			conn := conns.Device(q.DeviceID)
 			if conn != nil && conn.Generation() == q.DeviceGeneration {
 				s.respondFirmware(conn, q.Operation, q.FirmwareID, data, err)
@@ -191,12 +183,15 @@ func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) upgradeAndAuthenticate(w http.ResponseWriter, r *http.Request, kind PrincipalKind) (*websocket.Conn, Principal, bool) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.logger.Warn("WebSocket 升级失败", "event", "connection.upgrade_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr)
+		s.logger.Warn("WebSocket 升级失败：检查完整连接路径及 Upgrade 请求头", "event", "connection.upgrade_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr,
+			"error_message", "HTTP 请求未满足 WebSocket 升级条件", "error_hint", "使用完整 /v1/devices/connect 或 /v1/clients/connect 地址并进行 WebSocket 握手")
 		return nil, Principal{}, false
 	}
 	principal, err := s.auth.Authenticate(kind, r)
 	if err != nil {
-		s.logger.Warn("认证失败", "event", "connection.auth_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr, "error_code", domain.CodeOf(err))
+		fields := []any{"event", "connection.auth_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr}
+		fields = append(fields, errorFields(err, "gateway")...)
+		s.logger.Warn("WebSocket 认证失败："+domain.MessageOf(err), fields...)
 		_ = conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(4401, "unauthenticated"), time.Now().Add(time.Second))
 		_ = conn.Close()

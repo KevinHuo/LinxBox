@@ -248,3 +248,15 @@ docker compose -f gateway/deploy/compose.yaml up --build -d
 另有回归测试验证跨账号拒绝、旧绑定升级、待 hello 上限与超时、同 MAC 重连、原连接不可切换 MAC。
 请求日志测试验证成功、对端错误和超时查询的两端 ID 关联，并检查凭据、标题、正文、对端错误文案和畸形 payload 不进入日志。
 这些结果不代表腾讯云部署、真实固件、真实 Desktop 或 MCP 平台已完成验收。
+
+### 可读日志与 body 验证
+
+默认日志格式改为 text，JSON 可通过 log.format 显式启用。接口字段、鉴权、业务状态和数据库未因日志优化而改变。
+info 记录中文流程、统一 trace_id、请求 body、结果和失败原因；分发/入队细节降为 debug。
+message_id 为网络包 ID，request_id 专指业务请求；历史查询记录实际目标及 Desktop 应答包 ID。
+日志 body 是有界脱敏视图，正文、标题、凭据和路径不直接输出，不能用于报文重放。
+
+2026-10-25 执行 make check 通过：整体语句覆盖率 92.97%（2234/2403），transport 93.06%，全部关键包达到 90%，全部包 race 通过。
+回归复现缓存会话读取、prepare/get/cancel 和 Desktop 返回 NOT_FOUND 的流程；
+验证 get/cancel 使用持久快照中的会话 ID、同一查询默认仅保留三条关键记录及一条失败告警，
+并检查 body 的脱敏、数组/深度/字节预算和文本/JSON 格式。该验证仍为主机模拟，未替代目标服务器或真机验收。

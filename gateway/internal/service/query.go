@@ -19,6 +19,7 @@ type Query struct {
 	StartedAt                                      time.Time
 	Deadline                                       time.Time
 	EndReason                                      string // 固定内部结果分类，仅用于联调，不携带对端文案。
+	DesktopMessageID                               string // 对端应答包 ID，仅用于日志关联。
 }
 
 type queryEntry struct {
@@ -81,7 +82,8 @@ func (r *QueryRouter) Begin(q Query) (Query, error) {
 // Complete 只接收固定 Desktop 及代次的原操作应答。无效应答保留关联到超时。
 func (r *QueryRouter) Complete(desktopID string, generation uint64, raw []byte) error {
 	var envelope struct {
-		Payload struct {
+		MessageID string `json:"message_id"`
+		Payload   struct {
 			ReplyTo string           `json:"reply_to_message_id"`
 			OK      bool             `json:"ok"`
 			Data    json.RawMessage  `json:"data"`
@@ -98,6 +100,7 @@ func (r *QueryRouter) Complete(desktopID string, generation uint64, raw []byte) 
 		return domain.ErrNotFound("查询已结束或来源不匹配")
 	}
 	q := e.query
+	q.DesktopMessageID = envelope.MessageID
 	if !time.Now().Before(q.Deadline) {
 		r.removeLocked(q.ID)
 		r.mu.Unlock()

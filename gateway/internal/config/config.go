@@ -125,7 +125,8 @@ type TimeoutConfig struct {
 
 // LogConfig 是日志配置。
 type LogConfig struct {
-	Level string `json:"level"`
+	Level  string `json:"level"`
+	Format string `json:"format,omitempty"`
 }
 
 // Load 读取并校验配置文件。
@@ -213,10 +214,16 @@ func (c *Config) applyDefaults() {
 	if c.Log.Level == "" {
 		c.Log.Level = "info"
 	}
+	if c.Log.Format == "" {
+		c.Log.Format = "text"
+	}
 }
 
 // Validate 检查配置合法性。
 func (c *Config) Validate() error {
+	if c.Log.Format != "" && c.Log.Format != "text" && c.Log.Format != "json" {
+		return fmt.Errorf("log.format 只能为 text 或 json")
+	}
 	if _, _, err := net.SplitHostPort(c.Listen.Addr); err != nil {
 		return fmt.Errorf("listen.addr 必须为 host:port")
 	}

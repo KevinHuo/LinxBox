@@ -46,6 +46,7 @@
     "query_timeout": "15s"
   },
   "log": {
+    "format": "text",
     "level": "info"
   }
 }

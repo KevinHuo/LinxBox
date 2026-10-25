@@ -13,22 +13,28 @@ import (
 
 // forwardQuery 校验设备归属后只向固定 Desktop 当前连接转发读取请求。
 func (s *Server) forwardQuery(ctx context.Context, source *lifecycle.Connection, p Principal, msg contracts.FirmwareMessage) error {
+	reject := func(err error) {
+		fields := []any{"device_id", p.DeviceID, "direction", "Gateway"}
+		fields = append(fields, payloadReferences(msg.Payload)...)
+		s.logOperation("query.rejected", source, msg.Type, msg.ID, err, fields...)
+		s.respondFirmware(source, msg.Type, msg.ID, nil, err)
+	}
 	var input struct {
 		SessionID string `json:"agent_session_id"`
 		Offset    int64  `json:"offset"`
 	}
 	if err := json.Unmarshal(msg.Payload, &input); err != nil {
-		s.respondFirmware(source, msg.Type, msg.ID, nil, domain.ErrInvalidArgument("查询参数超出支持范围"))
+		reject(domain.ErrInvalidArgument("查询参数超出支持范围"))
 		return nil
 	}
 	desktopID, err := s.sessions.DesktopForSession(ctx, p.DeviceID, input.SessionID)
 	if err != nil {
-		s.respondFirmware(source, msg.Type, msg.ID, nil, err)
+		reject(err)
 		return nil
 	}
 	destination := s.conns.Desktop(desktopID)
 	if destination == nil {
-		s.respondFirmware(source, msg.Type, msg.ID, nil, domain.ErrDependencyUnavailable("Desktop 未连接"))
+		reject(domain.ErrDependencyUnavailable("Desktop 未连接"))
 		return nil
 	}
 	q, err := s.queries.Begin(service.Query{DeviceID: string(p.DeviceID), DesktopID: desktopID, FirmwareID: msg.ID,
@@ -54,11 +60,13 @@ func (s *Server) forwardQuery(ctx context.Context, source *lifecycle.Connection,
 		err = destination.Send(raw, s.conns.SendTimeout())
 	}
 	if err != nil {
-		s.logOperation("query.forward_failed", source, msg.Type, msg.ID, domain.ErrDependencyUnavailable(""), "query_id", q.ID, "device_id", p.DeviceID, "client_id", desktopID)
 		s.queries.Fail(q.ID, domain.ErrDependencyUnavailable("无法向 Desktop 发送查询"))
 	} else {
-		s.logger.Info("查询已转发 Desktop", "event", "query.forwarded", "request_id", msg.ID, "query_id", q.ID, "type", msg.Type,
-			"device_id", p.DeviceID, "client_id", desktopID, "connection_id", source.Generation(), "desktop_connection_id", destination.Generation(), "expires_at", expires)
+		fields := []any{"event", "query.forwarded", "trace_id", traceID(source.Generation(), msg.ID), "direction", "Gateway→Desktop", "message_id", msg.ID, "query_id", q.ID, "type", msg.Type,
+			"device_id", p.DeviceID, "client_id", desktopID, "connection_id", source.Generation(), "desktop_connection_id", destination.Generation(), "expires_at", expires}
+		fields = append(fields, payloadReferences(msg.Payload)...)
+		fields = append(fields, s.bodyFields("body", msg.Payload)...)
+		s.logger.Info("Gateway → Desktop：转发"+operationName(msg.Type), fields...)
 	}
 	return nil
 }

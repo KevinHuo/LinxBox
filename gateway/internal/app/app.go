@@ -30,7 +30,7 @@ var (
 
 // New 依据配置组装应用：Schema 校验器、数据库迁移、连接表、服务与传输层。
 func New(cfg *config.Config) (*App, error) {
-	logger, err := lifecycle.NewLogger(cfg.Log.Level, nil)
+	logger, err := lifecycle.NewLoggerWithFormat(cfg.Log.Level, cfg.Log.Format, nil)
 	if err != nil {
 		return nil, err
 	}

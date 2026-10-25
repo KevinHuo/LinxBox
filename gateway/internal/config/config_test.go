@@ -192,3 +192,27 @@ func TestLoadWithoutMACOrPairing(t *testing.T) {
 		t.Fatal("新配置无需预登记 MAC 或配对白名单", got, err)
 	}
 }
+
+func TestLogFormats(t *testing.T) {
+	for _, format := range []string{"", "text", "json", "xml"} {
+		cfg := validConfig()
+		cfg.Log.Format = format
+		got, err := Load(writeConfig(t, cfg))
+		if format == "xml" {
+			if err == nil {
+				t.Fatal("未知格式应拒绝")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := format
+		if want == "" {
+			want = "text"
+		}
+		if got.Log.Format != want {
+			t.Fatal("日志格式未应用", got.Log.Format)
+		}
+	}
+}

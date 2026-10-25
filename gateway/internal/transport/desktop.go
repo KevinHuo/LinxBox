@@ -46,7 +46,7 @@ func (s *Server) serveDesktop(conn *websocket.Conn, p Principal) {
 			return
 		}
 		if err := s.handleDesktopMessage(ctx, wsConn, p, data); err != nil {
-			s.logger.Warn("Desktop 消息处理失败", "event", "request.failed", "connection_id", generation, "client_id", p.DesktopID, "error_code", domain.CodeOf(err))
+			s.logger.Debug("Desktop 消息处理已返回错误，业务原因见对应结果", "event", "request.failed", "connection_id", generation, "client_id", p.DesktopID, "error_code", domain.CodeOf(err))
 		}
 	}
 }
@@ -60,18 +60,18 @@ func (s *Server) handleDesktopMessage(ctx context.Context, wsConn *lifecycle.Con
 
 func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.Connection, p Principal, data []byte) error {
 	if err := s.validator.ValidateDesktopIncoming(data); err != nil {
-		s.logger.Warn("Desktop 消息未通过 Schema 校验", "event", "request.invalid", "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "bytes", len(data), "error_code", domain.CodeInvalidArgument)
+		s.logInvalid(wsConn, "Desktop", data)
 		return nil
 	}
 	var msg contracts.DesktopMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return err
 	}
+	s.logIncoming(wsConn, "Desktop", msg.Type, msg.MessageID, string(p.DesktopID), msg.Payload)
 	if msg.Type != "client.heartbeat" {
 		started := time.Now()
-		s.logger.Info("收到 Desktop 请求", "event", "request.received", "kind", "desktop", "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "request_id", msg.MessageID, "type", msg.Type)
 		defer func() {
-			s.logger.Info("Desktop 请求分发结束", "event", "request.dispatched", "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "request_id", msg.MessageID, "type", msg.Type, "duration_ms", time.Since(started).Milliseconds())
+			s.logger.Debug("Desktop 请求分发结束", "event", "request.dispatched", "trace_id", traceID(wsConn.Generation(), msg.MessageID), "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "message_id", msg.MessageID, "type", msg.Type, "duration_ms", elapsedMillis(started))
 		}()
 	}
 	if msg.ExpiresAt != nil {
@@ -83,7 +83,7 @@ func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.C
 	}
 	switch msg.Type {
 	case "client.hello":
-		s.logger.Info("Desktop hello", "client_id", p.DesktopID, "message_id", msg.MessageID)
+		s.logger.Debug("Desktop 连接信息已接收", "client_id", p.DesktopID, "message_id", msg.MessageID)
 	case "client.heartbeat":
 		s.logger.Debug("Desktop heartbeat", "client_id", p.DesktopID)
 	case "device.bind":
@@ -92,7 +92,9 @@ func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.C
 			return err
 		}
 		binding, err := s.binding.Bind(ctx, p.DesktopID, p.Subject, payload.MacAddress)
-		s.logOperation("device.binding", wsConn, msg.Type, msg.MessageID, err, "client_id", p.DesktopID, "mac_address", payload.MacAddress)
+		fields := []any{"direction", "Gateway→Desktop", "client_id", p.DesktopID, "mac_address", payload.MacAddress}
+		fields = append(fields, s.logValueFields("response_body", bindingResult(binding, err, msg.MessageID))...)
+		s.logOperation("device.binding", wsConn, msg.Type, msg.MessageID, err, fields...)
 		s.sendDesktopReply(wsConn, "binding.result", msg.MessageID, bindingResult(binding, err, msg.MessageID))
 	case "agent_sessions.sync":
 		var payload contracts.SessionSyncPayload
@@ -110,7 +112,13 @@ func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.C
 			return err
 		}
 		err := s.queries.Complete(string(p.DesktopID), wsConn.Generation(), data)
-		s.logOperation("query.result_received", wsConn, msg.Type, msg.MessageID, err, "client_id", p.DesktopID, "query_id", result.ReplyTo)
+		if err != nil {
+			fields := []any{"client_id", p.DesktopID, "query_id", result.ReplyTo, "accepted", false}
+			fields = append(fields, s.bodyFields("body", msg.Payload)...)
+			s.logOperation("query.response_rejected", wsConn, msg.Type, msg.MessageID, err, fields...)
+		} else {
+			s.logger.Debug("Desktop 应答已接受（业务结果见 query.completed）", "event", "query.result_received", "connection_id", wsConn.Generation(), "message_id", msg.MessageID, "client_id", p.DesktopID, "query_id", result.ReplyTo, "accepted", true)
+		}
 		return err
 	case "message.available":
 		return s.notifyMessage(ctx, p, msg.Payload)
@@ -141,14 +149,14 @@ func (s *Server) sendDesktopReply(wsConn *lifecycle.Connection, typ, replyTo str
 		return
 	}
 	if err := s.validator.ValidateDesktopType(typ, raw); err != nil {
-		s.logger.Error("应答未通过 Schema 校验", "type", typ, "request_id", replyTo, "error_code", domain.CodeInternal)
+		s.logger.Error("应答未通过 Schema 校验", "type", typ, "message_id", replyTo, "error_code", domain.CodeInternal)
 		return
 	}
 	if err := wsConn.Send(raw, s.conns.SendTimeout()); err != nil {
-		s.logOperation("response.send_failed", wsConn, typ, replyTo, domain.ErrDependencyUnavailable(""), "kind", "desktop")
+		s.logOperation("response.send_failed", wsConn, typ, replyTo, domain.ErrDependencyUnavailable("响应未入队："+err.Error()), "kind", "desktop")
 		return
 	}
-	s.logger.Info("Desktop 应答已入队", "event", "response.enqueued", "kind", "desktop", "connection_id", wsConn.Generation(), "type", typ, "request_id", replyTo, "bytes", len(raw))
+	s.logger.Debug("Gateway → Desktop：响应已入队（尚未确认对端收到）", "event", "response.enqueued", "trace_id", traceID(wsConn.Generation(), replyTo), "connection_id", wsConn.Generation(), "type", typ, "message_id", replyTo, "bytes", len(raw))
 }
 
 func bindingResult(binding contracts.BoundBinding, err error, replyTo string) contracts.BindingResultPayload {

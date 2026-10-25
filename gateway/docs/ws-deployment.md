@@ -111,34 +111,56 @@ Desktop 获得 MAC 后，按自己的帧结构发送：
 
 ## 查看请求日志
 
-默认 `log.level=info` 即可查看连接、认证、hello 登记、绑定、目录同步和业务请求日志。
-心跳使用 debug 级别，避免淹没联调信息。日志为单行 JSON，不记录 token、HTTP 认证头、完整帧、
-会话标题、正文或对端错误文案；Schema 校验失败也不输出原始数据。
+默认 `log.level=info`、`log.format=text`，直接阅读中文流程摘要。需要日志采集时可显式设置 `format=json`。
+已有配置未填写 format 时也使用文本格式；只需更新程序并重启，无需更换 token 或数据库。
+
+```json
+"log": {"level":"info","format":"text"}
+```
 
 ```sh
-# 实时查看
 sudo journalctl -u linxbox-gateway -f -o cat
 
-# 查找固件某个原始请求 ID，替换 hello-1 为实际帧 id
+# 用一条日志中的短号串起收到请求、转发和最终结果，替换为实际 trace_id
 sudo journalctl -u linxbox-gateway --since "10 minutes ago" --no-pager -o cat \
-  | grep -F '"request_id":"hello-1"'
+  | grep -F 'trace_id=c4-实际短号'
 ```
+
+默认一轮同步请求保留“收到请求、业务结果”；转发查询保留“收到请求、转发 Desktop、最终结果”。
+机械分发、应答已接受及发送入队细节降为 debug，同一次业务失败只在最终结果输出一条 WARN。
+发送失败或应答被拒绝仍单独告警。开启 debug 时可看到完整的队列和分发记录。
 
 | 字段 / 事件 | 排查用途 |
 | --- | --- |
-| `connection_id` | 进程内连接代次，重启后重新计数；配合 `device_id` / `client_id` 判断哪条连接 |
-| `request_id` | 当前端原始帧 `id` 或 `message_id`；响应日志回指触发请求 |
-| `query_id` | Gateway 转发查询的包 ID，关联固件原请求、Desktop 查询和 query.result |
-| `request.received` / `request.dispatched` | 请求已通过 Schema 并分发；`duration_ms` 是当前处理器耗时，异步查询的总耗时见 query.completed |
-| `response.enqueued` / `response.send_failed` | 响应已进入有界发送队列或入队失败；入队不代表对端已收到 |
-| `device.registered` / `device.binding` | MAC 登记与绑定结果，失败时带 `error_code` |
-| `catalog.synced` | 同步结果、目录条数和版本，不输出标题或内容 |
-| `query.forwarded` / `query.result_received` / `query.completed` | 已转发、收到结果、查询结束；最终 `ok`、`error_code` 和 `duration_ms` 在 query.completed |
-| `end_reason` | `desktop_result`、`timeout`、`desktop_disconnected` 或 `forward_failed`，区分查询结束原因 |
-| `device.hello_timeout` / `connection.replaced` / `connection.closed` | hello 超时、重连替换、断线；替换记录前后连接代次，断线只记录关闭码 |
+| `trace_id` | 基于连接代次和消息 ID 生成的检索短号，只用于日志，不参与业务路由 |
+| `connection_id` | 进程内连接代次，重启后重新计数；配合 `device_id` / `client_id` 判断双方 |
+| `message_id` | 当前端原始网络包 `id` 或 `message_id`，不再混称 request_id |
+| `request_id` | 一轮追问的业务 ID；prepare/get/cancel 的不同包共享它 |
+| `query_id` / `desktop_message_id` | Gateway 转发查询 ID、Desktop 返回该查询的应答包 ID |
+| `body` / `response_body` | 请求 payload、处理结果的脱敏结构；文本展开为 body.agent_session_id 等键，JSON 保留嵌套对象 |
+| `body_bytes` / `body_redacted` / `body_truncated` | 原始 payload 字节数、是否脱敏及是否截断；response_body 有同名后缀 |
+| `error_code` / `error_message` | 业务错误码及可读原因；例如 NOT_FOUND + 会话不存在 |
+| `error_source` / `error_hint` | 错误来自 gateway 或 desktop，以及下一步排查方向 |
+| `error_detail_redacted` | 对端未知异常的原文被隐藏；已知“会话不存在”等诊断文案可直接显示，常见权限/超时/thread 缺失异常归类显示 |
+| `request.state` | 当前保存的业务请求、会话 ID 和状态；get/cancel 不因入站未带会话字段而显示空目标 |
+| `data_source=gateway_catalog` | 当前结果来自 Gateway 保存的会话目录，不能据此判断 Desktop 的底层历史是否可读 |
+| `query.completed` | 最终业务结果与毫秒耗时，小数保留亚毫秒处理时间 |
+| `end_reason` | desktop_result、timeout、desktop_disconnected 或 forward_failed，区分结束原因 |
 
-按 `query_id` 再过滤一次，即可把固件请求和 Desktop 应答串起来。先看 `ok` 和 `error_code`，
-再看 `end_reason`；例如 `DEPENDENCY_UNAVAILABLE + timeout` 表示 Desktop 查询未在期限内完成。
-`query.result_received` 的 `ok` 表示该应答是否被路由器接受，业务结果以 `query.completed.ok` 为准。
+body 会显示 MAC、会话/消息/业务请求 ID、分页 cursor 和字节偏移等诊断字段。
+正文、标题、摘要、路径和凭据使用脱敏标记；未纳入诊断白名单的字段名和值不直接输出。
+每个 body 预算为 4096 字节，数组最多显示前 3 项，字符串和深层结构有界，超出时带截断标记。
+因此日志 body 是诊断视图，不能作为完整原始报文重放。
+
+例如历史查询失败时，默认摘要直接说明“Desktop → Gateway：读取会话历史失败：会话不存在”，
+并带实际 agent_session_id、请求 body、error_source=desktop 和排查提示；
+不会再把“应答已接受”显示为另一条容易误读的 INFO 成功记录。
+
+`query.result_received` 仅在 debug 出现，其 `accepted` 表示路由器接受应答，
+业务是否成功以 `query.completed.ok` 为准。`response.enqueued` 仅表示入队，不能证明固件已收到。
+未通过 Schema 的消息会记录 JSON/字段错误提示和脱敏 body，然后按既有规则丢弃。
+
+日志字段的兼容变化：旧版网络包 `request_id` 现改称 `message_id`；`request_id` 专指业务请求。
+依赖旧版 JSON 的采集程序应设置 format=json，并同步更新字段映射。
 
 本机真实 TCP 验证使用模拟固件和 Desktop；交叉编译及校验和验证不代表 Linux 安装、公网连接或真机联调已通过。
