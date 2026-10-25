@@ -21,6 +21,7 @@
 .coverage
 .coverage.*
 coverage.xml
+*.profraw
 
 # Nested package outputs (desktop)
 dist/
