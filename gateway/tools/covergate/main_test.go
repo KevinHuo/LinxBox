@@ -200,6 +200,12 @@ func TestChangedPackages(t *testing.T) {
 	if len(got) != 1 || got[0] != "internal/config" {
 		t.Fatalf("增量包错误: %v", got)
 	}
+	// 与 make check / CI 的实际工作目录一致，不能因相对路径漏掉所有变更。
+	t.Chdir(filepath.Join(dir, "gateway"))
+	got, err = changedPackages("HEAD~1")
+	if err != nil || len(got) != 1 || got[0] != "internal/config" {
+		t.Fatalf("从 gateway/ 执行时增量包错误: %v: %v", got, err)
+	}
 }
 
 func TestRunGatesIncremental(t *testing.T) {

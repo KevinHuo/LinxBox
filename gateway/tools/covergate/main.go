@@ -154,7 +154,8 @@ func changedPackages(base string) ([]string, error) {
 		return nil, fmt.Errorf("计算基线 %s: %w", base, err)
 	}
 	mergeBase := strings.TrimSpace(string(out))
-	cmd = exec.Command("git", "diff", "--name-only", mergeBase+"..HEAD", "--", "gateway")
+	// 门禁由 gateway/ 执行；路径限定到仓库根目录，避免误匹配 gateway/gateway 而漏检。
+	cmd = exec.Command("git", "diff", "--name-only", mergeBase+"..HEAD", "--", ":(top)gateway")
 	out, err = cmd.Output()
 	if err != nil {
 		return nil, err
