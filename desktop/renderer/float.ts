@@ -238,6 +238,13 @@ function wireEvents(): void {
     appButton.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 
+  appList?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest('[data-app]')) return;
+    appList.classList.remove('is-open');
+    appButton?.setAttribute('aria-expanded', 'false');
+  });
+
   wireDrag();
   window.addEventListener('storage', (event) => {
     if (event.key === deviceStorageKey) {
