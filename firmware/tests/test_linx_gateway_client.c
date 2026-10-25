@@ -277,6 +277,63 @@ static void test_pages_and_notifications(void)
     assert(!linx_gateway_client_action(&client, (linx_gateway_action_t)999, NULL, clock_now++));
 }
 
+static void test_reply_read_tracking(void)
+{
+    start(true); select_session("session");
+    assert(!linx_gateway_client_mark_reply_read(NULL, 0));
+    assert(!linx_gateway_client_mark_reply_read(&client, 0));
+    assert(notification("message.available", parsed("{\"agent_session_id\":\"session\",\"message_id\":\"reply\"}")));
+    assert(!strcmp(client.view.reply_message_id, "reply"));
+    uint32_t version = client.view.reply_revision;
+    assert(response(session("session")));
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONTENT, "reply", clock_now++));
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(response(chunk("", -1)));
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONTENT, "other", clock_now++));
+    assert(response(chunk("other body", -1)));
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONTENT, "reply", clock_now++));
+    assert(response(chunk("reply body", -1)));
+    strcpy(client.view.content_session_id, "other");
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    strcpy(client.view.content_session_id, "session");
+    assert(!linx_gateway_client_mark_reply_read(&client, version + 1));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONTENT, "reply", clock_now++));
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(response(chunk("reply body", -1)));
+    unsigned packets = send_count;
+    uint32_t revision = client.view.revision;
+    assert(linx_gateway_client_mark_reply_read(&client, version));
+    assert(!client.view.new_reply && !strcmp(client.view.reply_message_id, "reply"));
+    assert(client.view.revision == revision + 1 && send_count == packets);
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(client.view.revision == revision + 1 && send_count == packets);
+    linx_gateway_client_drop_transient(&client, true);
+    assert(!strcmp(client.view.reply_message_id, "reply"));
+    assert(notification("message.available", parsed("{\"agent_session_id\":\"session\",\"message_id\":\"reply\"}")));
+    assert(client.view.reply_revision != version && client.view.new_reply);
+    assert(response(session("session")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONTENT, "reply", clock_now++));
+    assert(response(chunk("reply updated", -1)));
+    assert(!linx_gateway_client_mark_reply_read(&client, version));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_HISTORY, "session", clock_now++));
+    assert(client.view.new_reply);
+    assert(response(page(0, true, NULL)));
+    select_session("other");
+    assert(!client.view.new_reply && !client.view.reply_message_id[0]);
+    select_session("session");
+    char id[LINX_GATEWAY_ID_CAPACITY];
+    for (size_t i = 0; i < 128; ++i) memcpy(id + i * 4, "\xF0\x9F\x98\x80", 4);
+    id[sizeof(id) - 1] = 0;
+    cJSON *notice = cJSON_CreateObject();
+    cJSON_AddStringToObject(notice, "agent_session_id", "session");
+    cJSON_AddStringToObject(notice, "message_id", id);
+    assert(notification("message.available", notice));
+    assert(!strcmp(client.view.reply_message_id, id) && client.view.new_reply);
+}
+
 static void test_content(void)
 {
     start(true); select_session("session");
@@ -889,7 +946,7 @@ static void test_boot_and_early_snapshot(void)
 
 static void test_rejected_prepare_release(void)
 {
-    const char *rejections[] = {"NOT_FOUND", "INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED"};
+    const char *rejections[] = {"NOT_FOUND", "INVALID_ARGUMENT", "UNAUTHENTICATED", "PERMISSION_DENIED", "CONFLICT"};
     for (unsigned i = 0; i < sizeof(rejections) / sizeof(rejections[0]); ++i) {
         start(true); prepare();
         char old_id[LINX_GATEWAY_ID_CAPACITY]; strcpy(old_id, client.view.request.request_id);
@@ -898,6 +955,8 @@ static void test_rejected_prepare_release(void)
         assert(error_response("NOT_FOUND", "请求尚未创建"));
         assert(!client.view.request.valid && !client.view.request.uncertain && !client.recovery_needed);
         assert(client.view.request.status == LINX_GATEWAY_REQUEST_NONE);
+        assert(!client.view.request.request_id[0] && !client.prepare_sent);
+        assert(!client.view.request.cancel_requested && !client.view.request.cancel_sent);
         assert(!strcmp(client.view.request.error_code, rejections[i]));
         assert(!strcmp(client.view.request.error_message, "明确拒绝创建"));
         unsigned count = preparations;
@@ -906,7 +965,7 @@ static void test_rejected_prepare_release(void)
         assert(preparations == count + 1 && strcmp(old_id, client.view.request.request_id));
         assert(!client.view.request.error_message[0] && !client.prepare_rejected);
     }
-    const char *uncertain[] = {"CONFLICT", "INTERNAL", "DEPENDENCY_UNAVAILABLE", "RESOURCE_EXHAUSTED"};
+    const char *uncertain[] = {"INTERNAL", "DEPENDENCY_UNAVAILABLE", "RESOURCE_EXHAUSTED"};
     for (unsigned i = 0; i < sizeof(uncertain) / sizeof(uncertain[0]); ++i) {
         start(true); prepare(); assert(error_response(uncertain[i], "创建结果未确定"));
         assert(error_response("NOT_FOUND", "暂未找到请求"));
@@ -932,6 +991,70 @@ static void test_rejected_prepare_release(void)
     assert(client.view.request.valid && client.view.request.uncertain);
     assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_PREPARE, NULL, clock_now++));
     assert(confirmations == 0);
+}
+
+static void test_conflict_release_and_submission_guards(void)
+{
+    start(true); prepare();
+    cJSON *late = request("awaiting_confirmation", "旧请求迟到原文");
+    cJSON *late_reply = parsed("{\"id\":\"late\",\"type\":\"response\",\"reply_to\":\"old\",\"payload\":{\"ok\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"旧准备错误\"}}}");
+    cJSON_SetValuestring(cJSON_GetObjectItemCaseSensitive(late_reply, "reply_to"), client.pending.id);
+    char old_id[LINX_GATEWAY_ID_CAPACITY]; strcpy(old_id, client.view.request.request_id);
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CANCEL, NULL, clock_now++));
+    assert(error_response("CONFLICT", "设备或目标会话存在未结束请求"));
+    assert(client.prepare_rejected && client.view.request.cancel_requested);
+    assert(error_response("NOT_FOUND", "请求不存在"));
+    assert(!client.view.request.valid && !client.view.request.request_id[0]);
+    assert(!client.view.request.cancel_requested && !client.view.request.capture_pending);
+    assert(!client.prepare_sent && !client.recovery_needed && !client.prepare_rejected);
+    assert(!strcmp(client.view.request.error_code, "CONFLICT"));
+    unsigned count = send_count;
+    linx_gateway_client_tick(&client, clock_now + LINX_GATEWAY_TIMEOUT_MS * 2U);
+    assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_REQUEST_GET, NULL, clock_now++));
+    assert(send_count == count && preparations == 1 && confirmations == 0 && cancellations == 0);
+    linx_gateway_client_disconnected(&client, client.view.generation);
+    linx_gateway_client_connected(&client, 4U, "AABBCCDDEEFF", clock_now++);
+    assert(response(parsed("{\"device_id\":\"AA:BB:CC:DD:EE:FF\",\"desktop_client_id\":\"desktop\"}")));
+    assert(strstr(sent, "agent_sessions.list") && !client.recovery_needed);
+    assert(response(page(0, false, NULL)));
+    assert(response(session("session")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_PREPARE, NULL, clock_now++));
+    assert(preparations == 2 && strcmp(old_id, client.view.request.request_id));
+    char pending_id[64]; strcpy(pending_id, client.pending.id);
+    assert(!deliver(late_reply) && !strcmp(pending_id, client.pending.id));
+    assert(!notification("request.proposed", late));
+    assert(client.view.request.valid && client.view.request.status == LINX_GATEWAY_REQUEST_NONE);
+    assert(!linx_gateway_client_claim_capture(&client) && confirmations == 0);
+
+    /* 防御性检查：已有提交意图、发送或录音记录时不得释放。 */
+    for (unsigned i = 0; i < 4U; ++i) {
+        start(true); prepare(); assert(error_response("CONFLICT", "准备被拒绝"));
+        bool *guards[] = {&client.view.request.confirm_requested, &client.view.request.confirm_sent,
+            &client.view.request.cancel_sent, &client.view.request.capture_claimed};
+        *guards[i] = true;
+        assert(error_response("NOT_FOUND", "请求不存在"));
+        assert(client.view.request.valid && client.view.request.request_id[0]);
+        assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_PREPARE, NULL, clock_now++));
+    }
+    const char *states[] = {"awaiting_text", "awaiting_confirmation", "sending", "running", "unknown"};
+    for (unsigned i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
+        start(true); prepare(); assert(error_response("CONFLICT", "准备被拒绝"));
+        assert(notification("request.updated", request(states[i], i == 0U ? NULL : "当前原文")));
+        assert(!client.prepare_rejected);
+        assert(error_response("NOT_FOUND", "请求记录缺失"));
+        assert(client.view.request.valid && client.view.request.request_id[0]);
+        assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_PREPARE, NULL, clock_now++));
+    }
+    start(true); prepare(); assert(response(request("awaiting_text", NULL)));
+    assert(notification("request.proposed", request("awaiting_confirmation", "已授权原文")));
+    assert(linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_CONFIRM, NULL, clock_now++));
+    assert(confirmations == 1 && client.view.request.confirm_sent);
+    linx_gateway_client_tick(&client, client.pending.sent_at + LINX_GATEWAY_TIMEOUT_MS);
+    assert(strstr(sent, "request.get"));
+    assert(error_response("NOT_FOUND", "请求记录缺失"));
+    assert(client.view.request.valid && client.view.request.uncertain && client.view.request.confirm_sent);
+    assert(!linx_gateway_client_action(&client, LINX_GATEWAY_ACTION_PREPARE, NULL, clock_now++));
+    assert(confirmations == 1 && preparations == 1);
 }
 
 static void test_history_owner_failure(void)
@@ -1167,9 +1290,10 @@ int main(int argc, char **argv)
     test_borrowed_frame_heap_budget();
     test_formal_page_profile();
     test_formal_tail_validation_and_transient_drop();
-    test_binding_and_errors(); test_pages_and_notifications(); test_content();
+    test_binding_and_errors(); test_pages_and_notifications(); test_content(); test_reply_read_tracking();
     test_mcp_snapshot_merge(); test_cancel_recovery(); test_request_snapshot_recovery();
     test_confirmation_authorization(); test_confirmation_cancel_and_queue(); test_confirmation_recovery();
+    test_conflict_release_and_submission_guards();
     test_protocol_log_privacy();
     test_capacity_and_pairing(); test_strict_json(); test_state_matrix(); test_allocation_failures(); test_lexer_bounds(); test_interleaving_and_limits(); test_boot_and_early_snapshot(); test_rejected_prepare_release(); test_history_owner_failure(); test_content_pending_and_transport_error();
     linx_gateway_client_deinit(&client);

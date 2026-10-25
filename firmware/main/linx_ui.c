@@ -64,7 +64,7 @@ static struct {
     char gateway_history[LINX_GATEWAY_ID_CAPACITY];
     char gateway_message[LINX_GATEWAY_ID_CAPACITY];
     char remote_display[LINX_GATEWAY_TITLE_CAPACITY * 3U / 2U + 1U];
-    uint32_t read_offset;
+    uint32_t read_offset, read_reply_revision;
     bool previous_block, read_latest;
     lv_obj_t *root;
     lv_obj_t *labels[LABEL_COUNT];
@@ -1053,6 +1053,12 @@ static int32_t remote_measure(const char *value, size_t bytes, linx_reader_kind_
     return width;
 }
 
+static void gateway_error_text(const char *value, int y, int height, uint32_t color)
+{
+    lv_obj_t *label = remote_text(value, 16, y, 208, height, color);
+    if (label) lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL);
+}
+
 static bool gateway_action(linx_gateway_action_t action, const char *target)
 {
     return linx_gateway_client_action(ui.gateway, action, target, (uint32_t)ui.now_ms);
@@ -1072,7 +1078,7 @@ static const char *gateway_connection(void)
 static const char *gateway_request_status(linx_gateway_request_status_t status)
 {
     static const char *const names[] = {"尚无指令", "等待文字", "尚未发送", "正在发送",
-        "电脑正在执行", "执行完成", "执行失败", "指令已取消", "执行结果未知"};
+        "电脑正在执行", "执行完成", "执行失败", "指令已取消", "结果待确认"};
     return names[status];
 }
 
@@ -1159,14 +1165,29 @@ static void gateway_render_list(bool history)
 static void gateway_render_overview(void)
 {
     const linx_gateway_view_t *v = linx_gateway_client_view(ui.gateway);
+    const linx_gateway_request_t *request = &v->request;
+    bool current_request = v->detail_valid && request->valid &&
+        !strcmp(request->agent_session_id, v->detail.agent_session_id) &&
+        !strcmp(request->agent_session_id, v->selected_session_id);
+    const char *status = v->detail_valid ? gateway_session_status(&v->detail) : "";
+    /* 本轮请求的执行事实优先，目录状态和新回复都不能代替确认结果。 */
+    if (current_request) {
+        status = request->uncertain ? "结果待确认" : request->status == LINX_GATEWAY_REQUEST_NONE ?
+            "正在准备" : gateway_request_status(request->status);
+    }
     gateway_header(v->detail_valid ? v->detail.title : "任务详情", gateway_connection());
-    remote_text(v->target_unavailable ? "此任务已不可用" : v->detail_valid ? v->detail.project_name : "正在加载详情",
-                16, 106, 208, 20, COLOR_ACCENT_TEXT);
-    remote_text(v->detail_valid ? v->detail.agent : "", 16, 131, 120, 20, COLOR_MUTED);
-    remote_text(v->detail_valid ? gateway_session_status(&v->detail) : "", 145, 131, 68, 20, COLOR_MUTED);
-    remote_text(v->new_reply ? "有新回复" : "", 16, 156, 208, 40,
-                v->new_reply ? COLOR_ACCENT_TEXT : COLOR_INK);
-    static const char *const options[] = {"阅读本轮回复", "继续沟通", "最近对话"};
+    if (v->error != LINX_GATEWAY_ERROR_NONE) {
+        gateway_error_text(v->error_code[0] ? v->error_code : "本次操作未完成", 106, 40, COLOR_ACCENT_TEXT);
+        gateway_error_text(v->error_message, 150, 46, COLOR_INK);
+    } else {
+        remote_text(v->target_unavailable ? "此任务已不可用" : v->detail_valid ? v->detail.project_name : "正在加载详情",
+                    16, 106, 208, 20, COLOR_ACCENT_TEXT);
+        remote_text(v->detail_valid ? v->detail.agent : "", 16, 131, current_request ? 104 : 120, 20, COLOR_MUTED);
+        remote_text(status, current_request ? 128 : 145, 131, current_request ? 96 : 68, 20, COLOR_MUTED);
+        remote_text(v->new_reply ? "有新回复" : "", 16, 156, 208, 40,
+                    v->new_reply ? COLOR_ACCENT_TEXT : COLOR_INK);
+    }
+    const char *const options[] = {v->new_reply ? "查看新回复" : "阅读本轮回复", "继续沟通", "最近对话"};
     for (size_t i = 0U; i < 3U; ++i) menu_row(i, ui.at.selected, 200 + (int)i * 25, 24, options[i],
         i != 1U || (v->bound && v->detail_valid && !v->target_unavailable));
     footer("↑↓选择  OK打开\n长按OK 返回任务");
@@ -1175,7 +1196,8 @@ static void gateway_render_overview(void)
 static const char *gateway_reader_source(void)
 {
     const linx_gateway_view_t *v = linx_gateway_client_view(ui.gateway);
-    return v->content_valid && strcmp(v->content_message_id, ui.gateway_message) == 0 ?
+    return v->content_valid && !strcmp(v->content_session_id, v->selected_session_id) &&
+        !strcmp(v->content_message_id, ui.gateway_message) ?
         v->content : v->loading ? "正在加载正文" : v->error ? v->error_message : "暂无正文";
 }
 
@@ -1196,7 +1218,8 @@ static void gateway_render_reader(void)
         v->new_reply ? "有新回复 · 当前阅读位置保留" : v->detail.title;
     remote_text(context, 16, 45, 208, 22, COLOR_MUTED);
     linx_reader_page_t page;
-    if (valid && linx_reader_get_page(&ui.pages, ui.at.read_page, source, remote_measure, NULL, &page)) {
+    bool displayed = valid && linx_reader_get_page(&ui.pages, ui.at.read_page, source, remote_measure, NULL, &page);
+    if (displayed) {
         for (size_t i = 0U; i < page.count; ++i) {
             const linx_reader_row_t *row = &page.rows[i];
             memcpy(ui.page_text, source + row->start, row->length);
@@ -1205,6 +1228,8 @@ static void gateway_render_reader(void)
         }
     } else remote_text("正文排版失败", 16, BODY_TOP, BODY_WIDTH, 40, COLOR_ACCENT_TEXT);
     footer("↑↓翻页  OK只读\n长按OK 返回");
+    if (displayed && !ui.render_overflow && source == v->content)
+        linx_gateway_client_mark_reply_read(ui.gateway, ui.read_reply_revision);
 }
 
 static bool gateway_voice_input(void)
@@ -1214,9 +1239,17 @@ static bool gateway_voice_input(void)
         ui.voice_state != LINX_VOICE_ERROR && ui.voice_state != LINX_VOICE_CLOSED && !view->request.cancel_requested;
 }
 
-static void gateway_render_request(void)
+static bool gateway_request_released(void)
 {
     const linx_gateway_request_t *request = &ui.gateway->view.request;
+    return !request->valid && request->status == LINX_GATEWAY_REQUEST_NONE &&
+        !request->request_id[0] && request->error_code[0];
+}
+
+static void gateway_render_request(void)
+{
+    const linx_gateway_view_t *view = &ui.gateway->view;
+    const linx_gateway_request_t *request = &view->request;
     bool stopped = ui.voice_state == LINX_VOICE_ERROR || ui.voice_state == LINX_VOICE_CLOSED;
     bool input = gateway_voice_input();
     if (input) {
@@ -1233,17 +1266,34 @@ static void gateway_render_request(void)
         footer(ui.voice_state == LINX_VOICE_LISTENING ? "OK结束并发送\n长按OK 取消" : "等待处理结果\n长按OK 取消");
         return;
     }
-    gateway_header(ui.at.page == LINX_UI_VOICE ? "发送指令" : gateway_request_status(request->status), gateway_connection());
-    remote_text(request->target_title, 16, 108, 208, 40, COLOR_INK);
-    const char *status = request->cancel_requested ? "正在核对取消结果" :
-        stopped ? (ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "本次未能完成，按OK配网" : "本轮已结束，按OK返回") :
-        ui.at.page == LINX_UI_VOICE ? "正在登记本条指令" : "状态来自工作电脑";
-    remote_text(status, 16, 159, 208, 40, COLOR_ACCENT_TEXT);
-    remote_text(stopped ? voice_error() : request->error_message[0] ? request->error_message :
-                ui.gateway->view.error_message, 16, 207, 208, 40, COLOR_MUTED);
-    footer(ui.at.page != LINX_UI_VOICE ? "OK核对状态\n长按OK 返回" : stopped ?
+    bool released = gateway_request_released();
+    gateway_header(released ? "本次未提交" : ui.at.page == LINX_UI_VOICE ? "发送指令" :
+                   gateway_request_status(request->status), gateway_connection());
+    /* CLOSED/OK 只是语音已结束，不能覆盖当前真实错误。错误展示不改变请求状态。 */
+    bool voice_failed = !released && stopped && ui.voice_error != LINX_VOICE_OK;
+    const char *code = released ? request->error_code : voice_failed ? "" :
+        view->error != LINX_GATEWAY_ERROR_NONE ? view->error_code : request->error_code;
+    const char *reason = released ? request->error_message : voice_failed ? voice_error() : view->error != LINX_GATEWAY_ERROR_NONE ?
+        view->error_message : request->error_message;
+    bool error = *code || *reason;
+    if (error) {
+        remote_text(request->target_title, 16, 108, 208, 20, COLOR_MUTED);
+        const char *heading = *code ? code : voice_failed ?
+            (ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "本次未能完成，按OK配网" : "本轮已结束，按OK返回") : "本次操作未完成";
+        gateway_error_text(heading, 137, 40, COLOR_ACCENT_TEXT);
+        gateway_error_text(reason, 181, 90, COLOR_INK);
+    } else {
+        remote_text(request->target_title, 16, 108, 208, 40, COLOR_INK);
+        const char *status = request->cancel_requested ? "正在核对取消结果" :
+            stopped ? (ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "本次未能完成，按OK配网" : "本轮已结束，按OK返回") :
+            ui.at.page == LINX_UI_VOICE ? "正在登记本条指令" : "状态来自工作电脑";
+        remote_text(status, 16, 159, 208, 40, COLOR_ACCENT_TEXT);
+        remote_text(stopped ? voice_error() : request->error_message[0] ? request->error_message :
+                    ui.gateway->view.error_message, 16, 207, 208, 40, COLOR_MUTED);
+    }
+    footer(released ? "OK返回\n长按OK 返回" : ui.at.page != LINX_UI_VOICE ? "OK核对状态\n长按OK 返回" : stopped ?
         (ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "OK手机配网\n长按OK 取消" : "OK取消并返回\n长按OK 取消") :
-        "等待登记完成\n长按OK 取消");
+        error ? "长按OK 取消" : "等待登记完成\n长按OK 取消");
 }
 
 static bool gateway_render(void)
@@ -1272,9 +1322,11 @@ static bool gateway_render(void)
 static void gateway_open_message(const char *id)
 {
     memcpy(ui.gateway_message, id, strlen(id) + 1U);
+    ui.read_reply_revision = ui.gateway->view.reply_revision;
+    linx_gateway_client_drop_transient(ui.gateway, false);
     ui.at.read_page = 0U;
     ui.read_offset = UINT32_MAX;
-    gateway_action(LINX_GATEWAY_ACTION_CONTENT, id);
+    gateway_action(LINX_GATEWAY_ACTION_CONTENT, ui.gateway_message);
     push(LINX_UI_READER);
 }
 
@@ -1362,6 +1414,9 @@ static bool gateway_key(linx_ui_key_t key)
         else if (ui.at.page == LINX_UI_OVERVIEW || ui.at.page == LINX_UI_SETTINGS)
             ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 3U);
     } else if (key == LINX_UI_KEY_OK) {
+        if ((ui.at.page == LINX_UI_VOICE || ui.at.page == LINX_UI_RECEIPT) && gateway_request_released()) {
+            gateway_cancel_input(); pop(); return true;
+        }
         switch (ui.at.page) {
         case LINX_UI_BOOT: ui.at.page = LINX_UI_TASKS; break;
         case LINX_UI_TASKS: gateway_list_ok(false); break;
@@ -1385,6 +1440,11 @@ static bool gateway_key(linx_ui_key_t key)
                     }
                 }
             } else {
+                if (ui.at.selected == 0U && v->reply_message_id[0]) {
+                    ui.read_latest = false;
+                    gateway_open_message(v->reply_message_id);
+                    break;
+                }
                 ui.read_latest = ui.at.selected == 0U;
                 ui.gateway_history[0] = '\0';
                 gateway_action(LINX_GATEWAY_ACTION_HISTORY, v->selected_session_id);
