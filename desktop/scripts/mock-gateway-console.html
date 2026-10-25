@@ -782,7 +782,20 @@
       document.querySelectorAll('[data-gateway-kind]').forEach((button) => {
         button.addEventListener('click', async () => {
           const kind = button.dataset.gatewayKind;
-          const result = await post('/api/dispatch', { kind });
+          let extra = {};
+          if (kind === 'message.content.get') {
+            const latest = [...state.entries].reverse().find((entry) =>
+              entry.direction === 'inbound' && entry.type === 'query.result' && entry.frame?.payload?.ok &&
+              Array.isArray(entry.frame.payload.data?.items) && entry.frame.payload.data.items.length > 0,
+            );
+            const messageId = latest?.frame?.payload?.data?.items?.at(-1)?.message_id;
+            if (!messageId) {
+              toast('请先查询消息目录，再查询消息正文');
+              return;
+            }
+            extra = { message_id: messageId };
+          }
+          const result = await post('/api/dispatch', { kind, ...extra });
           toast(result.ok ? `已发送 ${kind}` : result.message || '发送失败');
         });
       });
