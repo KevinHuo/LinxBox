@@ -1,0 +1,33 @@
+name: 共享契约检查
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "desktop/contracts/**"
+      - ".github/workflows/contracts.yml"
+  push:
+    paths:
+      - "contracts/**"
+      - "desktop/contracts/**"
+      - ".github/workflows/contracts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: 安装契约检查依赖
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r contracts/requirements.txt
+      - name: 校验 Schema、样例与校验器
+        run: |
+          .venv/bin/python contracts/validate.py
+          .venv/bin/coverage run --branch --source=validate -m unittest discover -s contracts -p 'test_*.py'
+          .venv/bin/coverage report --fail-under=90
+          git diff --check

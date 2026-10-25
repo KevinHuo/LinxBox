@@ -1,0 +1,1029 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KevinHuo/LinxBox/contracts/firmware-gateway.schema.json",
+  "title": "固件与 Gateway 消息",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/FirmwareToGateway"
+    },
+    {
+      "$ref": "#/$defs/GatewayToFirmware"
+    }
+  ],
+  "$defs": {
+    "device.hello": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "device.hello"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "mac_address": {
+              "$ref": "common.schema.json#/$defs/MacAddress"
+            }
+          },
+          "required": [
+            "mac_address"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "agent_sessions.list": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "agent_sessions.list"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "agent_session.get": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "agent_session.get"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "agent_session_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "agent_session_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "messages.list": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "messages.list"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/MessagesListInput"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "message.content.get": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "message.content.get"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/ContentGetInput"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "request.prepare": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "request.prepare"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "agent_session_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "request_id",
+            "agent_session_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "request.confirm": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "request.confirm"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "request_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "request.cancel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "request.cancel"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "request_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "request.get": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "request.get"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "request_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "device.hello.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/Binding"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "agent_sessions.list.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/SessionPage"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "agent_session.get.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/AgentSession"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "messages.list.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/MessagePage"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "message.content.get.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/ContentChunk"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "request.prepare.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/Request"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "request.confirm.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/Request"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "request.cancel.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/Request"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "request.get.response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/Request"
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "response"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "anyOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/AgentSession"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/Binding"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/ContentChunk"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/MessagePage"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/Request"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/SessionPage"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload",
+        "reply_to"
+      ],
+      "additionalProperties": false
+    },
+    "device.bound": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "device.bound"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/BoundBinding"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "request.proposed": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "request.proposed"
+        },
+        "payload": {
+          "allOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Request"
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "awaiting_confirmation"
+                },
+                "text": {
+                  "$ref": "common.schema.json#/$defs/DraftText"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "request.updated": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "request.updated"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/Request"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "agent_sessions.updated": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "agent_sessions.updated"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/Empty"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "message.available": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "const": "message.available"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "agent_session_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "message_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "agent_session_id",
+            "message_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "FirmwareToGateway": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/device.hello"
+        },
+        {
+          "$ref": "#/$defs/agent_sessions.list"
+        },
+        {
+          "$ref": "#/$defs/agent_session.get"
+        },
+        {
+          "$ref": "#/$defs/messages.list"
+        },
+        {
+          "$ref": "#/$defs/message.content.get"
+        },
+        {
+          "$ref": "#/$defs/request.prepare"
+        },
+        {
+          "$ref": "#/$defs/request.confirm"
+        },
+        {
+          "$ref": "#/$defs/request.cancel"
+        },
+        {
+          "$ref": "#/$defs/request.get"
+        }
+      ]
+    },
+    "GatewayToFirmware": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/response"
+        },
+        {
+          "$ref": "#/$defs/device.bound"
+        },
+        {
+          "$ref": "#/$defs/request.proposed"
+        },
+        {
+          "$ref": "#/$defs/request.updated"
+        },
+        {
+          "$ref": "#/$defs/agent_sessions.updated"
+        },
+        {
+          "$ref": "#/$defs/message.available"
+        }
+      ]
+    }
+  }
+}

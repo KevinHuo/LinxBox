@@ -1,0 +1,85 @@
+[
+  {
+    "name": "Arguments 合法",
+    "schema": "mcp.schema.json#/$defs/Arguments",
+    "valid": true,
+    "data": {
+      "text": "示例"
+    }
+  },
+  {
+    "name": "Arguments 拒绝额外字段",
+    "schema": "mcp.schema.json#/$defs/Arguments",
+    "valid": false,
+    "data": {
+      "text": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "Arguments 拒绝缺少必填字段",
+    "schema": "mcp.schema.json#/$defs/Arguments",
+    "valid": false,
+    "data": {}
+  },
+  {
+    "name": "Result 合法",
+    "schema": "mcp.schema.json#/$defs/Result",
+    "valid": true,
+    "data": {
+      "ok": true,
+      "data": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": "继续检查时间戳是否回退",
+        "status": "awaiting_confirmation",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "Result 拒绝额外字段",
+    "schema": "mcp.schema.json#/$defs/Result",
+    "valid": false,
+    "data": {
+      "ok": true,
+      "data": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": null,
+        "status": "awaiting_text",
+        "error": null
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "Result 拒绝缺少必填字段",
+    "schema": "mcp.schema.json#/$defs/Result",
+    "valid": false,
+    "data": {
+      "data": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": null,
+        "status": "awaiting_text",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "Result 失败应答",
+    "schema": "mcp.schema.json#/$defs/Result",
+    "valid": true,
+    "data": {
+      "ok": false,
+      "error": {
+        "code": "CONFLICT",
+        "message": "当前状态不允许该操作"
+      }
+    }
+  }
+]

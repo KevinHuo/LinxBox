@@ -1,0 +1,1727 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KevinHuo/LinxBox/contracts/desktop-gateway.schema.json",
+  "title": "Desktop 与 Gateway 消息",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/DesktopToGateway"
+    },
+    {
+      "$ref": "#/$defs/GatewayToDesktop"
+    }
+  ],
+  "$defs": {
+    "PublicError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "UNAUTHENTICATED",
+            "PERMISSION_DENIED",
+            "INVALID_ARGUMENT",
+            "NOT_FOUND",
+            "CONFLICT",
+            "RESOURCE_EXHAUSTED",
+            "DEPENDENCY_UNAVAILABLE",
+            "APPROVAL_REQUIRED",
+            "POLICY_DENIED",
+            "INTERNAL"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "TaskResult": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "const": "task-result-v1"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "interrupted",
+            "rejected"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed",
+                  "not_run"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command",
+              "outcome",
+              "summary"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "summary"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "needs_user_action": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "summary"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice_summary": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "summary",
+        "changes",
+        "verification",
+        "risks",
+        "needs_user_action",
+        "voice_summary"
+      ],
+      "additionalProperties": false
+    },
+    "Continuation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "parent_task_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "parent_task_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "agent_session_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "thread_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "agent_session_id",
+            "thread_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TaskEvent": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "event_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "event_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "state": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "task_id",
+        "event_id",
+        "event_sequence",
+        "occurred_at",
+        "state",
+        "stage",
+        "summary",
+        "result",
+        "error",
+        "thread_id",
+        "turn_id"
+      ],
+      "additionalProperties": false
+    },
+    "client.hello": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "client.hello"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "desktop_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "protocol_versions": {
+              "type": "array",
+              "items": {
+                "const": "1.0"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "last_acked_sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "desktop_version",
+            "protocol_versions",
+            "last_acked_sequence",
+            "capabilities"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "client.heartbeat": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "client.heartbeat"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "client_time": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "client_time"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.ack": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.ack"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "message_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "task_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "duplicate",
+                "expired",
+                "rejected"
+              ]
+            },
+            "error": {
+              "$ref": "#/$defs/PublicError"
+            }
+          },
+          "required": [
+            "message_id",
+            "sequence",
+            "task_id",
+            "disposition"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "device.bind": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "device.bind"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "mac_address": {
+              "$ref": "common.schema.json#/$defs/MacAddress"
+            }
+          },
+          "required": [
+            "mac_address"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "agent_sessions.sync": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "agent_sessions.sync"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/SessionRecord"
+              }
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "message.available": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "message.available"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "agent_session_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "message_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            }
+          },
+          "required": [
+            "agent_session_id",
+            "message_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.started": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.started"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.progress": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.progress"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.approval_required": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.approval_required"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.completed": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.completed"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.failed": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.failed"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.cancelled": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.cancelled"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.interrupted": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.interrupted"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "#/$defs/TaskEvent"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "query.result": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "query.result"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "oneOf": [
+                    {
+                      "$ref": "common.schema.json#/$defs/MessagePage"
+                    },
+                    {
+                      "$ref": "common.schema.json#/$defs/ContentChunk"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopToGateway": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/client.hello"
+        },
+        {
+          "$ref": "#/$defs/client.heartbeat"
+        },
+        {
+          "$ref": "#/$defs/task.ack"
+        },
+        {
+          "$ref": "#/$defs/device.bind"
+        },
+        {
+          "$ref": "#/$defs/agent_sessions.sync"
+        },
+        {
+          "$ref": "#/$defs/message.available"
+        },
+        {
+          "$ref": "#/$defs/task.started"
+        },
+        {
+          "$ref": "#/$defs/task.progress"
+        },
+        {
+          "$ref": "#/$defs/task.approval_required"
+        },
+        {
+          "$ref": "#/$defs/task.completed"
+        },
+        {
+          "$ref": "#/$defs/task.failed"
+        },
+        {
+          "$ref": "#/$defs/task.cancelled"
+        },
+        {
+          "$ref": "#/$defs/task.interrupted"
+        },
+        {
+          "$ref": "#/$defs/query.result"
+        }
+      ]
+    },
+    "project.upsert": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "project.upsert"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "write",
+                  "test"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "availability": {
+              "type": "string",
+              "enum": [
+                "online",
+                "offline"
+              ]
+            },
+            "grant_version": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "project_id",
+            "display_name",
+            "capabilities",
+            "availability",
+            "grant_version"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "project.revoke": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "project.revoke"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "grant_version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "revoked_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "project_id",
+            "grant_version",
+            "revoked_at"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.dispatch": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.dispatch"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "project_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "write",
+                  "test"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "prompt": {
+              "$ref": "common.schema.json#/$defs/DraftText"
+            },
+            "acceptance_criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "policy_version": {
+              "type": "string"
+            },
+            "continuation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Continuation"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "task_id",
+            "project_id",
+            "agent",
+            "capabilities",
+            "prompt",
+            "acceptance_criteria",
+            "policy_version",
+            "continuation"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "task.cancel": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "task.cancel"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "binding.result": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "binding.result"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/BoundBinding"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "agent_sessions.sync.result": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "agent_sessions.sync.result"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": true
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "messages.list": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "messages.list"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/MessagesListInput"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "message.content.get": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "message.content.get"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "$ref": "common.schema.json#/$defs/ContentGetInput"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "GatewayToDesktop": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/project.upsert"
+        },
+        {
+          "$ref": "#/$defs/project.revoke"
+        },
+        {
+          "$ref": "#/$defs/task.dispatch"
+        },
+        {
+          "$ref": "#/$defs/task.cancel"
+        },
+        {
+          "$ref": "#/$defs/binding.result"
+        },
+        {
+          "$ref": "#/$defs/agent_sessions.sync.result"
+        },
+        {
+          "$ref": "#/$defs/messages.list"
+        },
+        {
+          "$ref": "#/$defs/message.content.get"
+        }
+      ]
+    },
+    "messages.list.result": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "query.result"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/MessagePage"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "message.content.get.result": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "const": "1.0"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "const": "query.result"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": true
+                },
+                "data": {
+                  "$ref": "common.schema.json#/$defs/ContentChunk"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reply_to_message_id": {
+                  "$ref": "common.schema.json#/$defs/Id"
+                },
+                "ok": {
+                  "const": false
+                },
+                "error": {
+                  "$ref": "common.schema.json#/$defs/Error"
+                }
+              },
+              "required": [
+                "reply_to_message_id",
+                "ok",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "protocol_version",
+        "message_id",
+        "sequence",
+        "type",
+        "sent_at",
+        "payload"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

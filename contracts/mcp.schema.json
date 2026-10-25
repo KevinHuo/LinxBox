@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KevinHuo/LinxBox/contracts/mcp.schema.json",
+  "title": "propose_task_reply 业务参数与结果",
+  "$ref": "#/$defs/Arguments",
+  "$defs": {
+    "Arguments": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "$ref": "common.schema.json#/$defs/DraftText"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "Result": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "data": {
+              "allOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/Request"
+                },
+                {
+                  "properties": {
+                    "text": {
+                      "$ref": "common.schema.json#/$defs/DraftText"
+                    },
+                    "status": {
+                      "not": {
+                        "const": "awaiting_text"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "ok",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "error": {
+              "$ref": "common.schema.json#/$defs/Error"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
