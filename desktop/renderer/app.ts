@@ -80,6 +80,16 @@ function showToast(message: string): void {
   toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2600);
 }
 
+/** Keep product configuration inside the LinxBox workspace, not global settings. */
+function placeBoxSettings(): void {
+  const target = qs('#box-settings');
+  const settings = qs<HTMLElement>('[data-view="settings"]');
+  if (!target || !settings) return;
+  settings.querySelectorAll<HTMLElement>('.settings-block').forEach((block) => {
+    if (block.querySelector('#conn-url, #project-list')) target.append(block);
+  });
+}
+
 /** Switch the visible view and keep the rail in sync. */
 function go(view: AppView): void {
   state.view = view;
@@ -583,6 +593,7 @@ function applyGatewayStatus(payload: unknown): void {
 
 /** Boot the window. */
 async function main(): Promise<void> {
+  placeBoxSettings();
   wireEvents();
   bridge?.onConnectionChanged((payload) => applyGatewayStatus(payload));
   await refreshFromBridge();
