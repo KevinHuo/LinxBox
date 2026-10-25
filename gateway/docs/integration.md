@@ -17,6 +17,12 @@ go run ./cmd/linxbox-gateway --config ./config.local.json
 
 设备、Desktop 的 token 必须分别唯一；两者 subject 相同，pairing.rules 允许该主体绑定该设备 MAC。真实 token 只保存在受限本机配置中。设备先连入，Desktop 再发送绑定操作。
 
+首次绑定会检查设备当前在线，离线返回 `DEPENDENCY_UNAVAILABLE` 且不写入绑定；
+已有同一账号、同一 Desktop 的绑定允许离线重复提交并返回原结果。
+读取绑定、目录、历史路由、请求快照和发送通知时，均复核持久化绑定的 subject 与双方当前凭据归属。
+只轮换 token 而保持账号归属不会改变绑定；变更所属账号后旧绑定返回 `PERMISSION_DENIED`，
+不会自动换绑或把原账号数据交给新账号。
+
 同一端口的路径分别是 `/v1/devices/connect` 和 `/v1/clients/connect`。采用子协议认证时客户端请求 `linxbox.v1, linxbox-token.<token>`，Gateway 只返回 `linxbox.v1`，不回显 token。固件也可通过 Authorization Bearer 头认证。
 
 公网必须使用 HTTPS/WSS 和有效证书。设备与电脑通过可到达的域名 / 局域网地址连接；设备上的 127.0.0.1 指向设备自身，不能作为云端地址。回环 HTTP/WS 只用于本机模拟。
@@ -36,6 +42,11 @@ go run ./cmd/linxbox-gateway --config ./config.local.json
 WebSocket 认证失败以关闭码 `4401` 拒绝，帧超过配置上限以 `1009` 关闭。
 服务端每 30 秒发 WebSocket ping，客户端须处理 ping / pong；读期限为 60 秒。
 `client.heartbeat` 是应用消息，不能替代 WebSocket pong。上述时间为当前实现固定值。
+
+所有固件 response 都按 JSON 编码后的实际字节数检查 `limits.max_frame_bytes`，
+超限返回保持原 `reply_to` 的小型 `RESOURCE_EXHAUSTED` 错误；正常数据和错误消息均适用。
+64 KiB 是协议硬上限，不是固件常驻缓冲目标。帧预算需包括包头及 JSON 转义开销，
+按板卡剩余内存确定配置；本次同时验证了 1 KiB 配置下的有界错误，但未验证 400 KB 总内存设备的真机预算。
 
 ### 固件通道
 

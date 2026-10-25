@@ -1,6 +1,7 @@
 # Gateway 模拟联调验证记录
 
 验证日期：2026-10-25。关联任务：Refs #14。DRI：BoleLiu。
+本记录对应只读版本 `7609c4b`；后续审查修复与当前检查结果见[审查修复验证](review-fixes.md)。
 主模块：Gateway；接口使用方：Desktop、固件；跨端评审：yydounai1234、KevinHuo。
 本次未修改 Desktop、固件或共享 Schema。
 

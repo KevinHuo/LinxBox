@@ -62,7 +62,7 @@ func (s *SessionService) Sync(ctx context.Context, desktopID domain.DesktopClien
 	if err != nil {
 		return 0, err
 	}
-	devices, err := s.repos.Bindings.ListDevicesByDesktop(ctx, s.repos.DB(), string(desktopID))
+	devices, err := authorizedDevices(ctx, s.repos, s.cfg, string(desktopID))
 	if err != nil {
 		s.logger.Warn("读取绑定设备失败", "client_id", desktopID, "err", err)
 		return version, nil
@@ -187,6 +187,9 @@ func (s *SessionService) boundDesktop(ctx context.Context, deviceID domain.Devic
 	if err != nil {
 		return "", err
 	}
+	if err := validateBindingOwner(s.cfg, row); err != nil {
+		return "", err
+	}
 	return row.DesktopClientID, nil
 }
 
@@ -213,7 +216,7 @@ func (s *SessionService) DevicesForSession(ctx context.Context, desktopID domain
 		}
 		return nil, err
 	}
-	return s.repos.Bindings.ListDevicesByDesktop(ctx, s.repos.DB(), string(desktopID))
+	return authorizedDevices(ctx, s.repos, s.cfg, string(desktopID))
 }
 
 type catalogCursor struct {

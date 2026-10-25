@@ -16,8 +16,15 @@ import (
 // fakeNotifier 记录推送，供服务层测试断言。
 type fakeNotifier struct {
 	mu      sync.Mutex
+	online  map[string]bool
 	bound   []contracts.BoundBinding
 	updates []string
+}
+
+func (f *fakeNotifier) DeviceOnline(deviceID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.online[deviceID]
 }
 
 func (f *fakeNotifier) NotifyDeviceBound(deviceID string, binding contracts.BoundBinding) {
@@ -80,7 +87,7 @@ func newServiceEnv(t *testing.T) *serviceEnv {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	repos := storage.NewRepositories(db.DB())
-	notify := &fakeNotifier{}
+	notify := &fakeNotifier{online: map[string]bool{"AA:BB:CC:DD:EE:01": true, "AA:BB:CC:DD:EE:02": true}}
 	logger := slog.New(slog.DiscardHandler)
 	return &serviceEnv{
 		cfg:      cfg,

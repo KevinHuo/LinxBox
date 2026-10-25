@@ -213,6 +213,11 @@ func kindName(k PrincipalKind) string {
 	return "desktop"
 }
 
+// DeviceOnline 提供绑定事务所需的设备当前在线状态。
+func (s *Server) DeviceOnline(deviceID string) bool {
+	return s.conns.DeviceOnline(deviceID)
+}
+
 // NotifyDeviceBound 实现 service.Notifier：向在线设备推送 device.bound。
 func (s *Server) NotifyDeviceBound(deviceID string, binding contracts.BoundBinding) {
 	conn := s.conns.Device(deviceID)

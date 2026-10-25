@@ -201,6 +201,14 @@ func (c *Connections) Device(deviceID string) *Connection {
 	return c.devices[deviceID]
 }
 
+// DeviceOnline 排除已经关闭但尚未完成注销的设备连接。
+func (c *Connections) DeviceOnline(deviceID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	conn := c.devices[deviceID]
+	return !c.closing && conn != nil && !conn.closed.Load()
+}
+
 // Desktop 返回 Desktop 当前在线连接；不存在返回 nil。
 func (c *Connections) Desktop(clientID string) *Connection {
 	c.mu.Lock()

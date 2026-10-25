@@ -483,6 +483,10 @@ func TestFullFirmwareDesktopFlow(t *testing.T) {
 
 func TestBindConflictAndDenied(t *testing.T) {
 	env := newTestEnv(t, nil)
+	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if hello := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !hello.OK {
+		t.Fatal("设备应先上线")
+	}
 	dt := dialWS(t, env.baseWS+"/v1/clients/connect", "dt-token")
 	bind := dt.dtReq(t, "device.bind", map[string]any{"mac_address": "aa:bb:cc:dd:ee:01"})
 	if !bind.OK {
@@ -509,6 +513,10 @@ func TestBindConflictAndDenied(t *testing.T) {
 
 func TestSchemaInvalidAndUnknown(t *testing.T) {
 	env := newTestEnv(t, nil)
+	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if hello := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !hello.OK {
+		t.Fatal("设备应先上线")
+	}
 	dt := dialWS(t, env.baseWS+"/v1/clients/connect", "dt-token")
 	// 缺 sent_at 等必填 → 校验拒绝，无应答。
 	mid := contracts.NewMessageID("m_")

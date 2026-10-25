@@ -147,22 +147,42 @@ func (s *Server) respondFirmware(wsConn *lifecycle.Connection, op, replyTo strin
 		s.logger.Error("响应编码失败", "op", op, "err", merr)
 		return
 	}
+	if len(raw) > s.cfg.Limits.MaxFrameBytes {
+		s.logger.Warn("固件响应编码后超限", "op", op, "bytes", len(raw))
+		s.respondFirmwareError(wsConn, op, replyTo, domain.ErrResourceExhausted("响应超过帧上限"))
+		return
+	}
 	if verr := s.validator.ValidateFirmwareResponse(op, raw); verr != nil {
 		s.logger.Error("响应未通过 Schema 校验", "op", op, "err", verr)
-		// 兜底：发送内部错误，仍按原操作配对。
-		fallback := contracts.FirmwareResponse{
-			ID:      contracts.NewMessageID("msg_"),
-			Type:    "response",
-			Payload: contracts.FirmwareResponseBody{OK: false, Error: wireError(domain.ErrInternal("内部错误"))},
-			ReplyTo: replyTo,
-		}
-		if fb, e := json.Marshal(fallback); e == nil {
-			_ = wsConn.Send(fb, s.conns.SendTimeout())
-		}
+		s.respondFirmwareError(wsConn, op, replyTo, domain.ErrInternal("内部错误"))
 		return
 	}
 	if err := wsConn.Send(raw, s.conns.SendTimeout()); err != nil {
 		s.logger.Warn("固件响应发送失败", "op", op, "err", err)
+	}
+}
+
+// respondFirmwareError 不携带原始超限内容；兜底也须满足原操作 Schema 和编码后帧上限。
+func (s *Server) respondFirmwareError(conn *lifecycle.Connection, op, replyTo string, cause error) {
+	fallback := contracts.FirmwareResponse{
+		ID:      contracts.NewMessageID("msg_"),
+		Type:    "response",
+		Payload: contracts.FirmwareResponseBody{OK: false, Error: wireError(cause)},
+		ReplyTo: replyTo,
+	}
+	raw, err := json.Marshal(fallback)
+	if err != nil || len(raw) > s.cfg.Limits.MaxFrameBytes {
+		s.logger.Error("有界错误响应无法编码或超过限制", "op", op)
+		conn.Close()
+		return
+	}
+	if err := s.validator.ValidateFirmwareResponse(op, raw); err != nil {
+		s.logger.Error("有界错误响应不符合 Schema", "op", op)
+		conn.Close()
+		return
+	}
+	if err := conn.Send(raw, s.conns.SendTimeout()); err != nil {
+		s.logger.Warn("固件错误响应发送失败", "op", op, "err", err)
 	}
 }
 

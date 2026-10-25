@@ -18,6 +18,7 @@ import (
 // Notifier 在事务提交后通知在线对端；由传输层实现。
 // 推送失败不回滚已保存事实，因此通知方法不返回错误。
 type Notifier interface {
+	DeviceOnline(deviceID string) bool
 	NotifyDeviceBound(deviceID string, binding contracts.BoundBinding)
 	NotifyCatalogUpdated(deviceID string)
 }
@@ -42,6 +43,9 @@ func (s *BindingService) Bind(ctx context.Context, desktopID domain.DesktopClien
 	if err != nil {
 		return contracts.BoundBinding{}, err
 	}
+	if desktopSubject, ok := s.cfg.DesktopSubject(desktopID); !ok || desktopSubject != subject {
+		return contracts.BoundBinding{}, domain.ErrPermissionDenied("Desktop 与认证账号不匹配")
+	}
 	if !s.pairingAllowed(subject, deviceID) {
 		return contracts.BoundBinding{}, domain.ErrPermissionDenied("该账号无权绑定此设备")
 	}
@@ -54,12 +58,18 @@ func (s *BindingService) Bind(ctx context.Context, desktopID domain.DesktopClien
 		existing, err := s.repos.Bindings.GetByDevice(ctx, tx, string(deviceID))
 		switch {
 		case err == nil:
+			if err := validateBindingOwner(s.cfg, existing); err != nil {
+				return err
+			}
 			if existing.DesktopClientID == string(desktopID) {
 				return nil // 幂等
 			}
 			return domain.ErrConflict("设备已绑定其他 Desktop")
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
+		}
+		if !s.notifier.DeviceOnline(string(deviceID)) {
+			return domain.ErrDependencyUnavailable("首次绑定需要设备在线")
 		}
 		if err := s.repos.Bindings.Insert(ctx, tx, storage.BindingRow{
 			DeviceID:        string(deviceID),
@@ -99,6 +109,9 @@ func (s *BindingService) Hello(ctx context.Context, deviceID domain.DeviceID, ma
 	if err != nil {
 		return contracts.Binding{}, err
 	}
+	if err := validateBindingOwner(s.cfg, row); err != nil {
+		return contracts.Binding{}, err
+	}
 	clientID := row.DesktopClientID
 	return contracts.Binding{DeviceID: string(deviceID), DesktopClientID: &clientID}, nil
 }
@@ -116,4 +129,34 @@ func (s *BindingService) pairingAllowed(subject domain.Subject, deviceID domain.
 		}
 	}
 	return false
+}
+
+// validateBindingOwner 同时核对绑定时保存的账号及双方当前配置；身份 ID 不代表账号不变。
+// 所属账号变化后拒绝沿用旧绑定，不自动换绑或删除原账号数据。
+func validateBindingOwner(cfg *config.Config, row *storage.BindingRow) error {
+	deviceSubject, deviceOK := cfg.DeviceSubject(domain.DeviceID(row.DeviceID))
+	desktopSubject, desktopOK := cfg.DesktopSubject(domain.DesktopClientID(row.DesktopClientID))
+	if !deviceOK || !desktopOK || row.Subject == "" || string(deviceSubject) != row.Subject || string(desktopSubject) != row.Subject {
+		return domain.ErrPermissionDenied("绑定所属账号与当前设备或 Desktop 不匹配")
+	}
+	return nil
+}
+
+// authorizedDevices 仅向双方当前账号仍匹配持久化绑定的设备发布通知。
+func authorizedDevices(ctx context.Context, repos *storage.Repositories, cfg *config.Config, desktopID string) ([]string, error) {
+	devices, err := repos.Bindings.ListDevicesByDesktop(ctx, repos.DB(), desktopID)
+	if err != nil {
+		return nil, err
+	}
+	var authorized []string
+	for _, device := range devices {
+		row, err := repos.Bindings.GetByDevice(ctx, repos.DB(), device)
+		if err != nil {
+			return nil, err
+		}
+		if validateBindingOwner(cfg, row) == nil {
+			authorized = append(authorized, device)
+		}
+	}
+	return authorized, nil
 }

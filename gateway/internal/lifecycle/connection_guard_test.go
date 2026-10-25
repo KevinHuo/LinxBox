@@ -9,6 +9,28 @@ func guardedConnection(gen uint64) *Connection {
 	return &Connection{send: make(chan []byte, 1), done: make(chan struct{}), generation: gen}
 }
 
+func TestDeviceOnlineRejectsClosedAndStoppingConnections(t *testing.T) {
+	c := NewConnections(testLogger(), testLimits())
+	if c.DeviceOnline("device") {
+		t.Fatal("未连接设备不能在线")
+	}
+	conn := guardedConnection(1)
+	if !c.RegisterDevice("device", conn) || !c.DeviceOnline("device") {
+		t.Fatal("有效设备连接应在线")
+	}
+	conn.Close()
+	if c.DeviceOnline("device") {
+		t.Fatal("已关闭但未注销的连接不能在线")
+	}
+	if !c.RegisterDevice("device", guardedConnection(2)) {
+		t.Fatal("设备应可重新连接")
+	}
+	c.CloseAll()
+	if c.DeviceOnline("device") {
+		t.Fatal("服务停止后设备不能在线")
+	}
+}
+
 func TestConnectionMutationGuard(t *testing.T) {
 	limits := testLimits()
 	limits.MaxOnlineConnections = 1

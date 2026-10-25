@@ -79,6 +79,10 @@ func TestDesktopOversizedFrame(t *testing.T) {
 
 func TestDesktopNotYetOpenTypes(t *testing.T) {
 	env := newTestEnv(t, nil)
+	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if hello := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !hello.OK {
+		t.Fatal("设备应先上线")
+	}
 	dt := dialWS(t, env.baseWS+"/v1/clients/connect", "dt-token")
 	// task.ack / message.available 等契约已识别但首版未开放：连接不退出、不应答。
 	dt.sendRaw(t, "task.ack", map[string]any{

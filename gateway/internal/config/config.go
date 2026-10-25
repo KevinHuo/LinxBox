@@ -340,3 +340,13 @@ func (c *Config) DeviceSubject(deviceID domain.DeviceID) (domain.Subject, bool) 
 	}
 	return "", false
 }
+
+// DesktopSubject 返回当前 Desktop 凭据所属主体，用于复核持久化绑定。
+func (c *Config) DesktopSubject(desktopID domain.DesktopClientID) (domain.Subject, bool) {
+	for _, d := range c.Credentials.Desktops {
+		if d.ClientID == string(desktopID) {
+			return domain.Subject(d.Subject), true
+		}
+	}
+	return "", false
+}
