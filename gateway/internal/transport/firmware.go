@@ -178,8 +178,14 @@ func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.
 		if sessionID == "" {
 			sessionID = payload.AgentSessionID
 		}
-		fields := []any{"direction", "Gateway→固件", "device_id", p.DeviceID, "request_id", payload.RequestID, "agent_session_id", sessionID, "status", request.Status, "duration_ms", elapsedMillis(started)}
-		fields = append(fields, s.logValueFields("response_body", request)...)
+		fields := []any{"direction", "Gateway→固件", "device_id", p.DeviceID, "request_id", payload.RequestID, "duration_ms", elapsedMillis(started)}
+		if sessionID != "" {
+			fields = append(fields, "agent_session_id", sessionID)
+		}
+		if request.Status != "" {
+			fields = append(fields, "status", request.Status)
+		}
+		fields = append(fields, s.logValueFields("response_body", firmwareResponseBody(request, err))...)
 		s.logOperation("request.state", wsConn, msg.Type, msg.ID, err, fields...)
 		s.respondFirmware(wsConn, msg.Type, msg.ID, request, err)
 	default:
@@ -192,15 +198,7 @@ func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.
 
 // respondFirmware 发送固件 response 并按原操作对应的 response 定义校验。
 func (s *Server) respondFirmware(wsConn *lifecycle.Connection, op, replyTo string, data any, err error) {
-	body := contracts.FirmwareResponseBody{}
-	if err != nil {
-		wire := toWireError(err)
-		body.OK = false
-		body.Error = &wire
-	} else {
-		body.OK = true
-		body.Data = data
-	}
+	body := firmwareResponseBody(data, err)
 	resp := contracts.FirmwareResponse{
 		ID:      contracts.NewMessageID("msg_"),
 		Type:    "response",
@@ -227,6 +225,15 @@ func (s *Server) respondFirmware(wsConn *lifecycle.Connection, op, replyTo strin
 		return
 	}
 	s.logOperation("response.enqueued", wsConn, op, replyTo, err, "kind", "device", "bytes", len(raw))
+}
+
+// 日志与实际应答共用同一结构，失败时不能记录成空的成功快照。
+func firmwareResponseBody(data any, err error) contracts.FirmwareResponseBody {
+	if err != nil {
+		wire := toWireError(err)
+		return contracts.FirmwareResponseBody{OK: false, Error: &wire}
+	}
+	return contracts.FirmwareResponseBody{OK: true, Data: data}
 }
 
 // respondFirmwareError 不携带原始超限内容；兜底也须满足原操作 Schema 和编码后帧上限。

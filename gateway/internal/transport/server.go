@@ -43,6 +43,8 @@ type Server struct {
 
 // NewServer 构造传输层服务；绑定与目录服务随后通过 SetServices 注入。
 func NewServer(cfg *config.Config, logger *slog.Logger, validator *contracts.Validator, auth *Authenticator, conns *lifecycle.Connections) *Server {
+	// 配置指纹不暴露路径，也不声称能识别同一路径下被替换/恢复的数据库内容。
+	logger = logger.With("gateway_instance_id", contracts.NewMessageID("gw_"), "database_config_id", databaseConfigID(cfg.Database.Path))
 	s := &Server{
 		cfg:          cfg,
 		logger:       logger,

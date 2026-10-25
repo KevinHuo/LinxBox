@@ -24,6 +24,11 @@ func traceID(generation uint64, messageID string) string {
 	return fmt.Sprintf("c%d-%x", generation, digest[:4])
 }
 
+func databaseConfigID(path string) string {
+	digest := sha256.Sum256([]byte(path))
+	return fmt.Sprintf("%x", digest[:6])
+}
+
 func operationName(operation string) string {
 	names := map[string]string{
 		"device.hello": "登记设备 MAC", "device.bind": "绑定设备", "client.hello": "Desktop 上报连接信息",
@@ -45,7 +50,7 @@ func peerErrorMessage(message string) (string, bool) {
 		return message, false
 	case "缺少本轮请求或灵矽上下文", "灵矽来源与 MCP 凭据不匹配", "MCP 请求自动关联未开启",
 		"没有可关联的待处理请求，请先 request.prepare", "设备存在多个可关联请求，不能自动选择",
-		"请求文字或灵矽来源已固定", "请求已取消或过期":
+		"请求文字或灵矽来源已固定", "请求已取消或过期", domain.RequestRecoveryMessage:
 		return message, false
 	default:
 		lower := strings.ToLower(message)
@@ -114,7 +119,12 @@ func (s *Server) logOperation(event string, conn *lifecycle.Connection, operatio
 			fields = append(fields, "error_code", domain.CodeOf(err))
 		}
 	} else if err != nil {
-		fields = append(fields, errorFields(err, "gateway")...)
+		diagnostics := errorFields(err, "gateway")
+		if operation == "request.get" && domain.CodeOf(err) == domain.CodeNotFound {
+			setErrorHint(diagnostics, "核对本轮 request.prepare 成功记录、网关实例与数据库配置/备份恢复；停止轮询缺失 ID，曾确认的任务先在 Desktop 核对，不能据此自动重发")
+			fields = append(fields, "request_lookup", "missing", "data_source", "gateway_database", "recovery_action", "verify_original_task", "retry_same_request", false)
+		}
+		fields = append(fields, diagnostics...)
 		if strings.HasPrefix(event, "response.") {
 			reason, _ := diagnosticMessage(err, "gateway")
 			message = "Gateway → 对端：回传响应失败：" + reason

@@ -171,7 +171,11 @@ func (s *RequestService) propose(ctx context.Context, device domain.DeviceID, id
 
 // Get 只返回 Gateway 已保存快照，不向 Desktop 查询执行结果。
 func (s *RequestService) Get(ctx context.Context, device domain.DeviceID, id string) (contracts.Request, error) {
-	return s.change(ctx, device, id, func(*sql.Tx, *storage.RequestRow) (string, error) { return "", nil })
+	request, err := s.change(ctx, device, id, func(*sql.Tx, *storage.RequestRow) (string, error) { return "", nil })
+	if domain.CodeOf(err) == domain.CodeNotFound {
+		return request, domain.WrapError(domain.CodeNotFound, domain.RequestRecoveryMessage, err)
+	}
+	return request, err
 }
 
 // Cancel 只取消确认前请求；终态保留原文及 request_id。
