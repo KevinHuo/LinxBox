@@ -335,6 +335,11 @@ function handleFloatRead(): unknown {
 }
 
 function handleMainWindowFocus(): unknown {
+  ensureMainWindowVisible();
+  return { ok: true };
+}
+
+function ensureMainWindowVisible(): void {
   if (mainWindow === null || mainWindow.isDestroyed()) {
     mainWindow = createMainWindow();
   }
@@ -343,7 +348,6 @@ function handleMainWindowFocus(): unknown {
   }
   mainWindow.show();
   mainWindow.focus();
-  return { ok: true };
 }
 
 /**
@@ -364,6 +368,7 @@ function handleFloatSetVisible(payload: unknown): unknown {
     showFloatWindow();
   } else if (floatWindow !== null && !floatWindow.isDestroyed()) {
     floatWindow.hide();
+    ensureMainWindowVisible();
   }
 
   return { ok: true, data: readFloatView(floatState) };
@@ -690,6 +695,7 @@ function ensureFloatWindow(): BrowserWindow {
       event.preventDefault();
       floatState.visible = false;
       window.hide();
+      ensureMainWindowVisible();
     }
   });
 
