@@ -61,6 +61,9 @@ func (s *Server) SetRequests(requests *service.RequestService) error {
 		return &auth.TokenInfo{UserID: mcpCredentialIdentity(cred.Token), Expiration: time.Now().Add(time.Hour)}, nil
 	}, nil)(handler)
 	s.mcp = e
+	if s.cfg.MCP.AllowImplicitRequestID {
+		s.logger.Warn("已开启 MCP 无请求 ID 联调模式：缺头将关联唯一待处理请求，不保证跨轮迟到文字隔离", "event", "mcp.demo.enabled", "allow_implicit_request_id", true)
+	}
 	return nil
 }
 
@@ -316,16 +319,25 @@ func (e *mcpEndpoint) propose(ctx context.Context, req *mcp.CallToolRequest) (*m
 					err = domain.ErrInvalidArgument("工具参数无法解析")
 				} else {
 					stage = "persist"
-					if !domain.ValidateID(singleHeader(r.Header, "X-Linx-Request-Id")) || !domain.ValidateID(singleHeader(r.Header, "X-Linx-Session-Id")) {
+					implicit := e.server.cfg.MCP.AllowImplicitRequestID && len(r.Header.Values("X-Linx-Request-Id")) == 0
+					if (!implicit && !domain.ValidateID(singleHeader(r.Header, "X-Linx-Request-Id"))) || !domain.ValidateID(singleHeader(r.Header, "X-Linx-Session-Id")) {
 						stage = "context"
 					} else {
 						e.server.logMCPCall("mcp.call.validated", "source_and_schema", entry, started, contracts.Request{}, nil)
 					}
 					callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 					defer cancel()
-					result, err = e.server.requests.Propose(callCtx, device,
-						singleHeader(r.Header, "X-Linx-Request-Id"), cred.AgentID,
-						singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
+					if implicit {
+						result, err = e.server.requests.ProposeImplicit(callCtx, device, cred.AgentID, singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
+						if err == nil {
+							entry.request = e.server.safeMCPID(result.RequestID)
+							e.server.logger.Info("联调模式：已自动关联设备唯一待处理请求并保存文字", append([]any{"event", "mcp.request.resolved"}, entry.fields()...)...)
+						}
+					} else {
+						result, err = e.server.requests.Propose(callCtx, device,
+							singleHeader(r.Header, "X-Linx-Request-Id"), cred.AgentID,
+							singleHeader(r.Header, "X-Linx-Session-Id"), args.Text)
+					}
 					if err != nil && stage != "context" {
 						switch domain.CodeOf(err) {
 						case domain.CodeNotFound, domain.CodeConflict, domain.CodePermissionDenied:

@@ -53,6 +53,8 @@ func (s *Server) safeMCPID(value string) string {
 }
 
 type mcpCallLog struct {
+	requestSource                                      string
+	implicitEnabled                                    bool
 	transport                                          string
 	trace, rpcID, device, agent, voiceSession, request string
 	expectedDevice, expectedAgent                      string
@@ -69,6 +71,11 @@ func (s *Server) mcpCallContext(req *mcp.CallToolRequest) mcpCallLog {
 		header = req.Extra.Header
 	}
 	entry := mcpCallLog{trace: singleHeader(header, mcpLogTraceHeader)}
+	entry.implicitEnabled = s.cfg.MCP.AllowImplicitRequestID
+	entry.requestSource = "header"
+	if entry.implicitEnabled && len(header.Values("X-Linx-Request-Id")) == 0 {
+		entry.requestSource = "unique_pending"
+	}
 	entry.transport = "sse"
 	if singleHeader(header, mcpLogTransportHeader) == "streamable_http" {
 		entry.transport = "streamable_http"
@@ -117,6 +124,7 @@ func (s *Server) mcpCallContext(req *mcp.CallToolRequest) mcpCallLog {
 func (entry mcpCallLog) fields() []any {
 	return []any{"trace_id", entry.trace, "transport", entry.transport, "tool", "propose_task_reply", "mcp_connection_id", entry.connection, "rpc_id", entry.rpcID,
 		"device_id", entry.device, "linx_agent_id", entry.agent, "voice_session_id", entry.voiceSession, "request_id", entry.request,
+		"request_id_source", entry.requestSource, "implicit_request_id_enabled", entry.implicitEnabled,
 		"credential_device_id", entry.expectedDevice, "credential_linx_agent_id", entry.expectedAgent,
 		"missing_headers", entry.missing, "duplicate_headers", entry.duplicate, "text_is_string", entry.textIsString,
 		"text_non_blank", entry.textNonBlank, "text_bytes", entry.textBytes, "text_codepoints", entry.textCodepoints, "text_source", "mcp_tool_argument"}

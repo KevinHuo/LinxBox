@@ -16,10 +16,11 @@ import (
 	"github.com/KevinHuo/LinxBox/gateway/internal/config"
 )
 
-func streamableEnv(t *testing.T, maxConnections int) (*testEnv, *logCapture) {
+func streamableEnv(t *testing.T, maxConnections int, implicit ...bool) (*testEnv, *logCapture) {
 	t.Helper()
 	capture := &logCapture{}
 	env := newTestEnvWithLogger(t, func(cfg *config.Config) {
+		cfg.MCP.AllowImplicitRequestID = len(implicit) > 0 && implicit[0]
 		cfg.Limits.MaxFrameBytes = 65536
 		cfg.Limits.MaxOnlineConnections = maxConnections
 		cfg.Credentials.MCP = []config.MCPCredential{

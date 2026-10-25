@@ -46,10 +46,16 @@ type Config struct {
 	Listen      ListenConfig      `json:"listen"`
 	Database    DatabaseConfig    `json:"database"`
 	Credentials CredentialsConfig `json:"credentials"`
+	MCP         MCPConfig         `json:"mcp,omitempty"`
 	Pairing     PairingConfig     `json:"pairing"`
 	Limits      LimitsConfig      `json:"limits"`
 	Timeouts    TimeoutConfig     `json:"timeouts"`
 	Log         LogConfig         `json:"log"`
+}
+
+// MCPConfig 的自动关联仅供受控串行联调，默认仍要求可靠的逐轮请求 ID。
+type MCPConfig struct {
+	AllowImplicitRequestID bool `json:"allow_implicit_request_id"`
 }
 
 // ListenConfig 是监听配置。

@@ -29,6 +29,9 @@
       }
     ]
   },
+  "mcp": {
+    "allow_implicit_request_id": false
+  },
   "limits": {
     "max_frame_bytes": 65536,
     "draft_max_codepoints": 16000,

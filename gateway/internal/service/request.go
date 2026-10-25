@@ -97,9 +97,21 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 	return result, err
 }
 
-// Propose 原样保存最终 ASR；每次只按调用携带的 request_id 定位，不查询“最新录音”。
+// Propose 原样保存最终 ASR；显式 request_id 无论联调开关如何均精确定位，不回退其他请求。
 func (s *RequestService) Propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string) (contracts.Request, error) {
-	if !domain.ValidateID(id) || !domain.ValidateID(agent) || !domain.ValidateID(voiceSession) {
+	return s.propose(ctx, device, id, agent, voiceSession, text, false)
+}
+
+// ProposeImplicit 在明确开启的联调模式中，事务内定位唯一待处理请求；不新建或改投目标。
+func (s *RequestService) ProposeImplicit(ctx context.Context, device domain.DeviceID, agent, voiceSession, text string) (contracts.Request, error) {
+	if !s.cfg.MCP.AllowImplicitRequestID {
+		return contracts.Request{}, domain.ErrPermissionDenied("MCP 请求自动关联未开启")
+	}
+	return s.propose(ctx, device, "", agent, voiceSession, text, true)
+}
+
+func (s *RequestService) propose(ctx context.Context, device domain.DeviceID, id, agent, voiceSession, text string, implicit bool) (contracts.Request, error) {
+	if (!implicit && !domain.ValidateID(id)) || !domain.ValidateID(agent) || !domain.ValidateID(voiceSession) {
 		return contracts.Request{}, domain.ErrInvalidArgument("缺少本轮请求或灵矽上下文")
 	}
 	if !utf8.ValidString(text) || strings.TrimSpace(text) == "" || utf8.RuneCountInString(text) > 16000 || len(text) > 16*1024 ||
@@ -107,7 +119,23 @@ func (s *RequestService) Propose(ctx context.Context, device domain.DeviceID, id
 		(s.cfg.Limits.DraftMaxUTF8Bytes > 0 && len(text) > s.cfg.Limits.DraftMaxUTF8Bytes) {
 		return contracts.Request{}, domain.ErrInvalidArgument("最终识别文字为空、无效或超过长度限制")
 	}
-	return s.change(ctx, device, id, func(tx *sql.Tx, r *storage.RequestRow) (string, error) {
+	selectRequest := func(tx *sql.Tx) (*storage.RequestRow, error) {
+		if !implicit {
+			return s.requests.Get(ctx, tx, id)
+		}
+		ids, err := s.requests.PendingIDsForDevice(ctx, tx, string(device), s.now().UnixMilli())
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 0 {
+			return nil, domain.ErrNotFound("没有可关联的待处理请求，请先 request.prepare")
+		}
+		if len(ids) != 1 {
+			return nil, domain.ErrConflict("设备存在多个可关联请求，不能自动选择")
+		}
+		return s.requests.Get(ctx, tx, ids[0])
+	}
+	return s.changeSelected(ctx, device, selectRequest, func(tx *sql.Tx, r *storage.RequestRow) (string, error) {
 		if r.Status == "cancelled" || r.Expired {
 			return "", domain.ErrConflict("请求已取消或过期")
 		}
@@ -158,6 +186,10 @@ func (s *RequestService) Cancel(ctx context.Context, device domain.DeviceID, id 
 }
 
 func (s *RequestService) change(ctx context.Context, device domain.DeviceID, id string, fn func(*sql.Tx, *storage.RequestRow) (string, error)) (contracts.Request, error) {
+	return s.changeSelected(ctx, device, func(tx *sql.Tx) (*storage.RequestRow, error) { return s.requests.Get(ctx, tx, id) }, fn)
+}
+
+func (s *RequestService) changeSelected(ctx context.Context, device domain.DeviceID, selectRequest func(*sql.Tx) (*storage.RequestRow, error), fn func(*sql.Tx, *storage.RequestRow) (string, error)) (contracts.Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.expireLocked(ctx); err != nil {
@@ -166,7 +198,7 @@ func (s *RequestService) change(ctx context.Context, device domain.DeviceID, id 
 	var result contracts.Request
 	var event string
 	err := s.repos.WithTx(ctx, func(tx *sql.Tx) error {
-		r, err := s.requests.Get(ctx, tx, id)
+		r, err := selectRequest(tx)
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.ErrNotFound("请求不存在")
 		}

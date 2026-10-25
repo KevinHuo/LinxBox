@@ -19,6 +19,25 @@ type RequestRow struct {
 // RequestRepo 读写请求；状态变化由服务层在事务内校验。
 type RequestRepo struct{}
 
+// PendingIDsForDevice 只读取未过期的待文字/待确认请求；最多两项以识别歧义，不取最新一项。
+func (RequestRepo) PendingIDsForDevice(ctx context.Context, q Queryer, device string, now int64) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `SELECT request_id FROM requests WHERE device_id=?
+AND status IN ('awaiting_text','awaiting_confirmation') AND expired=0 AND expires_at>? LIMIT 2`, device, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 const requestColumns = `request_id, device_id, desktop_client_id, agent_session_id,
 thread_id, project_id, target_title, text, status, error_code, error_message,
 expires_at, expired, linx_agent_id, linx_session_id`
