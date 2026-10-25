@@ -10,11 +10,7 @@
  */
 import {
   getBridge,
-  pendingTaskCount,
-  taskRows,
   type ConnectionFacts,
-  type ProjectFacts,
-  type TaskFacts,
 } from './view-model.js';
 
 const bridge = getBridge();
@@ -29,8 +25,7 @@ const state = {
     tokenHint: null,
     computerName: null,
   } as ConnectionFacts,
-  projects: [] as ProjectFacts[],
-  tasks: [] as TaskFacts[],
+  device: { mac: null as string | null, pairedAt: null as string | null, syncedAt: null as string | null },
 };
 
 const qs = <T extends Element>(selector: string): T | null => document.querySelector<T>(selector);
@@ -55,7 +50,22 @@ function setOpen(open: boolean): void {
   qs('#float-ball')?.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
-/** Render the device row, the last activity and the pending count. */
+const deviceStorageKey = 'linxbox.device.facts';
+
+function formatDeviceDate(value: string | null): string {
+  return value === null ? '—' : new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
+function readDeviceFacts(): void {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null');
+    if (value && typeof value === 'object') state.device = value;
+  } catch {
+    // Ignore unavailable or malformed renderer storage.
+  }
+}
+
+/** Render the device rows shared with the main window. */
 function renderStatus(): void {
   const device = qs('#fc-device');
   if (device) {
@@ -64,16 +74,9 @@ function renderStatus(): void {
   const dot = qs('.fc-row b i');
   dot?.classList.toggle('is-on', state.connection.connected);
 
-  const rows = taskRows(state.tasks, state.projects);
-  const last = qs('#fc-last');
-  if (last) {
-    last.textContent = state.paused ? '已暂停 · 不再提醒动态' : (rows[0]?.title ?? '暂无任务');
-  }
-
-  const pending = qs('#fc-pending');
-  if (pending) {
-    pending.textContent = `${pendingTaskCount(state.tasks)} 条`;
-  }
+  qs('#fc-paired-at')!.textContent = formatDeviceDate(state.device.pairedAt);
+  qs('#fc-device-mac')!.textContent = state.device.mac ?? '—';
+  qs('#fc-synced-at')!.textContent = formatDeviceDate(state.device.syncedAt);
 }
 
 /** Read the local facts the panel shows. */
@@ -88,22 +91,6 @@ async function refresh(): Promise<void> {
     const result = connection as { ok: boolean; data?: unknown };
     if (result.ok && result.data && typeof result.data === 'object') {
       state.connection = result.data as ConnectionFacts;
-    }
-  }
-
-  const projects = await bridge.listProjects();
-  if (projects && typeof projects === 'object' && 'ok' in projects) {
-    const result = projects as { ok: boolean; data?: unknown };
-    if (result.ok && Array.isArray(result.data)) {
-      state.projects = result.data as ProjectFacts[];
-    }
-  }
-
-  const tasks = await bridge.listTasks({ limit: 20 });
-  if (tasks && typeof tasks === 'object' && 'ok' in tasks) {
-    const result = tasks as { ok: boolean; data?: unknown };
-    if (result.ok && Array.isArray(result.data)) {
-      state.tasks = result.data as TaskFacts[];
     }
   }
 
@@ -245,11 +232,18 @@ function wireEvents(): void {
   });
 
   wireDrag();
+  window.addEventListener('storage', (event) => {
+    if (event.key === deviceStorageKey) {
+      readDeviceFacts();
+      renderStatus();
+    }
+  });
 }
 
 /** Boot the panel. */
 async function main(): Promise<void> {
   wireEvents();
+  readDeviceFacts();
   await refresh();
   window.setInterval(() => {
     void refresh();

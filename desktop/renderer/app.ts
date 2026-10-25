@@ -28,6 +28,7 @@ import {
 } from './view-model.js';
 
 const bridge = getBridge();
+const deviceStorageKey = 'linxbox.device.facts';
 
 const state = {
   view: 'pair' as AppView,
@@ -183,6 +184,25 @@ function renderDevice(): void {
   if (synced) synced.textContent = format(state.device.syncedAt);
 }
 
+function persistDeviceFacts(): void {
+  try {
+    window.localStorage.setItem(deviceStorageKey, JSON.stringify(state.device));
+  } catch {
+    // Renderer storage is only a cross-window display cache.
+  }
+}
+
+function restoreDeviceFacts(): void {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null');
+    if (value && typeof value === 'object') {
+      state.device = value as typeof state.device;
+    }
+  } catch {
+    // Ignore unavailable or malformed renderer storage.
+  }
+}
+
 /** Render the settings view from the current preferences. */
 function renderSettings(): void {
   qsa<HTMLButtonElement>('.seg-btn').forEach((button) => {
@@ -274,6 +294,7 @@ function renderAll(): void {
   renderDevice();
   renderSettings();
   renderConnection();
+  persistDeviceFacts();
 }
 
 /** Apply the appearance theme to the document. */
@@ -308,6 +329,7 @@ async function startPairing(): Promise<void> {
     return;
   }
   state.device = { mac, pairedAt: new Date().toISOString(), syncedAt: new Date().toISOString() };
+  persistDeviceFacts();
   renderDevice();
   const note = qs('#pairing-note');
   if (note) note.textContent = `设备 ${mac} 已配对成功`;
@@ -328,6 +350,8 @@ function cancelPairing(): void {
  * that needs the pairing contract.
  */
 function unpair(): void {
+  state.device = { mac: null, pairedAt: null, syncedAt: null };
+  persistDeviceFacts();
   go('pair');
   showToast('已退出配对 · 设备不再连接这台 Mac');
 }
@@ -577,6 +601,7 @@ function applyGatewayStatus(payload: unknown): void {
 async function main(): Promise<void> {
   placeBoxSettings();
   wireEvents();
+  restoreDeviceFacts();
   bridge?.onConnectionChanged((payload) => applyGatewayStatus(payload));
   bridge?.onTaskChanged(() => {
     void refreshFromBridge();
