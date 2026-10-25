@@ -116,7 +116,7 @@ describe('homeHeadline', () => {
         gatewayUrl: 'wss://example.com/ws',
         tokenHint: '••••abcd',
         computerName: 'mac',
-      }),
+      }, true),
     ).toBe('已配对 · 设备在线');
   });
 
@@ -128,7 +128,7 @@ describe('homeHeadline', () => {
         gatewayUrl: null,
         tokenHint: null,
         computerName: null,
-      }),
+      }, true),
     ).toBe('尚未配对 · 等待设备');
   });
 });
@@ -142,7 +142,7 @@ describe('deviceSubtitle', () => {
         gatewayUrl: null,
         tokenHint: null,
         computerName: 'mac',
-      }),
+      }, true),
     ).toBe('已连接 · 这台 Mac');
   });
 
@@ -154,8 +154,8 @@ describe('deviceSubtitle', () => {
         gatewayUrl: null,
         tokenHint: null,
         computerName: 'mac',
-      }),
-    ).toBe('尚未连接 · 这台 Mac');
+      }, false),
+    ).toBe('WSS 已连接 · 等待设备绑定');
   });
 });
 

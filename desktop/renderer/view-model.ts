@@ -128,11 +128,11 @@ export function normalizeMacAddress(value: string): string {
  * the pairing contract lands, the Desktop reports the connection fact it
  * actually has instead of claiming a device handshake succeeded.
  */
-export function headPill(connection: ConnectionFacts): HeadPill {
-  if (connection.connected) {
+export function headPill(connection: ConnectionFacts, deviceBound = false): HeadPill {
+  if (connection.connected && deviceBound) {
     return { on: true, text: '已配对 · 设备在线' };
   }
-  if (connection.configured) {
+  if (connection.connected || connection.configured) {
     return { on: false, text: '已配置 · 等待连接' };
   }
   return { on: false, text: '未配对 · 等待设备' };
@@ -228,8 +228,8 @@ export function clampBallPosition(
  * The headline follows the connection fact the client actually has, so the
  * page never claims a device is online while the badge says otherwise.
  */
-export function homeHeadline(connection: ConnectionFacts): string {
-  return connection.connected ? '已配对 · 设备在线' : '尚未配对 · 等待设备';
+export function homeHeadline(connection: ConnectionFacts, deviceBound = false): string {
+  return connection.connected && deviceBound ? '已配对 · 设备在线' : '尚未配对 · 等待设备';
 }
 
 /**
@@ -237,8 +237,8 @@ export function homeHeadline(connection: ConnectionFacts): string {
  *
  * It names the machine that runs the client, not a claim about the device.
  */
-export function deviceSubtitle(connection: ConnectionFacts): string {
-  return connection.connected ? '已连接 · 这台 Mac' : '尚未连接 · 这台 Mac';
+export function deviceSubtitle(connection: ConnectionFacts, deviceBound = false): string {
+  return connection.connected && deviceBound ? '已连接 · 这台 Mac' : 'WSS 已连接 · 等待设备绑定';
 }
 
 /** Bridge exposed by the preload script, when the renderer runs inside Electron. */

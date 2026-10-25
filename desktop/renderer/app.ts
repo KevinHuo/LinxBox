@@ -126,7 +126,8 @@ function go(view: AppView): void {
 
 /** Render the head pill and the home headline from the connection fact. */
 function renderHeadPill(): void {
-  const pill = headPill(state.connection);
+  const deviceBound = state.device.mac !== null;
+  const pill = headPill(state.connection, deviceBound);
   const element = qs('#head-pill');
   const text = qs('#head-pill-txt');
   element?.classList.toggle('is-on', pill.on);
@@ -135,7 +136,7 @@ function renderHeadPill(): void {
   }
   const title = qs('#home-title');
   if (title) {
-    title.textContent = homeHeadline(state.connection);
+    title.textContent = homeHeadline(state.connection, deviceBound);
   }
 }
 
@@ -173,7 +174,7 @@ function renderDevice(): void {
   }
   const sub = qs('#device-sub');
   if (sub) {
-    sub.textContent = deviceSubtitle(state.connection);
+    sub.textContent = deviceSubtitle(state.connection, state.device.mac !== null);
   }
   const paired = qs('#device-paired-at');
   const mac = qs('#device-mac');
@@ -338,7 +339,7 @@ async function startPairing(): Promise<void> {
   renderDevice();
   const note = qs('#pairing-note');
   if (note) note.textContent = `设备 ${mac} 已配对成功`;
-  go('home');
+      go(state.device.mac !== null ? 'home' : 'pair');
   showToast('设备配对成功');
 }
 
@@ -461,7 +462,7 @@ function wireEvents(): void {
   });
 
   qsa<HTMLButtonElement>('[data-back="main"]').forEach((button) => {
-    button.addEventListener('click', () => go('home'));
+    button.addEventListener('click', () => go(state.device.mac !== null ? 'home' : 'pair'));
   });
 
   qs('#btn-start')?.addEventListener('click', () => {
