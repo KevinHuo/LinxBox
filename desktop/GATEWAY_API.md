@@ -316,7 +316,7 @@ payload：
 | `state`          | string              | 是   | 当前任务状态                                                                 |
 | `stage`          | string              | 是   | 展示阶段，不驱动状态机                                                       |
 | `summary`        | string              | 是   | 可展示摘要；自由文本先移除路径、凭据、代码块、diff 和堆栈，再截断到 120 字符 |
-| `result`         | TaskResult \| null  | 是   | 当前 dispatcher 始终发送 `null`                                              |
+| `result`         | TaskResult \| null  | 是   | 明确成功的终态提供本轮追问结果；其他事件可为空                              |
 | `error`          | PublicError \| null | 是   | 失败/中断错误；正常事件为 `null`                                             |
 | `thread_id`      | string \| null      | 是   | 本机实际执行的 Codex 会话 ID；未开始时为 `null`                              |
 | `turn_id`        | string \| null      | 是   | 本机实际执行的 Codex 轮次 ID；未开始时为 `null`                              |
@@ -373,7 +373,7 @@ payload：
 }
 ```
 
-当前 dispatcher 尚未把真实变更和验证投影接入 task event，所以实际输出仍为 `result: null`。
+当前 dispatcher 在 provider 明确 completed 且没有错误时提供结构化结果，只确认本轮追问完成。changes 与 verification 暂为空数组，risk 明确提示改动与验证细节未汇总；不据此声明无改动、测试通过或整体工程已验收。
 
 ## 6. PublicError
 
@@ -440,7 +440,7 @@ Desktop -> Gateway  task.completed | task.failed | task.interrupted
 4. 去重与 `last_acked_sequence` 只在内存中，进程重启会丢失。
 5. `project.upsert` / `project.revoke` 尚未接入当前 WSS client。
 6. `task.approval_required` / `task.cancelled` 尚无实际生产路径。
-7. `TaskResult` 投影尚未接入真实 Codex 任务，task event 的 `result` 当前为 `null`。
+7. 成功终态已有本轮完成 TaskResult，但真实文件改动、验证与风险的完整事实投影仍未接入；其他事件的 result 仍可为 null。
 8. `presentation.upsert` / `presentation.revoke` / `command.receipt` 只有类型占位。
 9. 当前运行时只保留 `gateway-client/frames.ts` 作为入站 parser；类型契约仍声明
    `project.upsert` / `project.revoke`，但 parser 尚未实现，后续共享 schema 需要收敛这处差异。

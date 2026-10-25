@@ -134,7 +134,7 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 
 - 真实云端 Gateway（当前只有本地 mock）
 - SQLite 真实持久化与迁移执行
-- 结果投影接入真实任务（`result-projector` 已就绪，尚未接上真实 turn 的产物）
+- 完整执行事实投影：当前 provider 明确完成且无错误时，发送只证明本轮追问完成的结构化 TaskResult；文件改动、验证细节尚未汇总，结果中的 risk 会明确标注，不能据此声称测试通过或整体工程已验收
 
 ## 真实 Codex 接入
 
