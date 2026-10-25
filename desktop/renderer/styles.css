@@ -446,6 +446,12 @@ a:focus-visible,
   grid-template-columns: 1fr;
 }
 
+.box-settings {
+  display: grid;
+  gap: 20px;
+  margin-top: 20px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;

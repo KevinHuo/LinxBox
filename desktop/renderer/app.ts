@@ -82,7 +82,7 @@ function showToast(message: string): void {
   toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2600);
 }
 
-/** Keep product configuration inside the LinxBox workspace, not global settings. */
+/** Keep WSS and project configuration inside the Linx Box home page. */
 function placeBoxSettings(): void {
   const target = qs('#box-settings');
   const settings = qs<HTMLElement>('[data-view="settings"]');
