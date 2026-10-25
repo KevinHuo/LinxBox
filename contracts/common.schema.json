@@ -1,0 +1,454 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KevinHuo/LinxBox/contracts/common.schema.json",
+  "title": "三端共享对象",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "MacAddress": {
+      "type": "string",
+      "pattern": "^(?:[0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2})$"
+    },
+    "DeviceId": {
+      "type": "string",
+      "pattern": "^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$"
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_ARGUMENT",
+            "UNAUTHENTICATED",
+            "PERMISSION_DENIED",
+            "NOT_FOUND",
+            "CONFLICT",
+            "DEPENDENCY_UNAVAILABLE",
+            "RESOURCE_EXHAUSTED",
+            "INTERNAL"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "device_id": {
+          "$ref": "common.schema.json#/$defs/DeviceId"
+        },
+        "desktop_client_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "device_id",
+        "desktop_client_id"
+      ],
+      "additionalProperties": false
+    },
+    "BoundBinding": {
+      "type": "object",
+      "properties": {
+        "device_id": {
+          "$ref": "common.schema.json#/$defs/DeviceId"
+        },
+        "desktop_client_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "device_id",
+        "desktop_client_id"
+      ],
+      "additionalProperties": false
+    },
+    "DraftText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16000,
+      "pattern": "\\S",
+      "description": "原样保留最终 ASR 文字；另由业务校验最多 16 KiB UTF-8。"
+    },
+    "AgentSession": {
+      "type": "object",
+      "properties": {
+        "agent_session_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "running",
+            "completed",
+            "failed",
+            "unknown"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_session_id",
+        "title",
+        "project_name",
+        "agent",
+        "status",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "SessionRecord": {
+      "type": "object",
+      "properties": {
+        "agent_session_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "running",
+            "completed",
+            "failed",
+            "unknown"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "thread_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "agent_session_id",
+        "title",
+        "project_name",
+        "agent",
+        "status",
+        "summary",
+        "thread_id",
+        "project_id"
+      ],
+      "additionalProperties": false
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "agent_session_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "target_title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/DraftText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "awaiting_text",
+            "awaiting_confirmation",
+            "sending",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "unknown"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "request_id",
+        "agent_session_id",
+        "target_title",
+        "text",
+        "status",
+        "error"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "awaiting_text"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "text": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_confirmation",
+                  "sending",
+                  "running",
+                  "completed",
+                  "unknown"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "text": {
+                "$ref": "common.schema.json#/$defs/DraftText"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_confirmation",
+                  "sending",
+                  "running",
+                  "completed",
+                  "cancelled"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "MessageMeta": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "message_id",
+        "role",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "SessionPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/AgentSession"
+          },
+          "maxItems": 5
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "MessagePage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/MessageMeta"
+          },
+          "maxItems": 16
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "ContentChunk": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "text",
+        "next_offset"
+      ],
+      "additionalProperties": false
+    },
+    "Empty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "MessagesListInput": {
+      "type": "object",
+      "properties": {
+        "agent_session_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "cursor": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "agent_session_id"
+      ],
+      "additionalProperties": false
+    },
+    "ContentGetInput": {
+      "type": "object",
+      "properties": {
+        "agent_session_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "required": [
+        "agent_session_id",
+        "message_id"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

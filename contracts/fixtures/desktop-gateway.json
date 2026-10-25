@@ -1,0 +1,2280 @@
+[
+  {
+    "name": "client.hello 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/client.hello",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.hello",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "desktop_version": "示例",
+        "protocol_versions": [
+          "1.0"
+        ],
+        "last_acked_sequence": 0,
+        "capabilities": []
+      }
+    }
+  },
+  {
+    "name": "client.hello 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/client.hello",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.hello",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "desktop_version": "示例",
+        "protocol_versions": [
+          "1.0"
+        ],
+        "last_acked_sequence": 0,
+        "capabilities": []
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "client.hello 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/client.hello",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.hello",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "desktop_version": "示例",
+        "protocol_versions": [
+          "1.0"
+        ],
+        "last_acked_sequence": 0,
+        "capabilities": []
+      }
+    }
+  },
+  {
+    "name": "client.hello 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/client.hello",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.hello",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "desktop_version": "示例",
+        "protocol_versions": [
+          "1.0"
+        ],
+        "last_acked_sequence": 0,
+        "capabilities": [],
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "client.heartbeat 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/client.heartbeat",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.heartbeat",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "client_time": "2026-10-25T03:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "client.heartbeat 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/client.heartbeat",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.heartbeat",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "client_time": "2026-10-25T03:00:00Z"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "client.heartbeat 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/client.heartbeat",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.heartbeat",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "client_time": "2026-10-25T03:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "client.heartbeat 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/client.heartbeat",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "client.heartbeat",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "client_time": "2026-10-25T03:00:00Z",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.ack 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.ack",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.ack",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "message_id": "示例",
+        "sequence": 0,
+        "task_id": "示例",
+        "disposition": "accepted"
+      }
+    }
+  },
+  {
+    "name": "task.ack 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.ack",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.ack",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "message_id": "示例",
+        "sequence": 0,
+        "task_id": "示例",
+        "disposition": "accepted"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.ack 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.ack",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.ack",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "message_id": "示例",
+        "sequence": 0,
+        "task_id": "示例",
+        "disposition": "accepted"
+      }
+    }
+  },
+  {
+    "name": "task.ack 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.ack",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.ack",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "message_id": "示例",
+        "sequence": 0,
+        "task_id": "示例",
+        "disposition": "accepted",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "device.bind 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/device.bind",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "device.bind",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01"
+      }
+    }
+  },
+  {
+    "name": "device.bind 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/device.bind",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "device.bind",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "device.bind 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/device.bind",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "device.bind",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01"
+      }
+    }
+  },
+  {
+    "name": "device.bind 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/device.bind",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "device.bind",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "items": []
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_sessions.sync 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "items": [],
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "message.available 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/message.available",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.available",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.available 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/message.available",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.available",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "message.available 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/message.available",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.available",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.available 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/message.available",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.available",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.started 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.started",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.started",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.started 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.started",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.started",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.started 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.started",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.started",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.started 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.started",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.started",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.progress 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.progress",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.progress",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.progress 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.progress",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.progress",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.progress 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.progress",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.progress",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.progress 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.progress",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.progress",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.approval_required 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.approval_required",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.approval_required",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.approval_required 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.approval_required",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.approval_required",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.approval_required 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.approval_required",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.approval_required",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.approval_required 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.approval_required",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.approval_required",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.completed 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.completed",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.completed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.completed 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.completed",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.completed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.completed 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.completed",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.completed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.completed 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.completed",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.completed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.failed 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.failed",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.failed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.failed 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.failed",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.failed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.failed 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.failed",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.failed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.failed 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.failed",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.failed",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.cancelled 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancelled",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancelled",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.cancelled 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancelled",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancelled",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.cancelled 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancelled",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancelled",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.cancelled 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancelled",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancelled",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.interrupted 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.interrupted",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.interrupted",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.interrupted 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.interrupted",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.interrupted",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.interrupted 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.interrupted",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.interrupted",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.interrupted 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.interrupted",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.interrupted",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "event_id": "示例",
+        "event_sequence": 0,
+        "occurred_at": "2026-10-25T03:00:00Z",
+        "state": "示例",
+        "stage": "示例",
+        "summary": "示例",
+        "result": {
+          "contract_version": "task-result-v1",
+          "status": "succeeded",
+          "summary": "示例",
+          "changes": [],
+          "verification": [],
+          "risks": [],
+          "needs_user_action": {
+            "summary": "示例"
+          },
+          "voice_summary": "示例"
+        },
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "示例",
+          "retryable": true,
+          "request_id": "示例"
+        },
+        "thread_id": "示例",
+        "turn_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "query.result 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/query.result",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "query.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      }
+    }
+  },
+  {
+    "name": "query.result 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/query.result",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "query.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "query.result 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/query.result",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "query.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      }
+    }
+  },
+  {
+    "name": "query.result 失败应答",
+    "schema": "desktop-gateway.schema.json#/$defs/query.result",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "query.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      }
+    }
+  },
+  {
+    "name": "query.result 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/query.result",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "query.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        },
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "project.upsert 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/project.upsert",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.upsert",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "display_name": "示例",
+        "capabilities": [],
+        "availability": "online",
+        "grant_version": 0
+      }
+    }
+  },
+  {
+    "name": "project.upsert 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/project.upsert",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.upsert",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "display_name": "示例",
+        "capabilities": [],
+        "availability": "online",
+        "grant_version": 0
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "project.upsert 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/project.upsert",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.upsert",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "display_name": "示例",
+        "capabilities": [],
+        "availability": "online",
+        "grant_version": 0
+      }
+    }
+  },
+  {
+    "name": "project.upsert 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/project.upsert",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.upsert",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "display_name": "示例",
+        "capabilities": [],
+        "availability": "online",
+        "grant_version": 0,
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "project.revoke 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/project.revoke",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.revoke",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "grant_version": 0,
+        "revoked_at": "2026-10-25T03:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "project.revoke 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/project.revoke",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.revoke",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "grant_version": 0,
+        "revoked_at": "2026-10-25T03:00:00Z"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "project.revoke 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/project.revoke",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.revoke",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "grant_version": 0,
+        "revoked_at": "2026-10-25T03:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "project.revoke 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/project.revoke",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "project.revoke",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "project_id": "示例",
+        "grant_version": 0,
+        "revoked_at": "2026-10-25T03:00:00Z",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.dispatch 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.dispatch",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.dispatch",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "project_id": "示例",
+        "agent": "示例",
+        "capabilities": [],
+        "prompt": "示例",
+        "acceptance_criteria": [],
+        "policy_version": "示例",
+        "continuation": {
+          "parent_task_id": "示例"
+        }
+      }
+    }
+  },
+  {
+    "name": "task.dispatch 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.dispatch",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.dispatch",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "project_id": "示例",
+        "agent": "示例",
+        "capabilities": [],
+        "prompt": "示例",
+        "acceptance_criteria": [],
+        "policy_version": "示例",
+        "continuation": {
+          "parent_task_id": "示例"
+        }
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.dispatch 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.dispatch",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.dispatch",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "project_id": "示例",
+        "agent": "示例",
+        "capabilities": [],
+        "prompt": "示例",
+        "acceptance_criteria": [],
+        "policy_version": "示例",
+        "continuation": {
+          "parent_task_id": "示例"
+        }
+      }
+    }
+  },
+  {
+    "name": "task.dispatch 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.dispatch",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.dispatch",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "project_id": "示例",
+        "agent": "示例",
+        "capabilities": [],
+        "prompt": "示例",
+        "acceptance_criteria": [],
+        "policy_version": "示例",
+        "continuation": {
+          "parent_task_id": "示例"
+        },
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "task.cancel 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancel",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancel",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "reason": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.cancel 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancel",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancel",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "reason": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "task.cancel 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancel",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancel",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "reason": "示例"
+      }
+    }
+  },
+  {
+    "name": "task.cancel 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/task.cancel",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "task.cancel",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "task_id": "示例",
+        "reason": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "binding.result 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/binding.result",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "binding.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        }
+      }
+    }
+  },
+  {
+    "name": "binding.result 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/binding.result",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "binding.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        }
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "binding.result 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/binding.result",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "binding.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        }
+      }
+    }
+  },
+  {
+    "name": "binding.result 失败应答",
+    "schema": "desktop-gateway.schema.json#/$defs/binding.result",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "binding.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      }
+    }
+  },
+  {
+    "name": "binding.result 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/binding.result",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "binding.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        },
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync.result 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync.result",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync.result 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync.result",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_sessions.sync.result 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync.result",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync.result 失败应答",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync.result",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.sync.result 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/agent_sessions.sync.result",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "agent_sessions.sync.result",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "reply_to_message_id": "示例",
+        "ok": true,
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "messages.list 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/messages.list",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "messages.list",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "messages.list 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/messages.list",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "messages.list",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "messages.list 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/messages.list",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "messages.list",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "messages.list 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/messages.list",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "messages.list",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "message.content.get 合法",
+    "schema": "desktop-gateway.schema.json#/$defs/message.content.get",
+    "valid": true,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.content.get",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.content.get 拒绝额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/message.content.get",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.content.get",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "message.content.get 拒绝缺少必填字段",
+    "schema": "desktop-gateway.schema.json#/$defs/message.content.get",
+    "valid": false,
+    "data": {
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.content.get",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.content.get 拒绝 payload 额外字段",
+    "schema": "desktop-gateway.schema.json#/$defs/message.content.get",
+    "valid": false,
+    "data": {
+      "protocol_version": "1.0",
+      "message_id": "示例",
+      "sequence": 0,
+      "type": "message.content.get",
+      "sent_at": "2026-10-25T03:00:00Z",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例",
+        "unexpected": true
+      }
+    }
+  }
+]
