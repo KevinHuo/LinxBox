@@ -284,6 +284,21 @@
                 ></button>
               </li>
             </ul>
+
+            <!-- 本地项目：授权这台 Mac 上允许灵矽访问的目录 -->
+            <div class="settings-block">
+              <div class="block-head">
+                <h2>本地项目</h2>
+                <button class="btn" id="btn-project-add" type="button">授权目录</button>
+              </div>
+              <p class="hint" style="margin-top: 0; margin-bottom: 12px">
+                只有在这里授权过的目录，灵矽下发的任务才能在本机执行。绝对路径不会离开这台 Mac。
+              </p>
+              <ul class="project-list" id="project-list">
+                <li class="empty-row">尚未授权任何目录</li>
+              </ul>
+            </div>
+
             <div class="btn-row" style="margin-top: 16px">
               <button class="btn btn-quiet" data-back="main" type="button">返回</button>
             </div>

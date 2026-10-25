@@ -209,6 +209,77 @@ function renderConnection(): void {
   }
 }
 
+/** Render the locally authorised projects on the settings view. */
+function renderProjects(): void {
+  const list = qs('#project-list');
+  if (!list) {
+    return;
+  }
+  if (state.projects.length === 0) {
+    list.innerHTML = '<li class="empty-row">尚未授权任何目录</li>';
+    return;
+  }
+  list.innerHTML = state.projects
+    .map(
+      (project) => `
+      <li class="project-row${project.enabled ? '' : ' is-disabled'}">
+        <div class="project-main">
+          <strong>${escapeHtml(project.displayName)}</strong>
+          <small>${escapeHtml(project.rootPath)}</small>
+        </div>
+        <div class="project-caps">
+          ${project.capabilities
+            .map((capability) => `<span class="cap-tag">${escapeHtml(capability)}</span>`)
+            .join('')}
+        </div>
+        <button class="btn btn-quiet" type="button" data-revoke="${escapeHtml(project.projectId)}">
+          撤销
+        </button>
+      </li>`,
+    )
+    .join('');
+}
+
+/**
+ * Authorise a local directory.
+ *
+ * The directory is picked in the system dialog inside the main process: the
+ * renderer never supplies a path, so a compromised renderer cannot authorise
+ * an arbitrary directory.
+ */
+async function grantProject(): Promise<void> {
+  if (!bridge) {
+    showToast('浏览器预览模式无法授权目录');
+    return;
+  }
+  const result = await bridge.grantProject({
+    displayName: '本地项目',
+    capabilities: ['read', 'write', 'test'],
+  });
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+    const failure = result as { message?: string };
+    showToast(failure.message ?? '授权失败');
+    return;
+  }
+  showToast('已授权该目录');
+  await refreshFromBridge();
+}
+
+/** Revoke a local project grant. */
+async function revokeProject(projectId: string): Promise<void> {
+  if (!bridge) {
+    return;
+  }
+  const result = await bridge.revokeProject({ projectId });
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+    const failure = result as { message?: string };
+    showToast(failure.message ?? '撤销失败');
+    return;
+  }
+  showToast('已撤销该目录');
+  await refreshFromBridge();
+}
+
 /** Render every part of the window from the current state. */
 function renderAll(): void {
   renderHeadPill();
@@ -216,6 +287,7 @@ function renderAll(): void {
   renderDevice();
   renderSettings();
   renderConnection();
+  renderProjects();
 }
 
 /** Apply the appearance theme to the document. */
@@ -289,14 +361,23 @@ async function setFloatVisible(visible: boolean): Promise<void> {
   showToast(visible ? '已开启悬浮窗' : '已关闭悬浮窗');
 }
 
-/** Save the Gateway connection and dial out to it. */
+/**
+ * Save the Gateway connection and dial out to it.
+ *
+ * An empty token field means "keep the stored one": the renderer only ever
+ * sees a mask of the token, so it cannot send it back unchanged.
+ */
 async function saveConnection(): Promise<void> {
   const url = qs<HTMLInputElement>('#conn-url')?.value.trim() ?? '';
   const token = qs<HTMLInputElement>('#conn-token')?.value.trim() ?? '';
   const name = qs<HTMLInputElement>('#conn-name')?.value.trim() ?? '';
 
-  if (url === '' || token === '' || name === '') {
-    showToast('请填写 Gateway 地址、access_token 和电脑名称');
+  if (url === '' || name === '') {
+    showToast('请填写 Gateway 地址和电脑名称');
+    return;
+  }
+  if (token === '' && state.connection.tokenHint === null) {
+    showToast('请填写 access_token');
     return;
   }
 
@@ -378,6 +459,20 @@ function wireEvents(): void {
   });
   qs('#btn-conn-test')?.addEventListener('click', () => {
     void testConnection();
+  });
+  qs('#btn-project-add')?.addEventListener('click', () => {
+    void grantProject();
+  });
+
+  // The revoke button lives inside the rendered list, so the click is
+  // delegated to the list itself.
+  qs('#project-list')?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest<HTMLElement>('[data-revoke]');
+    const projectId = button?.dataset['revoke'];
+    if (projectId !== undefined) {
+      void revokeProject(projectId);
+    }
   });
 }
 

@@ -664,6 +664,68 @@ a:focus-visible,
   color: var(--muted);
 }
 
+/* —— 本地项目 —— */
+.project-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.project-row:last-child {
+  border-bottom: none;
+}
+
+.project-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.45;
+}
+
+.project-main strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.project-main small {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-row.is-disabled .project-main strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.project-caps {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.cap-tag {
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--white);
+  font: 10px/1.5 var(--mono);
+  color: var(--muted);
+}
+
 .settings-list {
   display: flex;
   flex-direction: column;

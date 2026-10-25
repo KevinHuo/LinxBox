@@ -45,6 +45,7 @@ import {
 import { createLogger } from '../shared/logger.js';
 import { CodexSession } from './codex-session.js';
 import { GatewayConnectionManager } from './gateway-connection.js';
+import { readConnectionSettings, writeConnectionSettings } from './connection-settings.js';
 import {
   clampFloatPosition,
   createAppearanceState,
@@ -147,11 +148,38 @@ function handleConnectionSave(payload: unknown): unknown {
     return { ok: false, code: parsed.code, message: parsed.message };
   }
   const input = parsed.data as { gatewayUrl: string; accessToken: string; computerName: string };
-  const view = saveConnection(state, input);
+
+  // An empty token means "keep the stored one": the renderer only sees a
+  // mask of the token, so it cannot send it back.
+  const stored = state.connection.accessToken;
+  const accessToken = input.accessToken === '' && stored !== null ? stored : input.accessToken;
+  if (accessToken === '') {
+    return { ok: false, code: 'INVALID_ARGUMENT', message: '请填写 access_token' };
+  }
+
+  const view = saveConnection(state, {
+    gatewayUrl: input.gatewayUrl,
+    accessToken,
+    computerName: input.computerName,
+  });
+
+  // The settings hold a token, so they are stored with owner-only
+  // permissions in the app's own user-data directory.
+  try {
+    writeConnectionSettings(app.getPath('userData'), {
+      gatewayUrl: input.gatewayUrl,
+      accessToken,
+      computerName: input.computerName,
+    });
+  } catch (error) {
+    logger.error('保存连接配置失败', {
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
+  }
 
   gateway.connect({
     gatewayUrl: input.gatewayUrl,
-    accessToken: input.accessToken,
+    accessToken,
     computerName: input.computerName,
   });
 
@@ -619,6 +647,7 @@ function ensureFloatWindow(): BrowserWindow {
 void app.whenReady().then(() => {
   registerIpcHandlers();
   mainWindow = createMainWindow();
+  restoreSavedConnection();
 
   app.on('activate', () => {
     if (mainWindow !== null && !mainWindow.isDestroyed()) {
@@ -628,6 +657,34 @@ void app.whenReady().then(() => {
     mainWindow = createMainWindow();
   });
 });
+
+/**
+ * Restore the connection settings from the last run.
+ *
+ * The Desktop is a resident background app, so it reconnects on its own
+ * instead of asking for the same values again on every start.
+ */
+function restoreSavedConnection(): void {
+  let settings: ReturnType<typeof readConnectionSettings>;
+  try {
+    settings = readConnectionSettings(app.getPath('userData'));
+  } catch (error) {
+    logger.error('读取连接配置失败', {
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
+    return;
+  }
+  if (settings === null) {
+    return;
+  }
+
+  saveConnection(state, settings);
+  gateway.connect(settings);
+  logger.info('已恢复上次的 Gateway 连接配置', {
+    gatewayUrl: settings.gatewayUrl,
+    computerName: settings.computerName,
+  });
+}
 
 app.on('window-all-closed', () => {
   codexSession.close();
