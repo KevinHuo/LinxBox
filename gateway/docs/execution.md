@@ -257,3 +257,17 @@ SQL
 TestMVPStreamableImplicitConfirmDispatchAndCompletion 同时覆盖直接成功与缺结果补报：缺头 MCP 提案 → 固件确认 → 固定 Desktop 投递 → started → 缺结果 completed 保存 unknown → 新 prepare 冲突且失败 ID 查询为 NOT_FOUND → 原任务以新事件和更高序号补报成功结果 → completed → 新 prepare 成功。重复确认始终只投递一次。请求选择仍检查设备、Desktop 绑定和账号归属，未放宽认证。
 
 整合后执行 `INCREMENTAL_BASE=origin/main make check build release` 通过，含生成核对、格式、go vet、全部单元/集成测试、整体/关键包/增量包原有覆盖率门禁及 race。本机及 Linux amd64/arm64 无 CGO 构建通过。整体语句覆盖率 93.08%（2826/3036），service 91.19%、storage 90.95%、transport 94.25%；均未降低门槛。定向执行恢复、MCP 组合链路及记录缺失诊断的 race 回归通过。Desktop 运行代码与 37b3917 一致，本轮未重跑其全量检查；此前失败记录继续保留。未部署服务器或执行真实平台/固件/模型验收。
+
+
+## 最新 main 冲突解决与 Ready 条件（2026-10-26）
+
+合入 main 的 0d3b9a0，解决根 README 与 Desktop dispatcher 的两处冲突。README 保留 main 的产品展示与线上接入说明，并补充本 PR 的确认执行和恢复入口；Desktop 使用 main 的 projectRoot 和结构化结果投影，同时保留 completed 必须 error=null 的事实保护及原确认结果回归。没有覆盖 main 的目录/连接/UI 更新，也没有保留两套重复的工作目录字段。
+
+来源工作区 mcp-streamable-http 的 9d48551 与 request-execution 的 37b3917 均已纳入合并历史，前者原本已完整包含后者及 5b30e12。逐项核对 Streamable HTTP、旧 SSE、受控缺头关联、确认投递、缺结果补报、占用定位和缺失记录诊断，Gateway 代码相对 9d48551 无变化。两个工作区没有遗漏的未提交源码；其他工作树的本地依赖缓存未纳入提交。
+
+- 合并后 Gateway 完整 INCREMENTAL_BASE=origin/main make check build release 通过，含 race 和原门禁，整体语句覆盖率 93.08%（2826/3036）。
+- 共享契约 254 个样例、7 项校验器测试通过，校验器分支覆盖统计为 97%。
+- Desktop 类型检查、构建及本 PR 修改文件的格式/lint、2 项成功/带错 completed 回归通过；仅整理本 PR 修改的接口文档格式。
+- Desktop 全量 594 通过、12 失败、3 跳过；覆盖率语句 92.32%、分支 83.14%、函数 92.61%、行 93.25%，分支未达到 90%。全量格式初查 9 个文件未通过，修正本 PR 的 GATEWAY_API.md 后其余 8 个未改动文件仍有问题；全量 lint 在 renderer/app.ts 和 renderer/float.ts 有 4 项错误。本轮未删除断言、降低门槛或扩大排除范围。
+
+解决 Git 冲突不等于满足全部合并门禁。按仓库 CODING_STANDARDS.md，格式、静态检查、相关测试和覆盖率须通过后才适合移除 Draft。真实固件/平台/模型验收和服务器部署未执行，不能以工作区合并或 GitHub 单项检查成功替代。

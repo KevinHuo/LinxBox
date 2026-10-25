@@ -70,41 +70,46 @@
           <!-- 视图：未配对 -->
           <section class="view is-active" data-view="pair" aria-labelledby="pair-title">
             <div class="hero">
-              <h1 id="pair-title">把 灵矽设备 与这台 Mac 配对</h1>
+              <h1 id="pair-title">设置 WSS 连接</h1>
               <p class="lede">
-                配对后，设备上的语音指令会路由到这台电脑，由你授权的编码 Agent
-                执行。任务状态与回复会同步回设备，LinxBox 常驻后台，不打断你的工作。
+                先在「设置」中填写 Gateway WSS 地址、访问令牌和电脑名称并连接；设备 MAC
+                绑定是后续独立步骤，不与 WSS 配置混用。
               </p>
             </div>
+            <div
+              id="box-settings"
+              class="box-settings"
+              aria-label="Linx Box WSS 连接与项目设置"
+            ></div>
             <div class="pair-layout">
               <div class="device-card">
                 <ol class="steps">
                   <li>
                     <span class="step-no" aria-hidden="true">01</span>
                     <div class="step-txt">
-                      <strong>查看 MAC 地址</strong>
-                      <span>在 灵矽设备 上打开「设置 · 关于」，查看设备 MAC 地址</span>
+                      <strong>打开设置</strong>
+                      <span>先配置 Gateway WSS 地址、访问令牌和电脑名称</span>
                     </div>
                   </li>
                   <li>
                     <span class="step-no" aria-hidden="true">02</span>
                     <div class="step-txt">
-                      <strong>填写 MAC 地址</strong>
-                      <span>在这台 Mac 上输入设备信息中的 MAC 地址</span>
+                      <strong>保存并连接</strong>
+                      <span>确认 WSS 连接状态为已连接</span>
                     </div>
                   </li>
                   <li>
                     <span class="step-no" aria-hidden="true">03</span>
                     <div class="step-txt">
-                      <strong>完成配对</strong>
-                      <span>建立连接，LinxBox 开始常驻</span>
+                      <strong>绑定设备</strong>
+                      <span>连接成功后再填写设备 MAC 地址</span>
                     </div>
                   </li>
                 </ol>
               </div>
 
               <div class="code-card">
-                <p>设备 MAC 地址 · 在 灵矽设备 上查看</p>
+                <p>设备 MAC 地址 · WSS 连接后绑定</p>
                 <div class="mac-field">
                   <input
                     id="mac-input"
@@ -112,13 +117,13 @@
                     autocomplete="off"
                     spellcheck="false"
                     maxlength="17"
-                    value="34:00:00:00:00:01"
+                    value="4C:11:AE:32:D2:38"
                     placeholder="如 A4:C1:38:5B:2A:9E"
                     aria-label="设备 MAC 地址"
                   />
                 </div>
                 <button class="btn btn-primary" id="btn-start" type="button" style="width: 100%">
-                  开始配对
+                  绑定设备
                 </button>
                 <p class="card-note" id="pair-note">已填入测试设备 MAC，可直接开始配对。</p>
               </div>
@@ -150,20 +155,7 @@
                 LinxBox 常驻后台运行中。关闭窗口不会断开连接，需要时从菜单栏或悬浮窗打开。
               </p>
             </div>
-            <div class="home-grid">
-              <div class="panel">
-                <div class="panel-head">
-                  <h2>最近任务</h2>
-                  <span>来自设备的指令</span>
-                </div>
-                <ul class="task-list" id="task-list" aria-label="最近任务">
-                  <li class="empty-row">暂无任务</li>
-                </ul>
-                <div class="note-line" style="margin-top: auto">
-                  新回复会以静默方式更新到悬浮窗，不弹窗打扰。
-                </div>
-              </div>
-
+            <div class="home-grid home-grid--device-only">
               <div class="panel">
                 <div class="panel-head">
                   <h2>设备</h2>
@@ -190,14 +182,12 @@
                   <li><span>配对时间</span><b id="device-paired-at">—</b></li>
                   <li><span>设备 MAC</span><b id="device-mac">—</b></li>
                   <li><span>最近同步</span><b id="device-synced-at">—</b></li>
-                  <li><span>待执行指令</span><b id="device-pending">0 条</b></li>
                 </ul>
                 <div class="btn-row" style="margin-top: auto; padding-top: 16px">
                   <button class="btn btn-danger" id="btn-unpair" type="button">退出配对</button>
                 </div>
               </div>
             </div>
-            <div id="box-settings" class="box-settings" aria-label="灵矽 Box 连接与项目设置"></div>
           </section>
 
           <!-- 视图：全局设置 -->
@@ -207,13 +197,24 @@
               <p class="lede">灵矽 AI · 全局设置，作用于整个桌面客户端。</p>
             </div>
 
-            <!-- 灵矽连接：配置 Gateway 出站连接 -->
+            <!-- WSS 连接配置会在启动时移动到 Linx Box 首页 -->
             <div class="settings-block">
               <div class="block-head">
-                <h2>灵矽连接</h2>
+                <h2>Linx Box · WSS 连接</h2>
                 <span class="pill" id="conn-status">
                   <i class="dot" aria-hidden="true"></i><span id="conn-status-text">未连接</span>
                 </span>
+              </div>
+              <div class="field">
+                <label>Gateway 环境</label>
+                <div class="seg" role="group" aria-label="Gateway 环境">
+                  <button class="seg-btn" type="button" data-gateway-profile="local">
+                    本地 mock
+                  </button>
+                  <button class="seg-btn is-active" type="button" data-gateway-profile="online">
+                    线上
+                  </button>
+                </div>
               </div>
               <div class="field-row">
                 <div class="field">
@@ -222,7 +223,7 @@
                     id="conn-url"
                     type="text"
                     spellcheck="false"
-                    placeholder="ws://127.0.0.1:8787/v1/clients/connect"
+                    placeholder="ws://124.220.162.10:8787/v1/clients/connect"
                   />
                 </div>
                 <div class="field">
@@ -256,19 +257,6 @@
                   <button class="seg-btn is-active" type="button" data-theme="warm">暖白</button>
                   <button class="seg-btn" type="button" data-theme="dark">深色</button>
                 </div>
-              </li>
-              <li>
-                <div class="s-txt">
-                  <strong>开机自启</strong><span>登录这台 Mac 时自动启动灵矽 AI</span>
-                </div>
-                <button
-                  class="switch"
-                  type="button"
-                  role="switch"
-                  aria-checked="false"
-                  data-switch="startup"
-                  aria-label="开机自启"
-                ></button>
               </li>
               <li>
                 <div class="s-txt">

@@ -24,6 +24,10 @@ export interface ConnectionRecord {
   readonly gatewayUrl: string | null;
   readonly accessToken: string | null;
   readonly computerName: string | null;
+  readonly activeProfile: 'local' | 'online';
+  readonly profiles: Readonly<
+    Record<'local' | 'online', { readonly gatewayUrl: string; readonly accessToken: string | null }>
+  >;
 }
 
 export interface ProjectRecord {
@@ -79,6 +83,17 @@ export function createDesktopState(options: DesktopStateOptions = {}): DesktopSt
       gatewayUrl: null,
       accessToken: null,
       computerName: null,
+      activeProfile: 'online',
+      profiles: {
+        local: {
+          gatewayUrl: 'ws://127.0.0.1:8787/v1/clients/connect',
+          accessToken: 'demo-client-token',
+        },
+        online: {
+          gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
+          accessToken: '483e724def796c87d600306a2fde1d0b9c70d607cdd2a5fe',
+        },
+      },
     },
     projects: new Map((options.projects ?? []).map((project) => [project.projectId, project])),
     tasks: new Map((options.tasks ?? []).map((task) => [task.taskId, task])),
@@ -96,20 +111,46 @@ export function readConnectionView(state: DesktopState): ConnectionView {
     gatewayUrl: connection.gatewayUrl,
     tokenHint: connection.accessToken ? maskToken(connection.accessToken) : null,
     computerName: connection.computerName,
+    activeProfile: connection.activeProfile,
+    profiles: {
+      local: {
+        gatewayUrl: connection.profiles.local.gatewayUrl,
+        tokenHint: connection.profiles.local.accessToken
+          ? maskToken(connection.profiles.local.accessToken)
+          : null,
+      },
+      online: {
+        gatewayUrl: connection.profiles.online.gatewayUrl,
+        tokenHint: connection.profiles.online.accessToken
+          ? maskToken(connection.profiles.online.accessToken)
+          : null,
+      },
+    },
   };
 }
 
 /** Store a connection configuration. */
 export function saveConnection(
   state: DesktopState,
-  input: { gatewayUrl: string; accessToken: string; computerName: string },
+  input: {
+    profile: 'local' | 'online';
+    gatewayUrl: string;
+    accessToken: string;
+    computerName: string;
+  },
 ): ConnectionView {
+  const profiles = {
+    ...state.connection.profiles,
+    [input.profile]: { gatewayUrl: input.gatewayUrl, accessToken: input.accessToken },
+  };
   state.connection = {
     configured: true,
     connected: false,
     gatewayUrl: input.gatewayUrl,
     accessToken: input.accessToken,
     computerName: input.computerName,
+    activeProfile: input.profile,
+    profiles,
   };
   return readConnectionView(state);
 }

@@ -37,8 +37,9 @@ const emptyPayloadSchema = z.object({}).strict();
 
 const connectionSaveSchema = z
   .object({
+    profile: z.enum(['local', 'online']),
     gatewayUrl: z.string().url().max(2048),
-    accessToken: z.string().min(1).max(4096),
+    accessToken: z.string().max(4096),
     computerName: z.string().min(1).max(128),
   })
   .strict();
@@ -207,6 +208,7 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'window.float.setVisible': floatSetVisibleSchema,
   'window.float.move': floatMoveSchema,
   'window.main.focus': emptyPayloadSchema,
+  'app.quit': emptyPayloadSchema,
 };
 
 /* ------------------------------------------------------------------ */
@@ -225,6 +227,10 @@ export interface ConnectionView {
   readonly gatewayUrl: string | null;
   readonly tokenHint: string | null;
   readonly computerName: string | null;
+  readonly activeProfile: 'local' | 'online';
+  readonly profiles: Readonly<
+    Record<'local' | 'online', { readonly gatewayUrl: string; readonly tokenHint: string | null }>
+  >;
 }
 
 /**

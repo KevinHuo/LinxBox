@@ -1,10 +1,67 @@
 # LinxBox
 
 [![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.35%25-brightgreen)](desktop/README.md#测试覆盖率)
+[![Firmware line coverage](https://img.shields.io/badge/Firmware%20line%20coverage-99.30%25-brightgreen)](firmware/README.md#测试覆盖率)
 
-LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任务，经 Cloud MCP Gateway 路由到 macOS 客户端，再由本机已授权的 Code Agent 执行。
+**把 AI 编程会话带到手边。**
 
-当前仓库提供 FoloToy AI Passport 上的 LinX 0.2 界面、手机网页 Wi-Fi 配网及灵矽语音入口。任务和回复仍为离线演示数据；设备每次只录入一条指令，反馈播完后返回概览，阅读页只读文字，首版不支持图片浏览。概览后台准备语音，同目标连接在本条结束后空闲保留 30 秒；返回默认长按，也可在设置中切换双击并保存。此前已完成短流程真机联调，长期稳定性和完整异常场景仍待验收。Gateway、macOS 客户端和远程编码链路尚未形成可发布的完整实现。具体协议、状态机、数据结构和恢复策略必须由相关模块负责人通过独立 Issue、设计评审和 PR 确认；讨论稿不代表已经实现或验收通过。
+LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目：希望让你暂时离开键盘后，也能在小屏上查看任务、阅读 Agent 的回复，并用一句话继续沟通。设备负责交互，代码仍由 Mac 上已授权的 Code Agent 执行。
+
+![LinxBox 硬件概念效果图：透明外壳的 AI Passport 展示 LinX 任务列表](assets/readme/linxbox-hardware.png)
+
+*产品示意图：任务列表。*
+
+[产品体验](#产品体验) · [硬件与操作](#硬件与操作) · [当前进展](#当前进展) · [参与开发](#参与开发)
+
+## 产品体验
+
+当 Agent 正在修改代码、运行测试，或者需要你补充要求时，我们希望把“查看进展、读回复、说下一步”这几个动作放到一块随手可用的小屏上，让你减少回到电脑前查看会话的次数。
+
+| 使用场景 | 希望带来的体验 |
+| --- | --- |
+| 等待任务执行 | 浏览任务列表，了解正在运行、等待回复或有新回复的会话 |
+| 查看本轮结果 | 分页阅读 Agent 的文字回复，翻看最近对话，接上之前的思路 |
+| 想到下一步要求 | 选择当前任务，用语音补充“继续优化这个页面”等指令，延续原会话 |
+
+完整体验的目标是：
+
+1. **选任务**：在设备上找到电脑端正在进行的会话，进入概览。
+2. **读回复**：打开“阅读本轮回复”或“最近对话”，用上下键翻页。
+3. **说下一步**：回到概览，选择“继续沟通”；麦克风开启后说话，按一次 OK 结束并发送。
+4. **等新结果**：由电脑上的 Agent 继续执行，再回到设备查看新回复。
+
+这条体验涉及 **AI Passport → 灵矽 AI → Cloud MCP Gateway → macOS 客户端 → 本机 Code Agent**。目前各模块已有部分实现，服务端任务投递尚待实现，真实语音闭环待联调验收；可体验范围见[当前进展](#当前进展)。
+
+## 硬件与操作
+
+![LinxBox 语音交互概念效果图：工作桌面上的 AI Passport 显示录音波形和计时](assets/readme/linxbox-voice.png)
+
+*产品示意图：语音录入。*
+
+当前使用 **FoloToy AI Passport** 硬件，运行本项目的 **LinX 0.2** 界面。透明外壳、顶部挂绳孔和侧边实体键沿用原设备设计。
+
+| 项目 | 当前配置与交互 |
+| --- | --- |
+| 硬件平台 | ESP32-C3，8 MB Flash，无 PSRAM |
+| 显示 | 240 × 320 竖屏；任务列表、文字阅读和语音状态 |
+| 操作 | UP / DOWN / OK 三个实体功能键；上下键选择或翻页，短按 OK 进入或确认 |
+| 返回 | 默认长按 OK；可在设备设置中改为双击，并保存偏好 |
+| 语音 | 选择“继续沟通”才开启麦克风；按 OK 停录并发送，反馈播完后返回概览 |
+| 配网 | 用手机连接设备临时热点，在网页中选择 2.4 GHz Wi-Fi 并保存 |
+
+首版阅读页仅展示文字，阅读时不会开启录音；图片浏览和设备间对讲尚未提供。详细操作见[固件使用说明](firmware/README.md#灵矽配置与操作)。
+
+## 当前进展
+
+| 范围 | 已有能力与验证边界 |
+| --- | --- |
+| 硬件交互 | 已有 LinX 0.2 界面、任务概览、文字分页、最近对话和返回手势设置；默认任务、回复与电量使用演示数据 |
+| 配网与语音 | 已有手机网页配网和灵矽语音入口；直接灵矽路径完成过短流程真机联调，长期稳定性仍待验证 |
+| Gateway 内容接入 | 服务端已实现会话目录、历史与正文读取路由及新回复通知；设备侧接入仍在开发 |
+| macOS 客户端 | 已有本地项目与会话浏览、Codex 接入及 Gateway 客户端实现；真实云端联调和持久化仍待完成 |
+| 完整执行链路 | 服务端任务投递尚待实现；灵矽逐轮语音透传及真实 Gateway／Desktop 联动待完成与验收 |
+
+语音反馈播完只表示本轮录放音结束，不能据此认定电脑已接收或任务已完成。各模块的具体实现与验收记录见[固件](firmware/README.md)、[Gateway](gateway/README.md)和[桌面客户端](desktop/README.md)；功能范围及跨模块协议以对应 Issue、设计与 PR 的评审结果为准。
 
 ## 当前分工
 
@@ -20,17 +77,22 @@ LinxBox 的目标是让 AI Passport/ESP32 通过灵矽 AI 发起本地编码任�
 
 | 模块         | 高层职责                                            |
 | ------------ | --------------------------------------------------- |
-| 设备固件     | 设备交互与固件侧接入；源码在本仓库 `firmware/` 维护 |
-| MCP Gateway  | MCP 接入、云端路由及与客户端的连接                  |
-| macOS 客户端 | 本地项目授权、任务展示及本机 Agent 接入             |
+| 设备固件     | 设备交互、配网、语音入口和 Gateway 客户端；源码在 `firmware/` 维护 |
+| MCP Gateway  | WSS/MCP 接入、认证、设备绑定、会话目录、查询和请求状态；源码在 `gateway/` 维护 |
+| macOS 客户端 | Electron UI、项目/会话同步、任务调度和本机 Codex 接入；源码在 `desktop/` 维护 |
+| 共享契约     | 三端消息 Schema、fixture 和离线校验；源码在 `contracts/` 维护 |
 
 上表只描述协作边界，不冻结接口字段或实现方案。每个模块的实现、契约和验收证据分别提交，不能用文档描述代替可运行实现或真实联调。
 
 ## 代码目录与固件
 
-| 入口                              | 内容                                                |
-| --------------------------------- | --------------------------------------------------- |
-| [`firmware/`](firmware/README.md) | LinX 自有固件应用、硬件接入配置、字体图片和主机测试 |
+| 入口 | 内容 |
+| --- | --- |
+| [`desktop/`](desktop/README.md) | macOS Electron Desktop、Gateway WSS client、Codex app-server adapter、任务与结果视图 |
+| [`gateway/`](gateway/README.md) | Go Gateway、WSS/MCP 入口、认证、绑定、目录、查询、SQLite 和部署文件 |
+| [`firmware/`](firmware/README.md) | LinX 固件应用、硬件接入配置、配网、语音入口、资源和主机测试 |
+| [`contracts/`](contracts/README.md) | 固件/Gateway/Desktop/MCP 共享 JSON Schema、fixture 和校验器 |
+| [`docs/`](docs/architecture.md) | 架构设计、运行说明及联调资料 |
 
 固件与云端、电脑端在同一 Git 仓库管理。固件使用 **[FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)** 作为固定上游依赖，锁定提交 [`006c2279852e352a8433b2c21e5e09be2ca36f77`](https://github.com/FoloToy/ai-passport/commit/006c2279852e352a8433b2c21e5e09be2ca36f77)，采用 MIT 许可证；驱动、原有测试和构建校验工具从主仓库 `.local/dependencies/ai-passport/<提交号>/` 缓存读取，不重复复制维护。
 
@@ -59,12 +121,21 @@ cd firmware
 
 功能范围、技术方案和跨模块契约以对应 Issue 与独立 PR 的评审结果为准。
 
+## 架构与运行
+
+- [架构设计](docs/architecture.md)：模块职责、数据流、安全边界和当前限制。
+- [运行说明](docs/runbook.md)：使用已部署 Gateway 启动 Desktop、本地部署 Gateway、固件验证和排障步骤。
+
 ## 代码
 
 | 路径       | 内容                                                                                        | 状态                                                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `desktop/` | macOS 桌面客户端：Electron UI、Gateway WSS client、Codex app-server adapter、任务与结果视图 | 开发中；语句覆盖率 98.35%，尚未接真实云端 Gateway 或持久化；安装、检查、测试、覆盖率与打包命令见 [desktop/README.md](desktop/README.md) |
+| `desktop/` | macOS 桌面客户端：Electron UI、Gateway WSS client、Codex app-server adapter、任务与结果视图 | 已接入线上 Gateway；本地连接、任务调度和 Codex 执行可验证。安装、检查、测试、覆盖率与打包命令见 [desktop/README.md](desktop/README.md) |
+| `gateway/` | Go Gateway：设备/Desktop WSS、灵矽 MCP、认证、绑定、会话目录、查询和 SQLite | 已提供 Gateway 服务实现与部署配置；线上环境的凭据、TLS、网络和端到端链路需单独验收，见 [gateway/README.md](gateway/README.md) |
+| `firmware/` | ESP32-C3 LinX 固件：设备 UI、配网、语音入口、Gateway 客户端和主机测试 | 已提供构建、静态检查和主机验证入口；真机烧录及设备网络需按 [firmware/README.md](firmware/README.md) 验证 |
+| `contracts/` | 三端共享消息 Schema、fixture 和 Python 校验器 | 契约唯一正文；运行校验命令见 [contracts/README.md](contracts/README.md) |
+| `docs/` | 架构设计、运行说明和集成资料 | 说明当前实现边界和验证路径，不替代代码、契约或线上验收 |
 
 ## 共享协议契约
 
-固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由、[MCP 文字提案接收](gateway/docs/mcp.md)、[确认投递和执行状态处理](gateway/docs/execution.md)；固件接线、Desktop 剩余契约对齐、灵矽逐轮透传及完整执行链路仍待实现和联调，不代表真实语音闭环已经完成。
+固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已提供 WSS/MCP 接入、绑定、会话目录、历史/正文查询、[MCP 文字提案](gateway/docs/mcp.md)及[确认投递与执行状态恢复](gateway/docs/execution.md)；Desktop 已接入线上 Gateway 并调用本机 Codex。真实设备、灵矽逐轮透传、线上凭据和完整语音闭环仍需在目标环境单独验收。

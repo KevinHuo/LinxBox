@@ -115,9 +115,9 @@ interface LocalTaskSession {
 interface ActiveDispatchContext {
   readonly messageId: string;
   readonly taskId: string;
-  readonly cwd: string;
   threadId: string | null;
   turnId: string | null;
+  projectRoot: string;
 }
 
 export class TaskDispatcher {
@@ -203,9 +203,9 @@ export class TaskDispatcher {
     const context: ActiveDispatchContext = {
       messageId,
       taskId,
-      cwd: executionCwd,
       threadId: continuation.threadId,
       turnId: null,
+      projectRoot: executionCwd,
     };
     this.active = context;
     this.eventCounter = 0;
@@ -339,28 +339,27 @@ export class TaskDispatcher {
         return;
       case 'terminal':
         if (event.outcome === 'completed' && event.error === null) {
+          const result = buildTaskResult({
+            taskId,
+            status: 'succeeded',
+            summary: '本轮追问已完成',
+            projectRoot: active.projectRoot,
+            changes: [],
+            verifications: [],
+            risks: [
+              {
+                code: 'EXECUTION_DETAILS_NOT_PROJECTED',
+                summary: '文件改动和验证详情尚未汇总',
+              },
+            ],
+            needsUserAction: null,
+            voiceSummary: '本轮追问已完成',
+          });
           this.emit(taskId, 'task.completed', {
             state: 'succeeded',
             stage: 'finished',
-            summary: '本轮 Codex 追问已完成',
-            // Request 对应一次追问。这里只报告 provider 明确完成的本轮，
-            // 空数组不声称无改动或测试已通过，也不代替整体工程验收。
-            result: buildTaskResult({
-              taskId,
-              status: 'succeeded',
-              summary: '本轮 Codex 追问已完成',
-              projectRoot: active.cwd,
-              changes: [],
-              verifications: [],
-              risks: [
-                {
-                  code: 'EXECUTION_DETAILS_NOT_PROJECTED',
-                  summary: '仅确认本轮执行完成；文件改动与验证详情请在电脑端查看',
-                },
-              ],
-              needsUserAction: null,
-              voiceSummary: '本轮 Codex 追问已完成，详细结果请在电脑端查看',
-            }),
+            summary: result.summary,
+            result,
             error: null,
           });
         } else if (event.outcome === 'failed') {

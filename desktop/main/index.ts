@@ -10,6 +10,7 @@ import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { shouldHideFloatWindow } from './app-lifecycle.js';
 import {
   cancelTask,
   createDesktopState,
@@ -61,6 +62,7 @@ import {
 import { recordTaskEvent } from './desktop-state.js';
 
 const logger = createLogger('desktop.main');
+const gatewayLogger = createLogger('desktop.gateway');
 
 // `import.meta.url` points at dist/main/index.js, so the package root is two
 // levels up. The same layout holds inside the packaged app.asar.
@@ -82,6 +84,7 @@ const floatState: FloatState = createFloatState();
  */
 const gateway = new GatewayConnectionManager({
   session: codexSession,
+  logger: gatewayLogger,
   desktopVersion: app.getVersion(),
   resolveProject: (projectId) => {
     const project = state.projects.get(projectId);
@@ -93,11 +96,9 @@ const gateway = new GatewayConnectionManager({
   listProjects: () => [...state.projects.values()],
   onStatusChange: (status) => {
     state.connection = {
+      ...state.connection,
       configured: status.configured,
       connected: status.connected,
-      gatewayUrl: state.connection.gatewayUrl,
-      accessToken: state.connection.accessToken,
-      computerName: state.connection.computerName,
     };
     if (status.lastError !== null) {
       state.lastError = status.lastError;
@@ -141,6 +142,7 @@ function broadcastConnectionStatus(status: {
 
 let mainWindow: BrowserWindow | null = null;
 let floatWindow: BrowserWindow | null = null;
+let isQuitting = false;
 
 /** Resolve the realpath of a directory chosen in the system dialog. */
 function canonicalizeDirectory(candidate: string): string {
@@ -162,17 +164,23 @@ function handleConnectionSave(payload: unknown): unknown {
   if (!parsed.ok) {
     return { ok: false, code: parsed.code, message: parsed.message };
   }
-  const input = parsed.data as { gatewayUrl: string; accessToken: string; computerName: string };
+  const input = parsed.data as {
+    profile: 'local' | 'online';
+    gatewayUrl: string;
+    accessToken: string;
+    computerName: string;
+  };
 
   // An empty token means "keep the stored one": the renderer only sees a
   // mask of the token, so it cannot send it back.
-  const stored = state.connection.accessToken;
+  const stored = state.connection.profiles[input.profile].accessToken;
   const accessToken = input.accessToken === '' && stored !== null ? stored : input.accessToken;
   if (accessToken === '') {
     return { ok: false, code: 'INVALID_ARGUMENT', message: '请填写 access_token' };
   }
 
   const view = saveConnection(state, {
+    profile: input.profile,
     gatewayUrl: input.gatewayUrl,
     accessToken,
     computerName: input.computerName,
@@ -182,8 +190,17 @@ function handleConnectionSave(payload: unknown): unknown {
   // permissions in the app's own user-data directory.
   try {
     writeConnectionSettings(app.getPath('userData'), {
-      gatewayUrl: input.gatewayUrl,
-      accessToken,
+      activeProfile: input.profile,
+      profiles: {
+        local: {
+          gatewayUrl: state.connection.profiles.local.gatewayUrl,
+          accessToken: state.connection.profiles.local.accessToken ?? '',
+        },
+        online: {
+          gatewayUrl: state.connection.profiles.online.gatewayUrl,
+          accessToken: state.connection.profiles.online.accessToken ?? '',
+        },
+      },
       computerName: input.computerName,
     });
   } catch (error) {
@@ -229,7 +246,8 @@ async function handleDeviceBind(payload: unknown): Promise<unknown> {
   if (!parsed.ok) return { ok: false, code: parsed.code, message: parsed.message };
   const { macAddress } = parsed.data as { macAddress: string };
   const normalized = macAddress.replace(/[:-]/g, '').toUpperCase().match(/.{2}/g)?.join(':');
-  if (normalized === undefined) return { ok: false, code: 'INVALID_ARGUMENT', message: 'MAC 地址格式不正确' };
+  if (normalized === undefined)
+    return { ok: false, code: 'INVALID_ARGUMENT', message: 'MAC 地址格式不正确' };
   const result = await gateway.bindDevice(normalized);
   if (result && typeof result === 'object' && 'ok' in result && result.ok === true) {
     return { ok: true, data: 'data' in result ? result.data : null };
@@ -606,6 +624,10 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'window.float.setVisible': (payload) => handleFloatSetVisible(payload),
   'window.float.move': (payload) => handleFloatMove(payload),
   'window.main.focus': () => handleMainWindowFocus(),
+  'app.quit': () => {
+    app.quit();
+    return { ok: true };
+  },
 };
 
 /** Register one handler per allowlisted channel. */
@@ -705,7 +727,7 @@ function ensureFloatWindow(): BrowserWindow {
   // Closing the floating panel means hiding it, not shutting down LinxBox or
   // destroying the main window. It can be shown again from the main settings.
   window.on('close', (event) => {
-    if (!window.isDestroyed()) {
+    if (shouldHideFloatWindow(isQuitting) && !window.isDestroyed()) {
       event.preventDefault();
       floatState.visible = false;
       window.hide();
@@ -740,6 +762,10 @@ void app.whenReady().then(() => {
   });
 });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 /**
  * Restore the connection settings from the last run.
  *
@@ -760,10 +786,33 @@ function restoreSavedConnection(): void {
     return;
   }
 
-  saveConnection(state, settings);
-  gateway.connect(settings);
+  const selected = settings.profiles[settings.activeProfile];
+  if (selected.accessToken === '') {
+    return;
+  }
+  saveConnection(state, {
+    profile: settings.activeProfile,
+    gatewayUrl: selected.gatewayUrl,
+    accessToken: selected.accessToken,
+    computerName: settings.computerName,
+  });
+  state.connection = {
+    ...state.connection,
+    profiles: {
+      local: {
+        gatewayUrl: settings.profiles.local.gatewayUrl,
+        accessToken: settings.profiles.local.accessToken || null,
+      },
+      online: {
+        gatewayUrl: settings.profiles.online.gatewayUrl,
+        accessToken: settings.profiles.online.accessToken || null,
+      },
+    },
+  };
+  gateway.connect({ ...selected, computerName: settings.computerName });
   logger.info('已恢复上次的 Gateway 连接配置', {
-    gatewayUrl: settings.gatewayUrl,
+    profile: settings.activeProfile,
+    gatewayUrl: selected.gatewayUrl,
     computerName: settings.computerName,
   });
 }

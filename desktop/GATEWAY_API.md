@@ -316,7 +316,7 @@ payload：
 | `state`          | string              | 是   | 当前任务状态                                                                 |
 | `stage`          | string              | 是   | 展示阶段，不驱动状态机                                                       |
 | `summary`        | string              | 是   | 可展示摘要；自由文本先移除路径、凭据、代码块、diff 和堆栈，再截断到 120 字符 |
-| `result`         | TaskResult \| null  | 是   | 明确成功的终态提供本轮追问结果；其他事件可为空                              |
+| `result`         | TaskResult \| null  | 是   | 明确成功的终态提供本轮追问结果；其他事件可为空                               |
 | `error`          | PublicError \| null | 是   | 失败/中断错误；正常事件为 `null`                                             |
 | `thread_id`      | string \| null      | 是   | 本机实际执行的 Codex 会话 ID；未开始时为 `null`                              |
 | `turn_id`        | string \| null      | 是   | 本机实际执行的 Codex 轮次 ID；未开始时为 `null`                              |

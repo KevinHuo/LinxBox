@@ -630,6 +630,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 @media (min-width: 760px) {
   .pair-layout { grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr); }
   .home-grid { grid-template-columns: minmax(0, 1.2fr) minmax(250px, 0.8fr); }
+  .home-grid--device-only { grid-template-columns: 1fr; }
   .device-fig { flex-direction: row; justify-content: center; gap: 20px; text-align: left; }
   .device-fig figcaption { text-align: left; }
 }
@@ -696,33 +697,33 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     <!-- ===== 视图：未配对（默认） ===== -->
     <section class="view is-active" data-view="pair" aria-labelledby="pair-title">
       <div class="hero">
-        <h1 id="pair-title">把 Linx 设备与这台 Mac 配对</h1>
-        <p class="lede">配对后，Linx 设备与这台 Mac 建立安全连接。设备上的指令会同步到电脑，由你授权的 Agent 执行，任务状态与回复再同步回设备。Linx Box 常驻后台，不打断你的工作。</p>
+        <h1 id="pair-title">设置 WSS 连接</h1>
+        <p class="lede">先在「设置」中填写 Gateway WSS 地址、访问令牌和电脑名称并连接；设备 MAC 绑定是后续独立步骤，不与 WSS 配置混用。</p>
       </div>
       <div class="pair-layout">
         <div class="device-card">
           <ol class="steps">
             <li>
               <span class="step-no" aria-hidden="true">01</span>
-              <div class="step-txt"><strong>查看 MAC 地址</strong><span>在 Linx 设备上打开「设置 · 关于」，查看设备 MAC 地址</span></div>
+              <div class="step-txt"><strong>打开设置</strong><span>先配置 Gateway WSS 地址、访问令牌和电脑名称</span></div>
             </li>
             <li>
               <span class="step-no" aria-hidden="true">02</span>
-              <div class="step-txt"><strong>填写 MAC 地址</strong><span>在这台 Mac 上输入设备信息中的 MAC 地址</span></div>
+              <div class="step-txt"><strong>保存并连接</strong><span>确认 WSS 连接状态为已连接</span></div>
             </li>
             <li>
               <span class="step-no" aria-hidden="true">03</span>
-              <div class="step-txt"><strong>完成配对</strong><span>建立连接，LinxBox 开始常驻</span></div>
+              <div class="step-txt"><strong>绑定设备</strong><span>连接成功后再填写设备 MAC 地址</span></div>
             </li>
           </ol>
         </div>
 
         <div class="code-card">
-          <p>设备 MAC 地址 · 在 Linx 设备上查看</p>
+          <p>设备 MAC 地址 · WSS 连接后绑定</p>
           <div class="mac-field">
             <input id="mac-input" type="text" autocomplete="off" spellcheck="false" maxlength="17" placeholder="如 A4:C1:38:5B:2A:9E" aria-label="设备 MAC 地址" />
           </div>
-          <button class="btn btn-primary" id="btn-start" type="button" style="width:100%">开始配对</button>
+          <button class="btn btn-primary" id="btn-start" type="button" style="width:100%">绑定设备</button>
         </div>
       </div>
     </section>
@@ -748,28 +749,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
         <h1 id="home-title">已配对 · 设备在线</h1>
         <p class="lede">LinxBox 常驻后台运行中。关闭窗口不会断开连接，需要时从菜单栏或悬浮窗打开。</p>
       </div>
-      <div class="home-grid">
-        <div class="panel">
-          <div class="panel-head"><h2>最近任务</h2><span>来自设备的指令</span></div>
-          <ul class="task-list" aria-label="最近任务">
-            <li class="task-row tone-accent">
-              <i class="t-dot" aria-hidden="true"></i>
-              <div class="t-main"><strong>登录校验修复</strong><small>Codex · 工作电脑 · 第 2 轮</small></div>
-              <span class="t-status">运行中</span>
-            </li>
-            <li class="task-row tone-accent">
-              <i class="t-dot" aria-hidden="true"></i>
-              <div class="t-main"><strong>支付接口调整</strong><small>Claude Code · 工作电脑 · 第 1 轮</small></div>
-              <span class="t-status">等你回复</span>
-            </li>
-            <li class="task-row">
-              <i class="t-dot" aria-hidden="true"></i>
-              <div class="t-main"><strong>LinX 暖白界面</strong><small>Codex · 工作电脑 · 本轮结束</small></div>
-              <span class="t-status is-muted">本轮结束</span>
-            </li>
-          </ul>
-          <div class="note-line" style="margin-top:auto">新回复会以静默方式更新到悬浮窗，不弹窗打扰。</div>
-        </div>
+      <div class="home-grid home-grid--device-only">
         <div class="panel">
           <div class="panel-head"><h2>设备</h2><span>常驻</span></div>
           <div class="device-ok">
@@ -786,7 +766,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
             <li><span>配对时间</span><b>刚刚</b></li>
             <li><span>设备 MAC</span><b id="home-mac">—</b></li>
             <li><span>最近同步</span><b>30 秒前</b></li>
-            <li><span>待执行指令</span><b>0 条</b></li>
           </ul>
           <div class="btn-row" style="margin-top:auto;padding-top:16px">
             <button class="btn btn-danger" id="btn-unpair" type="button">退出配对</button>
@@ -808,10 +787,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
             <button class="seg-btn is-active" type="button" data-theme="warm">暖白</button>
             <button class="seg-btn" type="button" data-theme="dark">深色</button>
           </div>
-        </li>
-        <li>
-          <div class="s-txt"><strong>开机自启</strong><span>登录这台 Mac 时自动启动 Linx AI</span></div>
-          <button class="switch is-on" type="button" role="switch" aria-checked="true" data-switch="startup" aria-label="开机自启"></button>
         </li>
         <li>
           <div class="s-txt"><strong>悬浮窗</strong><span>桌面显示常驻小球，展示设备状态</span></div>
@@ -854,13 +829,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
         </li>
       </ul>
     </div>
-    <div class="fc-row"><span>设备</span><b><i aria-hidden="true"></i>Linx 设备 · 在线</b></div>
-    <div class="fc-row"><span>最近动态</span><b id="fc-last">登录校验修复 · 运行中</b></div>
-    <div class="fc-row"><span>待执行指令</span><b>0 条</b></div>
+    <div class="fc-row"><span>设备</span><b><i aria-hidden="true"></i>等待设备绑定</b></div>
+    <div class="fc-row"><span>配对时间</span><b>2026/10/25 19:41:06</b></div>
+    <div class="fc-row"><span>设备 MAC</span><b id="fc-device-mac">34:00:00:00:00:01</b></div>
+    <div class="fc-row"><span>最近同步</span><b>2026/10/25 19:41:06</b></div>
   </div>
   <div class="fc-actions">
     <button class="btn btn-primary" id="btn-open-main" type="button">打开主界面</button>
-    <button class="btn btn-quiet" id="btn-pause" type="button">暂停提醒</button>
+    <button class="btn btn-quiet" id="btn-quit" type="button">关闭应用</button>
   </div>
 </aside>
 <button class="float-ball" id="float-ball" type="button" aria-label="Linx AI 悬浮窗" aria-expanded="false">
@@ -882,7 +858,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     paused: false,
     pairingTimer: null,
     unpairArmed: false,
-    switches: { startup: true, float: true }
+    switches: { float: true }
   };
 
   var views = document.querySelectorAll(".view");
@@ -1009,15 +985,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     go(state.paired ? "home" : "pair");
   }
 
-  function togglePause() {
-    state.paused = !state.paused;
-    var btn = document.getElementById("btn-pause");
-    btn.textContent = state.paused ? "恢复提醒" : "暂停提醒";
-    floatBall.classList.toggle("is-paused", state.paused);
-    document.getElementById("fc-last").textContent = state.paused
-      ? "已暂停 · 不再提醒动态"
-      : "登录校验修复 · 运行中";
-    toast(state.paused ? "已暂停提醒 · 设备动态不再弹出" : "已恢复提醒");
+  function quitApp() {
+    toast("已关闭 Linx AI");
   }
 
   /* 悬浮球拖拽（指针事件，区分点击与拖动） */
@@ -1054,8 +1023,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
       state.switches[key] = !state.switches[key];
       sw.classList.toggle("is-on", state.switches[key]);
       sw.setAttribute("aria-checked", state.switches[key] ? "true" : "false");
-      toast(key === "startup" ? (state.switches[key] ? "已开启开机自启" : "已关闭开机自启")
-          : (state.switches[key] ? "已开启悬浮窗" : "已关闭悬浮窗"));
+      toast(state.switches[key] ? "已开启悬浮窗" : "已关闭悬浮窗");
     });
   });
 
@@ -1064,7 +1032,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   document.getElementById("btn-cancel").addEventListener("click", cancelPair);
   document.getElementById("btn-unpair").addEventListener("click", unpair);
   document.getElementById("btn-open-main").addEventListener("click", openMain);
-  document.getElementById("btn-pause").addEventListener("click", togglePause);
+  document.getElementById("btn-quit").addEventListener("click", quitApp);
 
   /* 悬浮卡：应用选择器 */
   var fcApp = document.getElementById("fc-app");

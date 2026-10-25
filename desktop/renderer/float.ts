@@ -8,14 +8,7 @@
  * Dragging the ball is reported to the main process, which owns the real
  * window position and clamps it into the display work area.
  */
-import {
-  getBridge,
-  pendingTaskCount,
-  taskRows,
-  type ConnectionFacts,
-  type ProjectFacts,
-  type TaskFacts,
-} from './view-model.js';
+import { getBridge, type ConnectionFacts } from './view-model.js';
 
 const bridge = getBridge();
 
@@ -28,9 +21,23 @@ const state = {
     gatewayUrl: null,
     tokenHint: null,
     computerName: null,
+    activeProfile: 'online',
+    profiles: {
+      local: {
+        gatewayUrl: 'ws://127.0.0.1:8787/v1/clients/connect',
+        tokenHint: 'demo…oken',
+      },
+      online: {
+        gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
+        tokenHint: null,
+      },
+    },
   } as ConnectionFacts,
-  projects: [] as ProjectFacts[],
-  tasks: [] as TaskFacts[],
+  device: {
+    mac: null as string | null,
+    pairedAt: null as string | null,
+    syncedAt: null as string | null,
+  },
 };
 
 const qs = <T extends Element>(selector: string): T | null => document.querySelector<T>(selector);
@@ -55,25 +62,35 @@ function setOpen(open: boolean): void {
   qs('#float-ball')?.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
-/** Render the device row, the last activity and the pending count. */
+const deviceStorageKey = 'linxbox.device.facts';
+
+function formatDeviceDate(value: string | null): string {
+  return value === null ? '—' : new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
+function readDeviceFacts(): void {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null');
+    if (value && typeof value === 'object') state.device = value;
+  } catch {
+    // Ignore unavailable or malformed renderer storage.
+  }
+}
+
+/** Render the device rows shared with the main window. */
 function renderStatus(): void {
+  const deviceBound = state.device.mac !== null;
+  const deviceOnline = state.connection.connected && deviceBound;
   const device = qs('#fc-device');
   if (device) {
-    device.textContent = state.connection.connected ? '灵矽设备 · 在线' : '灵矽设备 · 等待';
+    device.textContent = deviceOnline ? '灵矽设备 · 在线' : '等待设备绑定';
   }
   const dot = qs('.fc-row b i');
-  dot?.classList.toggle('is-on', state.connection.connected);
+  dot?.classList.toggle('is-on', deviceOnline);
 
-  const rows = taskRows(state.tasks, state.projects);
-  const last = qs('#fc-last');
-  if (last) {
-    last.textContent = state.paused ? '已暂停 · 不再提醒动态' : (rows[0]?.title ?? '暂无任务');
-  }
-
-  const pending = qs('#fc-pending');
-  if (pending) {
-    pending.textContent = `${pendingTaskCount(state.tasks)} 条`;
-  }
+  qs('#fc-paired-at')!.textContent = formatDeviceDate(state.device.pairedAt);
+  qs('#fc-device-mac')!.textContent = state.device.mac ?? '—';
+  qs('#fc-synced-at')!.textContent = formatDeviceDate(state.device.syncedAt);
 }
 
 /** Read the local facts the panel shows. */
@@ -88,22 +105,6 @@ async function refresh(): Promise<void> {
     const result = connection as { ok: boolean; data?: unknown };
     if (result.ok && result.data && typeof result.data === 'object') {
       state.connection = result.data as ConnectionFacts;
-    }
-  }
-
-  const projects = await bridge.listProjects();
-  if (projects && typeof projects === 'object' && 'ok' in projects) {
-    const result = projects as { ok: boolean; data?: unknown };
-    if (result.ok && Array.isArray(result.data)) {
-      state.projects = result.data as ProjectFacts[];
-    }
-  }
-
-  const tasks = await bridge.listTasks({ limit: 20 });
-  if (tasks && typeof tasks === 'object' && 'ok' in tasks) {
-    const result = tasks as { ok: boolean; data?: unknown };
-    if (result.ok && Array.isArray(result.data)) {
-      state.tasks = result.data as TaskFacts[];
     }
   }
 
@@ -216,16 +217,9 @@ async function reportPosition(x: number, y: number): Promise<void> {
   await bridge.moveFloatWindow({ x, y });
 }
 
-/** Toggle the reminder pause. */
-function togglePause(): void {
-  state.paused = !state.paused;
-  const button = qs('#btn-pause');
-  if (button) {
-    button.textContent = state.paused ? '恢复提醒' : '暂停提醒';
-  }
-  qs('#float-ball')?.classList.toggle('is-paused', state.paused);
-  renderStatus();
-  showToast(state.paused ? '已暂停提醒 · 设备动态不再弹出' : '已恢复提醒');
+/** Quit the whole Electron application, including the floating window. */
+function quitApp(): void {
+  void bridge?.quitApp();
 }
 
 /** Wire the panel controls. */
@@ -235,7 +229,7 @@ function wireEvents(): void {
     void bridge?.focusMainWindow();
   });
 
-  qs('#btn-pause')?.addEventListener('click', togglePause);
+  qs('#btn-quit')?.addEventListener('click', quitApp);
 
   const appButton = qs('#fc-app');
   const appList = qs('#fc-app-list');
@@ -244,12 +238,26 @@ function wireEvents(): void {
     appButton.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 
+  appList?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest('[data-app]')) return;
+    appList.classList.remove('is-open');
+    appButton?.setAttribute('aria-expanded', 'false');
+  });
+
   wireDrag();
+  window.addEventListener('storage', (event) => {
+    if (event.key === deviceStorageKey) {
+      readDeviceFacts();
+      renderStatus();
+    }
+  });
 }
 
 /** Boot the panel. */
 async function main(): Promise<void> {
   wireEvents();
+  readDeviceFacts();
   await refresh();
   window.setInterval(() => {
     void refresh();
