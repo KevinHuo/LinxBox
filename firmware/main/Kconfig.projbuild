@@ -1,15 +1,49 @@
-menu "LinX 灵矽语音"
+menu "LinX 网络与语音"
+
+    config LINX_GATEWAY_ENABLE
+        bool "启用 Gateway 会话与请求界面"
+        default n
+        help
+            从已认证 WSS 读取会话、历史与正文，按通知刷新。
+            录音前固定目标，灵矽 Agent 通过 MCP 发送；设备不上传识别文字。
+            未配置时显示真实错误，不回退演示。
+            灵矽 ASR 固定路由与逐轮请求 ID 透传仍需平台联调。
+
+    config LINX_GATEWAY_URL
+        string "Gateway WebSocket 地址"
+        depends on LINX_GATEWAY_ENABLE
+        default ""
+        help
+            使用 wss:// 地址，校验证书和主机名；不把 MAC 作为认证凭据。
+            开发服务使用 ws:// 时须显式打开 LINX_GATEWAY_ALLOW_WS。
+
+    config LINX_GATEWAY_ALLOW_WS
+        bool "允许 Gateway 使用明文 WS"
+        depends on LINX_GATEWAY_ENABLE
+        default n
+        help
+            仅供明确使用 ws:// 的开发服务，设备令牌和协议内容不会加密。
+            默认关闭；WSS 继续校验证书和主机名，灵矽语音仍只使用 WSS。
+
+    config LINX_GATEWAY_TOKEN
+        string "Gateway 设备令牌"
+        depends on LINX_GATEWAY_ENABLE
+        default ""
+        help
+            仅填写令牌，不加 Bearer 前缀。由设备配置注入，不写日志。
+            本机 sdkconfig 及固件可能包含凭据，不应公开分享。
 
     config LINX_VOICE_ENABLE
         bool "在语音页启用真实灵矽对话"
         default y
         help
             进入语音页时连接 Wi-Fi 和灵矽，使用麦克风采集并播放智能体回复。
-            关闭后保留离线界面演示，不启动网络和音频。
+            未启用 Gateway 时，关闭本项保留离线界面，不启动网络和音频。
+            Gateway 模式共用设备运行，按服务端准备结果开启单轮录音。
 
     config LINX_WIFI_SSID
         string "开发用 Wi-Fi 名称（无已保存网络时回退）"
-        depends on LINX_VOICE_ENABLE
+        depends on LINX_VOICE_ENABLE || LINX_GATEWAY_ENABLE
         default ""
         help
             日常使用通过设备设置打开手机网页配网，选择网络并输入密码。
@@ -17,7 +51,7 @@ menu "LinX 灵矽语音"
 
     config LINX_WIFI_PASSWORD
         string "开发用 Wi-Fi 密码"
-        depends on LINX_VOICE_ENABLE
+        depends on LINX_VOICE_ENABLE || LINX_GATEWAY_ENABLE
         default ""
         help
             本机 sdkconfig 和生成的固件会包含此配置，不应分享这些文件。

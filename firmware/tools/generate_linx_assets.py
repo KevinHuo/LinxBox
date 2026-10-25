@@ -161,6 +161,96 @@ def verify_font(path: Path, size: int, weight: str, points: list[int]) -> None:
     assert offset == len(emitted), f"{path.name}: trailing bitmap bytes"
 
 
+def remote_font_outputs(points: list[int]) -> dict[Path, str]:
+    """One shared Bold 4bpp font; preserve small-display metrics and smooth strokes."""
+    font_source = FONT_SOURCES["Bold"]["path"]
+    with TTFont(font_source) as source_font:
+        supported = set(source_font.getBestCmap())
+    # Noto CJK has no U+FFFD cmap entry. Its .notdef glyph is our explicit
+    # replacement bitmap; the original network string is never rewritten.
+    supported.add(0xFFFD)
+    requested = set(points) | set(range(32, 127)) | {0xFFFD}
+    for first, last in ((0xA0, 0x100), (0x2000, 0x2070), (0x3000, 0x3040),
+                        (0x4E00, 0xA000), (0xFF00, 0xFFF0)):
+        requested.update(range(first, last))
+    font = ImageFont.truetype(str(font_source), 16)
+    # Vertical Japanese marks / a few accents exceed the fixed 20px viewport.
+    # Leave them to the visible replacement glyph; never crop their bitmaps.
+    outside_layout = {cp for cp in requested & supported
+                      if font.getbbox(chr(cp), anchor="ls")[1] < -15
+                      or font.getbbox(chr(cp), anchor="ls")[3] > 5}
+    assert not outside_layout & set(range(0x4E00, 0xA000))
+    inventory = sorted((requested & supported) - outside_layout)
+    bitmap = bytearray()
+    descriptors = ["    {0},"]
+    ascent = descent = 0
+    for cp in inventory:
+        pixels, (advance, width, height, x, y) = raster(font, cp)
+        ascent, descent = max(ascent, height + y), max(descent, -y)
+        descriptors.append(f"    {{.bitmap_index={len(bitmap)}, .adv_w={advance}, "
+                           f".box_w={width}, .box_h={height}, .ofs_x={x}, .ofs_y={y}}},")
+        if len(pixels) % 2:
+            pixels += b"\0"
+        bitmap.extend((pixels[i] << 4) | pixels[i + 1] for i in range(0, len(pixels), 2))
+    # The 4bpp bitmap requires LVGL's large descriptor offsets on target and host.
+    assert len(bitmap) <= 4 * 1024 * 1024, "Remote font exceeds the 4 MiB bitmap budget"
+    assert ascent <= 15 and descent <= 5, (ascent, descent)
+    source = ('/* Generated Noto Sans CJK SC Bold; SIL OFL 1.1 (OFL.txt). */\n'
+              '#include "lvgl.h"\n'
+              '#if !LV_FONT_FMT_TXT_LARGE\n'
+              '#error "Remote Bold 4bpp font requires LV_FONT_FMT_TXT_LARGE"\n'
+              '#endif\n\n') + byte_array("glyph_bitmap", bitmap)
+    source += "static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {\n"
+    source += "\n".join(descriptors) + "\n};\n"
+    source += "static const uint16_t unicode_list[] = {" + ",".join(
+        str(cp - inventory[0]) for cp in inventory) + "};\n"
+    source += (
+        "static const lv_font_fmt_txt_cmap_t cmaps[] = {{\n"
+        f"    .range_start={inventory[0]}, .range_length={inventory[-1] - inventory[0] + 1},\n"
+        f"    .glyph_id_start=1, .unicode_list=unicode_list, .list_length={len(inventory)},\n"
+        "    .type=LV_FONT_FMT_TXT_CMAP_SPARSE_TINY\n}};\n"
+        "static const lv_font_fmt_txt_dsc_t font_dsc = {\n"
+        "    .glyph_bitmap=glyph_bitmap, .glyph_dsc=glyph_dsc, .cmaps=cmaps,\n"
+        "    .cmap_num=1, .bpp=4, .bitmap_format=0\n};\n"
+        "const lv_font_t linx_font_remote_16 = {\n"
+        "    .get_glyph_dsc=lv_font_get_glyph_dsc_fmt_txt,\n"
+        "    .get_glyph_bitmap=lv_font_get_bitmap_fmt_txt,\n"
+        "    .line_height=20, .base_line=5, .dsc=&font_dsc,\n"
+        "    .underline_position=-2, .underline_thickness=1\n};\n")
+    # Decode every emitted nibble independently; verify all antialiased raster pixels.
+    offset = 0
+    for cp in inventory:
+        pixels, _ = raster(font, cp)
+        count = (len(pixels) + 1) // 2
+        packed = bitmap[offset:offset + count]
+        decoded = [value for byte in packed for value in (byte >> 4, byte & 15)]
+        assert decoded[:len(pixels)] == list(pixels)
+        assert not any(decoded[len(pixels):]), "Remote font padding must be zero"
+        offset += count
+    assert offset == len(bitmap)
+    inventory_text = "".join(f"{cp:04X}\n" for cp in inventory)
+    manifest = {
+        "font": "Noto Sans CJK SC Bold", "source_sha256": FONT_SOURCES["Bold"]["sha256"],
+        "license": "SIL Open Font License 1.1", "license_file": "OFL.txt",
+        "inventory": "codepoints-remote.txt",
+        "inventory_sha256": hashlib.sha256(inventory_text.encode()).hexdigest(),
+        "source_file": "linx_font_remote_16.c",
+        "generated_sha256": hashlib.sha256(source.encode()).hexdigest(),
+        "codepoint_count": len(inventory), "cjk_count": sum(0x4E00 <= cp <= 0x9FFF for cp in inventory),
+        "unsupported_basic_cjk": [f"{cp:04X}" for cp in sorted(set(range(0x4E00, 0xA000)) - supported)],
+        "outside_layout": [f"{cp:04X}" for cp in sorted(outside_layout)],
+        "size": 16, "weight_class": 700, "bpp": 4, "bitmap_bytes": len(bitmap),
+        "bitmap_budget_bytes": 4 * 1024 * 1024, "large_format": True,
+        "line_height": 20, "base_line": 5, "glyph_ascent": ascent, "glyph_descent": descent,
+        "format": "LVGL plain 4bpp, high nibble first, byte-aligned glyphs",
+        "replacement": "FFFD",
+        "replacement_source": "Noto glyph 0 (.notdef)",
+    }
+    return {FONTS / "linx_font_remote_16.c": source,
+            FONTS / "codepoints-remote.txt": inventory_text,
+            FONTS / "remote-manifest.json": json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"}
+
+
 def illustration(kind: int) -> Image.Image:
     image = Image.new("RGB", (240, 320), PAPER)
     draw = ImageDraw.Draw(image)
@@ -306,6 +396,7 @@ def main() -> None:
     assert image_bytes <= 640 * 1024
     assert sum(sizes.values()) <= 1024 * 1024
     outputs[FONTS / "manifest.json"] = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    outputs.update(remote_font_outputs(points))
     for path, text in outputs.items():
         if args.check:
             if not path.exists() or path.read_text() != text:

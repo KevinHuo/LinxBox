@@ -59,6 +59,7 @@ typedef struct {
     char host[128];
     char path[LINX_URL_CAPACITY];
     int port;
+    bool tls;
 } linx_endpoint_t;
 
 /* 所有消息受同一容量上限约束；一个 WebSocket 包允许多次读取和 continuation。 */
@@ -80,8 +81,14 @@ bool linx_build_ota(char *out, size_t capacity, const linx_device_info_t *device
 linx_gateway_result_t linx_parse_gateway(const char *json, size_t size,
                                                      linx_gateway_t *out);
 bool linx_parse_endpoint(const char *url, linx_endpoint_t *out);
+/* 仅 Gateway 可显式允许明文 WS；灵矽继续使用严格 WSS 入口。 */
+bool linx_parse_gateway_endpoint(const char *url, bool allow_ws, linx_endpoint_t *out);
 bool linx_build_hello(char *out, size_t capacity, const linx_reply_context_t *context);
 bool linx_build_listen(char *out, size_t capacity, const char *session_id, bool start);
+/* 仅传递本轮编号元数据，可信 MCP 透传能力须单独验收。 */
+bool linx_build_listen_request(char *out, size_t capacity, const char *session_id,
+                               const char *request_id);
+bool linx_protocol_id_valid(const char *id);
 bool linx_build_abort(char *out, size_t capacity, const char *session_id);
 bool linx_parse_message(const char *json, size_t size, linx_message_t *out);
 void linx_receiver_init(linx_receiver_t *receiver);

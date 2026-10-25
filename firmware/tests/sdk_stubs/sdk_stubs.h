@@ -15,6 +15,16 @@ typedef int esp_err_t;
 #define CONFIG_LINX_WIFI_SSID test_ssid
 #define CONFIG_LINX_WIFI_PASSWORD test_password
 #define CONFIG_LWIP_SNTP_MAX_SERVERS 3
+#ifdef LINX_GATEWAY_TRANSPORT_TEST
+#define CONFIG_LINX_GATEWAY_ENABLE test_gateway_enable
+#define CONFIG_LINX_GATEWAY_ALLOW_WS test_gateway_allow_ws
+#define CONFIG_LINX_GATEWAY_URL test_gateway_url
+#define CONFIG_LINX_GATEWAY_TOKEN test_gateway_token
+extern bool test_gateway_enable;
+extern bool test_gateway_allow_ws;
+extern const char *test_gateway_url;
+extern const char *test_gateway_token;
+#endif
 extern const char *test_ssid;
 extern const char *test_password;
 
@@ -39,6 +49,7 @@ BaseType_t xQueueOverwrite(QueueHandle_t queue, const void *data);
 BaseType_t xQueueReceive(QueueHandle_t queue, void *data, TickType_t wait);
 BaseType_t xTaskCreate(void (*function)(void *), const char *name, uint32_t stack, void *user, UBaseType_t priority, void *handle);
 void vTaskDelay(TickType_t ticks);
+void vTaskDelete(void *task);
 
 typedef const char *esp_event_base_t;
 #define ESP_EVENT_DEFINE_BASE(name) esp_event_base_t name = #name;
@@ -160,6 +171,7 @@ typedef enum {WS_TRANSPORT_OPCODES_CONT = 0, WS_TRANSPORT_OPCODES_TEXT = 1,
 typedef struct { const char *ws_path; const char *sub_protocol; const char *user_agent;
     const char *headers; const char *auth; bool propagate_control_frames; } esp_transport_ws_config_t;
 esp_transport_handle_t esp_transport_ssl_init(void);
+esp_transport_handle_t esp_transport_tcp_init(void);
 void esp_transport_ssl_crt_bundle_attach(esp_transport_handle_t transport, esp_err_t (*attach)(void *));
 esp_transport_handle_t esp_transport_ws_init(esp_transport_handle_t parent);
 esp_err_t esp_transport_ws_set_config(esp_transport_handle_t transport, const esp_transport_ws_config_t *config);
@@ -174,7 +186,9 @@ int esp_transport_ws_get_read_payload_len(esp_transport_handle_t transport);
 bool esp_transport_ws_get_fin_flag(esp_transport_handle_t transport);
 typedef int esp_log_level_t;
 #define ESP_LOG_NONE 0
+#ifndef ESP_LOGI
 #define ESP_LOGI(...) ((void)0)
+#endif
 #ifndef ESP_LOGW
 #define ESP_LOGW(...) ((void)0)
 #endif

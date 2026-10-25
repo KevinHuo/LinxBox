@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - "firmware/**"
+      - "contracts/**"
       - ".github/workflows/firmware.yml"
   push:
     paths:
       - "firmware/**"
+      - "contracts/**"
       - ".github/workflows/firmware.yml"
   workflow_dispatch:
 
@@ -47,10 +49,27 @@ jobs:
           command: |
             set -e
             cd firmware
-            ./tools/validate.sh --firmware
+            LINX_GATEWAY_BUILD=on ./tools/validate.sh --firmware
             apt-get update
             apt-get install -y --no-install-recommends clang-18 llvm-18 libclang-rt-18-dev
             CLANG=/usr/bin/clang-18 CLANGXX=/usr/bin/clang++-18 LLVM_COV=/usr/bin/llvm-cov-18 LLVM_PROFDATA=/usr/bin/llvm-profdata-18 ./tools/validate_coverage.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: gateway/go.mod
+      - name: 验证真实 TLS mock、LVGL 展示与共享协议报文
+        env:
+          LINX_GATEWAY_TEST_OUTPUT: ${{ runner.temp }}/linxbox-gateway-mock
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/pip install -r contracts/requirements.txt
+          binaries=(firmware/build/coverage/run.*/host/linx_gateway_host)
+          [[ ${#binaries[@]} -eq 1 ]]
+          LINX_CONTRACT_PYTHON="$PWD/.venv/bin/python" ./firmware/tools/validate_gateway_mock.sh "$PWD/${binaries[0]}"
+          LINX_CONTRACT_PYTHON="$PWD/.venv/bin/python" ./firmware/tools/validate_go_gateway.sh "$PWD/${binaries[0]}"
       - name: 展示固件覆盖率摘要
         if: ${{ !cancelled() }}
         run: |
@@ -90,3 +109,10 @@ jobs:
             firmware/build/coverage/run.*/coverage.json
             firmware/build/coverage/run.*/summary.json
             firmware/build/coverage/run.*/report.txt
+      - name: 保存 Gateway 联调日志
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: firmware-gateway-traces
+          retention-days: 14
+          path: ${{ runner.temp }}/linxbox-gateway-mock/

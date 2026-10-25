@@ -24,6 +24,8 @@ run_static_checks() (
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_prepare_upstream.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_c_coverage.py
+    python3 tools/generate_gateway_contract.py --check
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_gateway_contract.py
 
     actionlint_bin="${ACTIONLINT_BIN:-}"
     if [[ -z "${actionlint_bin}" ]]; then
@@ -91,10 +93,13 @@ EOF
     local scenarios
     local variant
     local runtime_flags
-    for variant in offline voice; do
+    for variant in offline voice gateway gateway_only; do
         runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main")
-        if [[ "${variant}" == "voice" ]]; then
+        if [[ "${variant}" == "voice" || "${variant}" == "gateway" ]]; then
             runtime_flags+=(-DCONFIG_LINX_VOICE_ENABLE=1)
+        fi
+        if [[ "${variant}" == gateway* ]]; then
+            runtime_flags+=(-DCONFIG_LINX_GATEWAY_ENABLE=1)
         fi
         "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain "${runtime_flags[@]}" \
             tests/test_main_runtime.c main/main.c main/linx_input.c \
@@ -110,6 +115,14 @@ EOF
         tests/test_linx_protocol.c main/linx_protocol.c \
         "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_protocol"
     "${test_dir}/test_linx_protocol"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Imain -I"${cjson_dir}" \
+        tests/test_linx_gateway_client.c "${test_dir}/cJSON.o" \
+        -lm -o "${test_dir}/test_linx_gateway_client"
+    "${test_dir}/test_linx_gateway_client" ../contracts/fixtures/firmware-gateway.json ../contracts/fixtures/boundaries.json
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Imain -Itests/sdk_stubs -I"${cjson_dir}" \
+        tests/test_linx_gateway_transport.c main/linx_protocol.c "${test_dir}/cJSON.o" \
+        -lm -o "${test_dir}/test_linx_gateway_transport"
+    "${test_dir}/test_linx_gateway_transport"
     "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
         -Imain -I"${cjson_dir}" \
         tests/test_linx_device.c main/linx_protocol.c main/linx_wifi.c \
@@ -126,6 +139,7 @@ EOF
 
 run_firmware_checks() (
     local validation_build_dir
+    local validation_defaults
 
     if ! command -v idf.py >/dev/null 2>&1; then
         echo "错误：未找到 idf.py，请先激活 ESP-IDF 5.5.3。" >&2
@@ -134,8 +148,19 @@ run_firmware_checks() (
 
     validation_build_dir="$(mktemp -d /tmp/ai-passport-firmware.XXXXXX)"
     trap 'case "${validation_build_dir}" in /tmp/ai-passport-firmware.*) rm -rf -- "${validation_build_dir}" ;; esac' EXIT
-
-    SDKCONFIG_DEFAULTS="${repo_root}/sdkconfig.defaults" \
+    validation_defaults="${repo_root}/sdkconfig.defaults"
+    case "${LINX_GATEWAY_BUILD:-off}" in
+        off) ;;
+        on|only)
+            echo 'CONFIG_LINX_GATEWAY_ENABLE=y' > "${validation_build_dir}/gateway.defaults"
+            if [[ "${LINX_GATEWAY_BUILD}" == only ]]; then
+                echo '# CONFIG_LINX_VOICE_ENABLE is not set' >> "${validation_build_dir}/gateway.defaults"
+            fi
+            validation_defaults+=";${validation_build_dir}/gateway.defaults"
+            ;;
+        *) echo "LINX_GATEWAY_BUILD 只接受 off、on、only" >&2; return 2 ;;
+    esac
+    SDKCONFIG_DEFAULTS="${validation_defaults}" \
         idf.py -B "${validation_build_dir}" \
         -D "SDKCONFIG=${validation_build_dir}/sdkconfig" build
     idf.py -B "${validation_build_dir}" merge-bin \

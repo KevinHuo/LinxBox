@@ -110,13 +110,20 @@ bool linx_build_ota(char *out, size_t capacity, const linx_device_info_t *device
 
 bool linx_parse_endpoint(const char *url, linx_endpoint_t *out)
 {
+    return linx_parse_gateway_endpoint(url, false, out);
+}
+
+bool linx_parse_gateway_endpoint(const char *url, bool allow_ws, linx_endpoint_t *out)
+{
     if (out == NULL) return false;
     memset(out, 0, sizeof(*out));
-    if (url == NULL || !bounded_string(url, LINX_URL_CAPACITY, false) || strncmp(url, "wss://", 6) != 0) return false;
+    if (url == NULL || !bounded_string(url, LINX_URL_CAPACITY, false)) return false;
+    bool tls = strncmp(url, "wss://", 6) == 0;
+    if (!tls && (!allow_ws || strncmp(url, "ws://", 5) != 0)) return false;
     for (const char *p = url; *p != '\0'; ++p) {
         if (*p == '@' || *p == '#' || *p == ' ' || (unsigned char)*p >= 0x7fU) return false;
     }
-    const char *host = url + 6;
+    const char *host = url + (tls ? 6 : 5);
     const char *end = host + strcspn(host, "/?:");
     size_t host_size = (size_t)(end - host);
     if (host_size == 0U || host_size >= sizeof(out->host)) return false;
@@ -125,7 +132,7 @@ bool linx_parse_endpoint(const char *url, linx_endpoint_t *out)
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
               (c >= '0' && c <= '9') || c == '-' || c == '.')) return false;
     }
-    int port = 443;
+    int port = tls ? 443 : 80;
     if (*end == ':') {
         port = 0;
         const char *digits = ++end;
@@ -140,6 +147,7 @@ bool linx_parse_endpoint(const char *url, linx_endpoint_t *out)
     if (written < 0 || (size_t)written >= sizeof(out->path)) return false;
     memcpy(out->host, host, host_size);
     out->port = port;
+    out->tls = tls;
     return true;
 }
 
@@ -215,7 +223,7 @@ bool linx_build_hello(char *out, size_t capacity, const linx_reply_context_t *co
     return finish_json(out, capacity, root, valid);
 }
 
-static bool build_control(char *out, size_t capacity, const char *session, const char *state)
+static bool build_control(char *out, size_t capacity, const char *session, const char *state, const char *request_id)
 {
     if (!output_ready(out, capacity)) return false;
     if (!bounded_string(session, LINX_SESSION_CAPACITY, true)) return false;
@@ -227,17 +235,54 @@ static bool build_control(char *out, size_t capacity, const char *session, const
         valid &= cJSON_AddStringToObject(root, "state", state) != NULL;
         if (strcmp(state, "start") == 0) valid &= cJSON_AddStringToObject(root, "mode", "manual") != NULL;
     }
+    if (request_id) valid &= cJSON_AddStringToObject(root, "request_id", request_id) != NULL;
     return finish_json(out, capacity, root, valid);
 }
 
 bool linx_build_listen(char *out, size_t capacity, const char *session_id, bool start)
 {
-    return build_control(out, capacity, session_id, start ? "start" : "stop");
+    return build_control(out, capacity, session_id, start ? "start" : "stop", NULL);
+}
+
+/* 契约 ID 上限为 128 个 Unicode 码点、512 个 UTF-8 字节。 */
+bool linx_protocol_id_valid(const char *id)
+{
+    if (!id) return false;
+    const char *end = memchr(id, 0, 513U);
+    if (!end || end == id) return false;
+    size_t count = 0;
+    const unsigned char *cursor = (const unsigned char *)id;
+    while (cursor < (const unsigned char *)end) {
+        unsigned byte = *cursor++;
+        unsigned remaining = 0;
+        uint32_t value = byte;
+        uint32_t minimum = 0;
+        if (byte >= 0xc2U && byte <= 0xdfU) { remaining = 1; value &= 0x1fU; minimum = 0x80U; }
+        else if (byte >= 0xe0U && byte <= 0xefU) { remaining = 2; value &= 0x0fU; minimum = 0x800U; }
+        else if (byte >= 0xf0U && byte <= 0xf4U) { remaining = 3; value &= 7U; minimum = 0x10000U; }
+        else if (byte >= 0x80U || byte < 0x20U || byte == 0x7fU) return false;
+        if ((size_t)((const unsigned char *)end - cursor) < remaining) return false;
+        for (unsigned i = 0; i < remaining; ++i) {
+            if ((*cursor & 0xc0U) != 0x80U) return false;
+            value = (value << 6U) | (*cursor++ & 0x3fU);
+        }
+        if (value < minimum || value > 0x10ffffU || (value >= 0xd800U && value <= 0xdfffU)) return false;
+        if (++count > 128U) return false;
+    }
+    return true;
+}
+
+bool linx_build_listen_request(char *out, size_t capacity, const char *session_id,
+                               const char *request_id)
+{
+    if (!request_id || !request_id[0]) return linx_build_listen(out, capacity, session_id, true);
+    if (!output_ready(out, capacity) || !linx_protocol_id_valid(request_id)) return false;
+    return build_control(out, capacity, session_id, "start", request_id);
 }
 
 bool linx_build_abort(char *out, size_t capacity, const char *session_id)
 {
-    return build_control(out, capacity, session_id, NULL);
+    return build_control(out, capacity, session_id, NULL, NULL);
 }
 
 static bool number_is(const cJSON *object, const char *name, double expected)

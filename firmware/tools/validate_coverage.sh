@@ -63,10 +63,13 @@ compile_test test_linx_reader tests/test_linx_reader.c main/linx_reader.c main/l
 for test in test_linx_input test_linx_input_settings test_linx_wifi test_linx_demo test_linx_navigation test_linx_reader; do
     "${run_dir}/${test}"
 done
-for variant in offline voice; do
+for variant in offline voice gateway gateway_only; do
     runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main")
-    if [[ "${variant}" == "voice" ]]; then
+    if [[ "${variant}" == "voice" || "${variant}" == "gateway" ]]; then
         runtime_flags+=(-DCONFIG_LINX_VOICE_ENABLE=1)
+    fi
+    if [[ "${variant}" == gateway* ]]; then
+        runtime_flags+=(-DCONFIG_LINX_GATEWAY_ENABLE=1)
     fi
     compile_test "test_main_runtime_${variant}" "${runtime_flags[@]}" \
         tests/test_main_runtime.c main/main.c main/linx_input.c
@@ -80,6 +83,12 @@ done
 compile_test test_linx_protocol -I"${cjson_dir}" \
     tests/test_linx_protocol.c main/linx_protocol.c "${run_dir}/cJSON.o" -lm
 "${run_dir}/test_linx_protocol"
+compile_test test_linx_gateway_client -I"${cjson_dir}" \
+    tests/test_linx_gateway_client.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_gateway_client" ../contracts/fixtures/firmware-gateway.json ../contracts/fixtures/boundaries.json
+compile_test test_linx_gateway_transport -Itests/sdk_stubs -I"${cjson_dir}" \
+    tests/test_linx_gateway_transport.c main/linx_protocol.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_gateway_transport"
 compile_test test_linx_device -Itests/sdk_stubs \
     -I"${cjson_dir}" \
     tests/test_linx_device.c main/linx_protocol.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm

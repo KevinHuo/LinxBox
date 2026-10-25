@@ -58,6 +58,10 @@ typedef struct {
     linx_reply_context_t context;
     linx_wifi_network_t wifi_network;
     char wifi_password[LINX_WIFI_PASSWORD_CAPACITY];
+    /* 仅本轮 listen.start 元数据；不直传识别结果，也不代替可信平台透传。 */
+    char gateway_request_id[513];
+    /* 真实 Gateway 目标；连接复用比较该值，不比较每轮 request_id。 */
+    char gateway_agent_session_id[513];
 } linx_voice_request_t;
 
 typedef struct {
