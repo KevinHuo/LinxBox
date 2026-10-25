@@ -12,12 +12,16 @@ import { z } from 'zod';
 
 export {
   IPC_CHANNELS,
+  IPC_EVENT_CHANNELS,
+  IPC_EVENT_CHANNEL_LIST,
   IPC_METHODS,
   IPC_NAMESPACE,
   IPC_VERSION,
   channelFor,
   isAllowedChannel,
+  isAllowedEventChannel,
   type IpcChannel,
+  type IpcEventChannel,
   type IpcMethod,
 } from './ipc-channels.js';
 
@@ -218,6 +222,22 @@ export interface ConnectionView {
   readonly tokenHint: string | null;
   readonly computerName: string | null;
 }
+
+/**
+ * The live part of the connection state.
+ *
+ * The main process reports what the Gateway client actually knows: whether the
+ * socket is up, and the last error it hit.
+ */
+export interface GatewayStatusView {
+  readonly configured: boolean;
+  readonly connected: boolean;
+  readonly lastError: string | null;
+  readonly lastActivityAt: string | null;
+}
+
+/** The connection facts and the live status together. */
+export interface ConnectionStateView extends ConnectionView, GatewayStatusView {}
 
 /**
  * A locally authorised project.

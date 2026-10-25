@@ -22,6 +22,7 @@ import {
   type AppView,
   type ConnectionFacts,
   type FloatFacts,
+  type GatewayStatusFacts,
   type ProjectFacts,
   type TaskFacts,
 } from './view-model.js';
@@ -37,6 +38,12 @@ const state = {
     tokenHint: null,
     computerName: null,
   } as ConnectionFacts,
+  gateway: {
+    configured: false,
+    connected: false,
+    lastError: null,
+    lastActivityAt: null,
+  } as GatewayStatusFacts,
   projects: [] as ProjectFacts[],
   tasks: [] as TaskFacts[],
   appearance: { theme: 'warm' } as AppearanceFacts,
@@ -169,12 +176,46 @@ function renderSettings(): void {
   });
 }
 
+/** Render the Gateway connection block on the settings view. */
+function renderConnection(): void {
+  const pill = qs('#conn-status');
+  const text = qs('#conn-status-text');
+  const online = state.gateway.connected;
+  pill?.classList.toggle('is-on', online);
+  if (text) {
+    text.textContent = online ? '已连接' : state.gateway.configured ? '未连接' : '未配置';
+  }
+
+  const hint = qs('#conn-hint');
+  if (hint) {
+    if (state.gateway.lastError !== null) {
+      hint.textContent = `最近错误：${state.gateway.lastError}`;
+    }
+  }
+
+  // The url and the stored token hint are shown; the token itself stays in
+  // the main process and is never handed back to the renderer.
+  const url = qs<HTMLInputElement>('#conn-url');
+  if (url && document.activeElement !== url && state.connection.gatewayUrl !== null) {
+    url.value = state.connection.gatewayUrl;
+  }
+  const token = qs<HTMLInputElement>('#conn-token');
+  if (token && document.activeElement !== token && state.connection.tokenHint !== null) {
+    token.placeholder = state.connection.tokenHint;
+  }
+  const name = qs<HTMLInputElement>('#conn-name');
+  if (name && document.activeElement !== name && state.connection.computerName !== null) {
+    name.value = state.connection.computerName;
+  }
+}
+
 /** Render every part of the window from the current state. */
 function renderAll(): void {
   renderHeadPill();
   renderTasks();
   renderDevice();
   renderSettings();
+  renderConnection();
 }
 
 /** Apply the appearance theme to the document. */
@@ -248,6 +289,52 @@ async function setFloatVisible(visible: boolean): Promise<void> {
   showToast(visible ? '已开启悬浮窗' : '已关闭悬浮窗');
 }
 
+/** Save the Gateway connection and dial out to it. */
+async function saveConnection(): Promise<void> {
+  const url = qs<HTMLInputElement>('#conn-url')?.value.trim() ?? '';
+  const token = qs<HTMLInputElement>('#conn-token')?.value.trim() ?? '';
+  const name = qs<HTMLInputElement>('#conn-name')?.value.trim() ?? '';
+
+  if (url === '' || token === '' || name === '') {
+    showToast('请填写 Gateway 地址、access_token 和电脑名称');
+    return;
+  }
+
+  if (!bridge) {
+    showToast('浏览器预览模式无法建立连接');
+    return;
+  }
+
+  const result = await bridge.saveConnection({
+    gatewayUrl: url,
+    accessToken: token,
+    computerName: name,
+  });
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+    const failure = result as { message?: string };
+    showToast(failure.message ?? '保存失败');
+    return;
+  }
+  showToast('已保存，正在连接 Gateway…');
+  await refreshFromBridge();
+}
+
+/** Report the current Gateway connection state. */
+async function testConnection(): Promise<void> {
+  if (!bridge) {
+    showToast('浏览器预览模式无法测试连接');
+    return;
+  }
+  const result = await bridge.testConnection();
+  if (result && typeof result === 'object' && 'ok' in result && result.ok === true) {
+    showToast('Gateway 已连接');
+  } else {
+    const failure = result as { message?: string };
+    showToast(failure.message ?? 'Gateway 未连接');
+  }
+  await refreshFromBridge();
+}
+
 /** Wire the static controls. */
 function wireEvents(): void {
   qsa<HTMLButtonElement>('.rail-item').forEach((button) => {
@@ -286,6 +373,12 @@ function wireEvents(): void {
   qs('#btn-start')?.addEventListener('click', startPairing);
   qs('#btn-cancel')?.addEventListener('click', cancelPairing);
   qs('#btn-unpair')?.addEventListener('click', unpair);
+  qs('#btn-conn-save')?.addEventListener('click', () => {
+    void saveConnection();
+  });
+  qs('#btn-conn-test')?.addEventListener('click', () => {
+    void testConnection();
+  });
 }
 
 /** Read the local facts the window shows. */
@@ -298,7 +391,14 @@ async function refreshFromBridge(): Promise<void> {
   if (connection && typeof connection === 'object' && 'ok' in connection) {
     const result = connection as { ok: boolean; data?: unknown };
     if (result.ok && result.data && typeof result.data === 'object') {
-      state.connection = result.data as ConnectionFacts;
+      const data = result.data as ConnectionFacts & Partial<GatewayStatusFacts>;
+      state.connection = data;
+      state.gateway = {
+        configured: data.configured ?? false,
+        connected: data.connected ?? false,
+        lastError: data.lastError ?? null,
+        lastActivityAt: data.lastActivityAt ?? null,
+      };
     }
   }
 
@@ -350,9 +450,31 @@ function startConnectionPolling(): void {
   }, 15_000);
 }
 
+/**
+ * React to a Gateway connection status change pushed by the main process.
+ *
+ * The socket can come up or drop between two reads, so the status arrives as
+ * an event instead of being polled for.
+ */
+function applyGatewayStatus(payload: unknown): void {
+  if (payload === null || typeof payload !== 'object') {
+    return;
+  }
+  const status = payload as GatewayStatusFacts;
+  state.gateway = {
+    configured: status.configured ?? false,
+    connected: status.connected ?? false,
+    lastError: status.lastError ?? null,
+    lastActivityAt: status.lastActivityAt ?? null,
+  };
+  state.connection = { ...state.connection, connected: status.connected ?? false };
+  renderAll();
+}
+
 /** Boot the window. */
 async function main(): Promise<void> {
   wireEvents();
+  bridge?.onConnectionChanged((payload) => applyGatewayStatus(payload));
   await refreshFromBridge();
   startConnectionPolling();
 }

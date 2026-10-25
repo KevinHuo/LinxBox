@@ -49,6 +49,29 @@ export const IPC_CHANNELS: readonly IpcChannel[] = IPC_METHODS.map(
 
 const CHANNEL_SET: ReadonlySet<string> = new Set(IPC_CHANNELS);
 
+/**
+ * Channels the main process pushes to the renderer.
+ *
+ * They are not invoked by the renderer, so they are not part of
+ * `IPC_METHODS`. The preload bridge subscribes to them by name.
+ */
+export const IPC_EVENT_CHANNELS = {
+  /** The Gateway connection status changed. */
+  connectionChanged: `${IPC_NAMESPACE}.${IPC_VERSION}.connection.changed`,
+} as const;
+
+export type IpcEventChannel = (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS];
+
+/** Every event channel string. */
+export const IPC_EVENT_CHANNEL_LIST: readonly IpcEventChannel[] = Object.values(IPC_EVENT_CHANNELS);
+
+const EVENT_CHANNEL_SET: ReadonlySet<string> = new Set(IPC_EVENT_CHANNEL_LIST);
+
+/** Narrow an arbitrary channel to an allowed event channel. */
+export function isAllowedEventChannel(channel: string): channel is IpcEventChannel {
+  return EVENT_CHANNEL_SET.has(channel);
+}
+
 /** Narrow an arbitrary string to an allowed channel. */
 export function isAllowedChannel(channel: string): channel is IpcChannel {
   return CHANNEL_SET.has(channel);

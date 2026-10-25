@@ -28,6 +28,14 @@ export interface ConnectionFacts {
   readonly computerName: string | null;
 }
 
+/** The live status of the Gateway connection. */
+export interface GatewayStatusFacts {
+  readonly configured: boolean;
+  readonly connected: boolean;
+  readonly lastError: string | null;
+  readonly lastActivityAt: string | null;
+}
+
 /** A locally authorised project. */
 export interface ProjectFacts {
   readonly projectId: string;
@@ -259,6 +267,8 @@ export interface LinxboxBridge {
   readFloatWindow(): Promise<unknown>;
   setFloatWindowVisible(payload: unknown): Promise<unknown>;
   moveFloatWindow(payload: unknown): Promise<unknown>;
+  /** Subscribe to the Gateway connection status changes. */
+  onConnectionChanged(listener: (payload: unknown) => void): () => void;
 }
 
 /**

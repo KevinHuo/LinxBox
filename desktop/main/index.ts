@@ -21,7 +21,6 @@ import {
   readDiagnostics,
   revokeProject,
   saveConnection,
-  testConnection,
   type DesktopState,
 } from './desktop-state.js';
 import {
@@ -35,6 +34,7 @@ import {
   toExternalOpenUrl,
 } from './security.js';
 import {
+  IPC_EVENT_CHANNELS,
   IPC_METHODS,
   channelFor,
   parseIpcRequest,
@@ -44,6 +44,7 @@ import {
 } from '../shared/ipc.js';
 import { createLogger } from '../shared/logger.js';
 import { CodexSession } from './codex-session.js';
+import { GatewayConnectionManager } from './gateway-connection.js';
 import {
   clampFloatPosition,
   createAppearanceState,
@@ -71,6 +72,57 @@ const codexSession = new CodexSession();
 const appearance: AppearanceState = createAppearanceState();
 const floatState: FloatState = createFloatState();
 
+/**
+ * The outbound Gateway connection.
+ *
+ * The manager owns the socket, the reconnect timers and the dispatcher. The
+ * renderer never sees a token: it only reads the connection status.
+ */
+const gateway = new GatewayConnectionManager({
+  session: codexSession,
+  desktopVersion: app.getVersion(),
+  resolveProject: (projectId) => {
+    const project = state.projects.get(projectId);
+    if (project === undefined) {
+      return null;
+    }
+    return { rootPath: project.rootPath, enabled: project.enabled };
+  },
+  onStatusChange: (status) => {
+    state.connection = {
+      configured: status.configured,
+      connected: status.connected,
+      gatewayUrl: state.connection.gatewayUrl,
+      accessToken: state.connection.accessToken,
+      computerName: state.connection.computerName,
+    };
+    if (status.lastError !== null) {
+      state.lastError = status.lastError;
+    }
+    broadcastConnectionStatus(status);
+  },
+});
+
+/**
+ * Tell the renderer that the Gateway connection status changed.
+ *
+ * The connection state is an event, not a value the renderer has to poll for:
+ * the socket can come up or drop between two reads.
+ */
+function broadcastConnectionStatus(status: {
+  readonly configured: boolean;
+  readonly connected: boolean;
+  readonly lastError: string | null;
+  readonly lastActivityAt: string | null;
+}): void {
+  const payload = { ...status };
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_EVENT_CHANNELS.connectionChanged, payload);
+    }
+  }
+}
+
 let mainWindow: BrowserWindow | null = null;
 let floatWindow: BrowserWindow | null = null;
 
@@ -80,20 +132,53 @@ function canonicalizeDirectory(candidate: string): string {
 }
 
 function handleConnectionRead(): unknown {
-  return readConnectionView(state);
+  return { ok: true, data: { ...readConnectionView(state), ...gateway.status() } };
 }
 
+/**
+ * Store a connection configuration and dial out to the Gateway.
+ *
+ * The token never leaves the main process: it is handed to the Gateway client,
+ * which sends it as a WebSocket sub-protocol.
+ */
 function handleConnectionSave(payload: unknown): unknown {
   const parsed = parseIpcRequest('connection.save', payload);
   if (!parsed.ok) {
     return { ok: false, code: parsed.code, message: parsed.message };
   }
   const input = parsed.data as { gatewayUrl: string; accessToken: string; computerName: string };
-  return { ok: true, data: saveConnection(state, input) };
+  const view = saveConnection(state, input);
+
+  gateway.connect({
+    gatewayUrl: input.gatewayUrl,
+    accessToken: input.accessToken,
+    computerName: input.computerName,
+  });
+
+  return { ok: true, data: { ...view, ...gateway.status() } };
 }
 
+/**
+ * Report the current connection state.
+ *
+ * The connection is established when it is configured, so this reports what
+ * the Gateway client actually knows rather than pretending a handshake
+ * succeeded.
+ */
 function handleConnectionTest(): unknown {
-  return testConnection(state);
+  const status = gateway.status();
+  if (!status.configured) {
+    return { ok: false, code: 'NOT_FOUND', message: '尚未配置 Gateway 连接' };
+  }
+  if (status.connected) {
+    return { ok: true, data: status, message: 'Gateway 已连接' };
+  }
+  return {
+    ok: false,
+    code: 'DEPENDENCY_UNAVAILABLE',
+    message: status.lastError ?? 'Gateway 尚未连接',
+    data: status,
+  };
 }
 
 function handleProjectsList(): unknown {

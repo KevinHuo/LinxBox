@@ -75,6 +75,7 @@ describe('preload bridge', () => {
         'listCodexProjects',
         'listCodexSessions',
         'moveFloatWindow',
+        'onConnectionChanged',
         'readAppearance',
         'readCodexConversation',
         'probeCodex',
@@ -100,7 +101,35 @@ describe('preload bridge', () => {
 
   it('covers every allowlisted method', () => {
     const api = createLinxboxApi(() => Promise.resolve(null));
-    expect(Object.keys(api)).toHaveLength(IPC_METHODS.length);
+    // The event subscription is not an invocable method, so the bridge holds
+    // one method more than the invocable channel list.
+    expect(Object.keys(api)).toHaveLength(IPC_METHODS.length + 1);
+  });
+
+  it('subscribes to the connection event on the named channel', () => {
+    const calls: { channel: string }[] = [];
+    const api = createLinxboxApi(
+      () => Promise.resolve(null),
+      (channel) => {
+        calls.push({ channel });
+        return () => {};
+      },
+    );
+    api.onConnectionChanged(() => {});
+    expect(calls[0]?.channel).toBe('linxbox.v1.connection.changed');
+  });
+
+  it('does not subscribe to an arbitrary channel', () => {
+    const calls: { channel: string }[] = [];
+    const api = createLinxboxApi(
+      () => Promise.resolve(null),
+      (channel) => {
+        calls.push({ channel });
+        return () => {};
+      },
+    );
+    api.onConnectionChanged(() => {});
+    expect(calls).toHaveLength(1);
   });
 
   it('sends an empty payload for read-only methods', async () => {

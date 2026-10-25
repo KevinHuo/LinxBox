@@ -206,6 +206,49 @@
               <h1 id="settings-title">设置</h1>
               <p class="lede">灵矽 AI · 全局设置，作用于整个桌面客户端。</p>
             </div>
+
+            <!-- 灵矽连接：配置 Gateway 出站连接 -->
+            <div class="settings-block">
+              <div class="block-head">
+                <h2>灵矽连接</h2>
+                <span class="pill" id="conn-status">
+                  <i class="dot" aria-hidden="true"></i><span id="conn-status-text">未连接</span>
+                </span>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="conn-url">Gateway 地址</label>
+                  <input
+                    id="conn-url"
+                    type="text"
+                    spellcheck="false"
+                    placeholder="ws://127.0.0.1:8787/v1/clients/connect"
+                  />
+                </div>
+                <div class="field">
+                  <label for="conn-token">access_token</label>
+                  <input
+                    id="conn-token"
+                    type="text"
+                    spellcheck="false"
+                    autocomplete="off"
+                    placeholder="demo-client-token"
+                  />
+                </div>
+              </div>
+              <div class="field">
+                <label for="conn-name">这台电脑的名称</label>
+                <input id="conn-name" type="text" spellcheck="false" placeholder="工作电脑" />
+              </div>
+              <div class="btn-row">
+                <button class="btn btn-primary" id="btn-conn-save" type="button">保存并连接</button>
+                <button class="btn btn-quiet" id="btn-conn-test" type="button">测试连接</button>
+              </div>
+              <p class="hint" id="conn-hint">
+                连接由客户端主动发起；token 以 WebSocket 子协议发送，不会写进日志或 URL。
+              </p>
+            </div>
+
             <ul class="settings-list">
               <li>
                 <div class="s-txt"><strong>外观</strong><span>跟随设备端暖白风格</span></div>

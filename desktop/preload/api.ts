@@ -6,9 +6,20 @@
  * `invoke(channel, payload)`: the renderer cannot reach a channel that is not
  * listed here.
  */
-import { channelFor, type IpcMethod } from '../shared/ipc-channels.js';
+import { channelFor, IPC_EVENT_CHANNELS, type IpcMethod } from '../shared/ipc-channels.js';
 
 export type InvokeFn = (channel: string, payload: unknown) => Promise<unknown>;
+
+/** A listener the renderer subscribes with. */
+export type EventListener = (payload: unknown) => void;
+
+/**
+ * Subscribe to a main-process event channel.
+ *
+ * Returns an unsubscribe function. The channel must be one the bridge
+ * exposes; the renderer cannot subscribe to an arbitrary channel.
+ */
+export type SubscribeFn = (channel: string, listener: EventListener) => () => void;
 
 /** The methods the preload bridge exposes to the renderer. */
 export interface LinxboxApi {
@@ -36,15 +47,21 @@ export interface LinxboxApi {
   readFloatWindow(): Promise<unknown>;
   setFloatWindowVisible(payload: unknown): Promise<unknown>;
   moveFloatWindow(payload: unknown): Promise<unknown>;
+  /** Subscribe to the Gateway connection status changes. */
+  onConnectionChanged(listener: EventListener): () => void;
 }
 
 /**
  * Build the API object from an injected `invoke` function.
  *
  * Each method forwards to exactly one allowlisted channel with a fixed
- * payload shape.
+ * payload shape. The event subscription is separate: the renderer can only
+ * listen to the named events the bridge exposes.
  */
-export function createLinxboxApi(invoke: InvokeFn): LinxboxApi {
+export function createLinxboxApi(
+  invoke: InvokeFn,
+  subscribe: SubscribeFn = () => () => {},
+): LinxboxApi {
   const call = (method: IpcMethod, payload: unknown = {}): Promise<unknown> =>
     invoke(channelFor(method), payload);
 
@@ -73,6 +90,7 @@ export function createLinxboxApi(invoke: InvokeFn): LinxboxApi {
     readFloatWindow: () => call('window.float.read'),
     setFloatWindowVisible: (payload) => call('window.float.setVisible', payload),
     moveFloatWindow: (payload) => call('window.float.move', payload),
+    onConnectionChanged: (listener) => subscribe(IPC_EVENT_CHANNELS.connectionChanged, listener),
   };
 }
 

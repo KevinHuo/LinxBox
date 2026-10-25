@@ -114,27 +114,6 @@ export function saveConnection(
   return readConnectionView(state);
 }
 
-/**
- * Attempt a connection test.
- *
- * The outbound Gateway client is a later slice. The Desktop reports that
- * honestly instead of pretending a handshake succeeded.
- */
-export function testConnection(state: DesktopState): {
-  readonly ok: boolean;
-  readonly code: string;
-  readonly message: string;
-} {
-  if (!state.connection.configured) {
-    return { ok: false, code: 'NOT_FOUND', message: '尚未配置 Gateway 连接' };
-  }
-  return {
-    ok: false,
-    code: 'DEPENDENCY_UNAVAILABLE',
-    message: '出站 Gateway 客户端尚未实现（SPEC-0003 Slice 3）',
-  };
-}
-
 /** Project facts for the renderer. */
 export function listProjects(state: DesktopState): ProjectView[] {
   return [...state.projects.values()].map((project) => ({
