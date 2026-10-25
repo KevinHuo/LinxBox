@@ -169,6 +169,14 @@ export function summarizeFrame(frame) {
       return `project ${payload.project_id ?? '-'}`;
     case 'project.revoke':
       return `project ${payload.project_id ?? '-'}`;
+    case 'messages.list':
+      return `读取会话消息 · ${payload.agent_session_id ?? '-'}`;
+    case 'message.content.get':
+      return `读取消息正文 · ${payload.message_id ?? '-'}`;
+    case 'query.result':
+      return `${payload.ok ? '查询成功' : '查询失败'} · reply_to=${payload.reply_to_message_id ?? '-'}`;
+    case 'message.available':
+      return `新消息 · ${payload.agent_session_id ?? '-'} · ${payload.message_id ?? '-'}`;
     default:
       return '';
   }
