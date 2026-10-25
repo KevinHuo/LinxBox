@@ -1,0 +1,37 @@
+name: gateway
+
+on:
+  pull_request:
+    paths:
+      - 'gateway/**'
+      - 'contracts/**'
+      - '.github/workflows/gateway.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'gateway/**'
+      - 'contracts/**'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: 依赖
+        working-directory: gateway
+        run: go mod download
+      - name: 门禁（格式/静态检查/测试/覆盖率/race）
+        working-directory: gateway
+        run: |
+          INCREMENTAL_BASE=origin/main make check
+      - name: 构建
+        working-directory: gateway
+        run: make build
+      - name: 发布构建（Linux amd64/arm64）
+        working-directory: gateway
+        run: make release

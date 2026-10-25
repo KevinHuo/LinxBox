@@ -1,0 +1,22 @@
+# 单实例部署：SQLite 数据在持久卷，健康检查由编排层使用。
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: gateway/deploy/Dockerfile
+    image: linxbox-gateway:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - gateway-data:/var/lib/linxbox
+      - ./gateway.json:/etc/linxbox/gateway.json:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/linxbox-gateway", "--healthcheck", "http://127.0.0.1:8787/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  gateway-data:
