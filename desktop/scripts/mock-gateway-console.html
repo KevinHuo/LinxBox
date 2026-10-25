@@ -229,7 +229,7 @@
 
       .row {
         display: grid;
-        grid-template-columns: 74px 132px 1fr;
+        grid-template-columns: 74px minmax(210px, 0.9fr) minmax(0, 1.4fr);
         gap: 12px;
         align-items: baseline;
         padding: 9px 10px;
@@ -251,10 +251,20 @@
       }
 
       .row .type {
-        display: inline-flex;
+        display: flex;
+        min-width: 0;
         align-items: center;
         gap: 6px;
         font: 600 12px/1.5 var(--mono);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .row .type-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .row .dir {
@@ -277,11 +287,19 @@
       }
 
       .row .summary {
+        min-width: 0;
         color: var(--muted);
         font-size: 13px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      @media (max-width: 900px) {
+        .row {
+          grid-template-columns: 68px minmax(170px, 0.9fr) minmax(0, 1.3fr);
+          gap: 8px;
+        }
       }
 
       .empty {
@@ -569,7 +587,7 @@
             return `
               <div class="row ${entry.direction}${selected}" data-id="${escapeHtml(entry.id)}">
                 <span class="time">${escapeHtml(time)}</span>
-                <span class="type"><i class="dir">${arrow}</i>${escapeHtml(entry.type)}</span>
+                <span class="type"><i class="dir">${arrow}</i><span class="type-label">${escapeHtml(entry.type)}</span></span>
                 <span class="summary">${escapeHtml(entry.summary || '')}</span>
               </div>`;
           })
