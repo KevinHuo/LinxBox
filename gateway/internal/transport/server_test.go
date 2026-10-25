@@ -57,12 +57,15 @@ type testEnv struct {
 }
 
 func newTestEnv(t *testing.T, mutate func(*config.Config)) *testEnv {
+	return newTestEnvWithLogger(t, mutate, slog.New(slog.DiscardHandler))
+}
+
+func newTestEnvWithLogger(t *testing.T, mutate func(*config.Config), logger *slog.Logger) *testEnv {
 	t.Helper()
 	cfg := testServerConfig(t)
 	if mutate != nil {
 		mutate(cfg)
 	}
-	logger := slog.New(slog.DiscardHandler)
 	validator, err := contracts.NewValidator()
 	if err != nil {
 		t.Fatal(err)

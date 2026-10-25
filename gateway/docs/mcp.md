@@ -40,6 +40,45 @@ Refs #14、#1。DRI：BoleLiu（Gateway）。主模块：Gateway；受影响模�
 
 ## 验证入口
 
+### 联调日志
+
+DRI：BoleLiu（Gateway）。本次日志改动仅涉及 Gateway 传输层，不改变 MCP 参数、认证、请求状态或固件通知协议。验收包括正常提案、同轮重试、上下文缺失、来源不匹配、参数错误、请求不存在和设备离线的主机模拟链路；真实灵矽接入仍需单独验收。
+
+`log.level=info` 即可查看以下事件，默认 text 格式输出中文摘要；`log.format=json` 可用于按字段筛选。
+
+| 事件 | 阅读方式 |
+| --- | --- |
+| `mcp.connection.opened` / `mcp.connection.closed` | SSE 建连与结束，包含连接编号、持续时间和结束原因；建连成功不表示已收到识别结果 |
+| `mcp.http.rejected` | HTTP 入口拒绝，包含状态码、错误原因和排查提示；检查凭据、Origin、入口、SSE 是否过期或消息大小 |
+| `mcp.call.received` | 已收到 `propose_task_reply`，记录本轮上下文、脱敏参数 body 和文字长度 |
+| `mcp.call.validated` | 来源和参数 Schema 校验通过，开始核对原请求并保存文字；不表示持久化已经成功 |
+| `mcp.call.completed` | 工具最终业务结果；成功包含请求状态、目标会话和脱敏 response_body；失败包含 failed_stage、error_code、error_message、error_hint 和耗时 |
+| `request.notification.enqueued` | 请求状态通知已进入固件发送队列，尚不能证明设备收到或用户已确认 |
+| `request.notification.deferred` | 固件离线，快照已保存，重连后使用 request.get 获取 |
+| `push.failed` | 通知未入队或编码/校验失败，包含业务请求编号和原因；不能据此认定文字没有保存 |
+
+同一次工具调用用 `trace_id` 串联接收、校验和结果。`request_id` 关联固件 prepare、MCP 提案和通知；`agent_session_id` 是固定的 Desktop 目标会话，`voice_session_id` 是平台语音会话。`mcp_connection_id` 仅用于日志关联 SSE 连接，`rpc_id` 是 JSON-RPC 调用编号；两者都不能替代业务 request_id。原始 SSE sessionid、认证头和 token 不写入这些日志。
+
+失败阶段包括 `authentication`（认证）、`context`（来源头）、`arguments`（工具参数）、`request_state`（原请求/来源/目标状态）、`persist`（保存过程）及 `response`（响应契约）。`missing_headers` / `duplicate_headers` 列出缺失或重复的头名；来源不匹配时可比较 device_id / linx_agent_id 与 credential_device_id / credential_linx_agent_id。HTTP 鉴权失败中的 claimed_* 字段仅为未经验证的客户端声明。
+
+识别内容来自 MCP 工具参数，日志标记 `text_source=mcp_tool_argument`；Gateway 无法据此证明平台传入的是未经模型改写的 ASR 原文。body.text、标题、路径等保持脱敏，额外记录 `text_is_string`、`text_non_blank`、UTF-8 字节数 `text_bytes` 和码点数 `text_codepoints`，可区分缺失、空白、长度超限；正文仍按既有协议保存和返回。脱敏 body 沿用 4096 字节预算和截断标记。
+
+例如缺少本轮 ID 时，会看到“收到文字提案工具调用”，随后出现 WARN“缺少本轮请求或灵矽上下文”，`failed_stage=context` 且 missing_headers 包含 X-Linx-Request-Id；此时先检查逐轮头透传。HTTP POST 返回 202 仅表示 JSON-RPC 消息入队，应继续查看 mcp.call.completed 的 ok 和请求快照；机械事件 mcp.rpc.accepted 仅在 debug 输出。
+
+```sh
+# 服务器默认 text 日志：查看最近 MCP 与请求通知过程。
+sudo journalctl -u linxbox-gateway --since '10 minutes ago' --no-pager | \
+  rg 'mcp\.|request.notification\.|push.failed'
+
+# 知道业务 request_id 后，关联固件 prepare、MCP 和通知。
+sudo journalctl -u linxbox-gateway --since '10 minutes ago' --no-pager | \
+  rg -F '本轮的request_id'
+```
+
+服务器未安装 ripgrep 时，可把上述 `rg` 换成 `grep -E`、`rg -F` 换成 `grep -F`。
+
+### 自动化验证
+
 ```sh
 cd gateway
 go test -count=1 ./internal/service -run '^TestRequest'
@@ -54,7 +93,7 @@ make build
 
 ## 本次本地验证结果
 
-2026-10-25：完整执行 `INCREMENTAL_BASE=origin/main make check`，格式、静态检查、全部单元/集成测试、整体/关键包/增量包覆盖率与全部包 race 检测均通过。整体语句覆盖率为 **92.41%（1801/1949）**；请求服务所在包 92.86%、传输包 91.41%、存储包 91.84%，所有关键包和增量包均通过原有 90% 门禁，没有新增统计排除或下调门槛。
+2026-10-25（补齐 MCP 日志）：在独立源码快照执行 `GOCACHE=/tmp/linxbox-gateway-integration-go-cache GOFLAGS=-buildvcs=false make check build release`，并基于同一 coverage.out 运行 `tools/covergate -base origin/main`，格式、静态检查、全部单元/集成测试、整体/关键包/增量包覆盖率与全部包 race 检测均通过。整体语句覆盖率为 **93.14%（2390/2566）**；请求服务所在包 92.11%、传输包 93.50%、存储包 92.26%，所有关键包和增量包均通过原有 90% 门禁，没有新增统计排除或下调门槛。MCP 日志回归覆盖正常/重复调用、上下文与参数错误、来源不匹配、请求不存在、设备离线、通知失败和敏感信息脱敏；测试配置在建连前固定，避免活跃 SSE 期间写入配置。
 
 `make build release` 通过：本机可执行文件及 Linux amd64/arm64 无 CGO 发布构建均已生成；`git diff --check` 通过。Linux 结果为交叉编译，尚未在目标主机运行；容器镜像尚未构建验证。
 

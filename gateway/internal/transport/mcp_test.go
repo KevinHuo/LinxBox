@@ -222,7 +222,15 @@ func TestMCPToolMissingContext(t *testing.T) {
 }
 
 func TestMCPSSESessionIsolationAndLimits(t *testing.T) {
-	env := newMCPEnv(t)
+	// 配置在建连前固定，避免活跃 SSE goroutine 与测试中的配置写入竞争。
+	env := newTestEnv(t, func(cfg *config.Config) {
+		cfg.Limits.MaxFrameBytes = 65536
+		cfg.Limits.MaxOnlineConnections = 1
+		cfg.Credentials.MCP = []config.MCPCredential{
+			{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "agent"},
+			{Token: "other-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "other"},
+		}
+	})
 	session, headers := newMCPClient(t, env)
 	_ = session
 	env.server.mcp.mu.Lock()
@@ -246,7 +254,6 @@ func TestMCPSSESessionIsolationAndLimits(t *testing.T) {
 		}
 	}
 	// 同设备的另一个智能体凭据也不能投递到已建立的 MCP 会话。
-	env.cfg.Credentials.MCP = append(env.cfg.Credentials.MCP, config.MCPCredential{Token: "other-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "other"})
 	r := httptest.NewRequest("POST", "/mcp/message?sessionid="+id, strings.NewReader("{}"))
 	r.Header.Set("Authorization", "Bearer other-token")
 	w := httptest.NewRecorder()
@@ -254,7 +261,6 @@ func TestMCPSSESessionIsolationAndLimits(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatal(w.Code)
 	}
-	env.cfg.Limits.MaxOnlineConnections = 1
 	req, err := http.NewRequestWithContext(t.Context(), "GET", env.baseHTTP+"/mcp", nil)
 	if err != nil {
 		t.Fatal(err)

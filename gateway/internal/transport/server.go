@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -154,12 +155,30 @@ func (s *Server) CloseMCP() {
 
 // NotifyRequest 推送已提交请求快照；未连接设备用 request.get 恢复。
 func (s *Server) NotifyRequest(deviceID, event string, request contracts.Request) {
-	if conn := s.conns.Device(deviceID); conn != nil {
-		s.sendFirmwarePush(conn, event, struct {
-			ID      string            `json:"id"`
-			Type    string            `json:"type"`
-			Payload contracts.Request `json:"payload"`
-		}{contracts.NewMessageID("msg_"), event, request})
+	fields := []any{"direction", "Gateway→固件", "device_id", deviceID, "request_id", s.safeMCPID(request.RequestID), "agent_session_id", s.safeMCPID(request.AgentSessionID), "status", request.Status}
+	if request.Text != nil {
+		fields = append(fields, "text_bytes", len(*request.Text), "text_codepoints", utf8.RuneCountInString(*request.Text))
+	}
+	fields = append(fields, s.logValueFields("body", request)...)
+	if request.Error != nil {
+		message, redacted := peerErrorMessage(request.Error.Message)
+		fields = append(fields, "state_error_code", request.Error.Code, "state_error_message", message, "state_error_redacted", redacted)
+	}
+	conn := s.conns.Device(deviceID)
+	if conn == nil {
+		s.logger.Info("固件当前离线，请求快照已保存；重连后通过 request.get 恢复", append([]any{"event", "request.notification.deferred", "type", event, "notification_status", "device_offline"}, fields...)...)
+		return
+	}
+	if s.sendFirmwarePush(conn, event, struct {
+		ID      string            `json:"id"`
+		Type    string            `json:"type"`
+		Payload contracts.Request `json:"payload"`
+	}{contracts.NewMessageID("msg_"), event, request}, fields...) {
+		message := "Gateway → 固件：请求状态通知已入队（尚未确认设备收到）"
+		if event == "request.proposed" {
+			message = "Gateway → 固件：文字提案通知已入队，等待设备读取或确认"
+		}
+		s.logger.Info(message, append([]any{"event", "request.notification.enqueued", "type", event, "connection_id", conn.Generation(), "notification_status", "enqueued"}, fields...)...)
 	}
 }
 
@@ -257,24 +276,28 @@ func (s *Server) NotifyCatalogUpdated(deviceID string) {
 	s.sendFirmwarePush(conn, "agent_sessions.updated", msg)
 }
 
-func (s *Server) sendFirmwarePush(conn *lifecycle.Connection, typ string, msg any) {
+func (s *Server) sendFirmwarePush(conn *lifecycle.Connection, typ string, msg any, attrs ...any) bool {
+	fail := func(cause error) bool {
+		fields := []any{"event", "push.failed", "type", typ, "connection_id", conn.Generation(), "notification_status", "failed"}
+		fields = append(fields, errorFields(cause, "gateway")...)
+		s.logger.Warn("Gateway → 固件：通知发送失败："+domain.MessageOf(cause), append(fields, attrs...)...)
+		return false
+	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
-		s.logger.Error("推送编码失败", "type", typ, "err", err)
-		return
+		return fail(domain.ErrInternal("推送编码失败"))
 	}
 	if len(raw) > s.cfg.Limits.MaxFrameBytes {
-		s.logger.Warn("推送超过帧限制", "type", typ)
 		conn.Close()
-		return
+		return fail(domain.ErrResourceExhausted("推送超过帧限制"))
 	}
 	if err := s.validator.ValidateFirmwarePush(typ, raw); err != nil {
-		s.logger.Error("推送校验失败", "type", typ, "error_code", domain.CodeInternal)
-		return
+		return fail(domain.ErrInternal("推送不符合共享 Schema"))
 	}
 	if err := conn.Send(raw, s.conns.SendTimeout()); err != nil {
-		s.logger.Warn("推送发送失败", "type", typ, "err", err)
+		return fail(domain.ErrDependencyUnavailable("推送未入队：" + err.Error()))
 	}
+	return true
 }
 
 // toWireError 将业务错误映射为契约 Error。

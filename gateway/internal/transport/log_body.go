@@ -19,6 +19,7 @@ var visibleBodyFields = map[string]bool{
 	"status": true, "role": true, "agent": true, "offset": true, "next_offset": true, "cursor": true, "next_cursor": true,
 	"ok": true, "code": true, "desktop_version": true, "last_acked_sequence": true, "client_time": true,
 	"payload": true, "data": true, "items": true, "error": true,
+	"jsonrpc": true, "method": true, "params": true, "name": true, "arguments": true,
 }
 
 func (s *Server) bodyFields(key string, raw []byte) []any {
@@ -63,7 +64,7 @@ func (s *Server) bodyFields(key string, raw []byte) []any {
 						out[field] = "[非法 MAC，值已隐藏]"
 						redacted = true
 					}
-				} else if field == "payload" || field == "data" || field == "items" || field == "error" {
+				} else if field == "payload" || field == "data" || field == "items" || field == "error" || field == "params" || field == "arguments" {
 					switch child.(type) {
 					case map[string]any, []any, nil:
 						out[field] = clean(child, depth+1)

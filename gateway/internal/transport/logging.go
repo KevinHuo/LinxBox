@@ -41,7 +41,7 @@ func operationName(operation string) string {
 // peerErrorMessage 仅展示已知诊断文案；任意对端错误可能含正文、路径或凭据。
 func peerErrorMessage(message string) (string, bool) {
 	switch message {
-	case "会话不属于当前 Desktop", "会话不存在", "消息不存在", "查询失败", "Desktop 查询超时", "Desktop 已断开连接", "无法向 Desktop 发送查询", "Desktop 未连接":
+	case "会话不属于当前 Desktop", "会话不存在", "消息不存在", "查询失败", "Desktop 查询超时", "Desktop 已断开连接", "无法向 Desktop 发送查询", "Desktop 未连接", "未收到文字", "请求确认已超时":
 		return message, false
 	default:
 		lower := strings.ToLower(message)
