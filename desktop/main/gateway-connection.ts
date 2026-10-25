@@ -578,10 +578,9 @@ export class GatewayConnectionManager {
           left.updatedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(left.updatedAt);
         const rightTime =
           right.updatedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(right.updatedAt);
-        return (
-          (Number.isNaN(rightTime) ? Number.NEGATIVE_INFINITY : rightTime) -
-          (Number.isNaN(leftTime) ? Number.NEGATIVE_INFINITY : leftTime)
-        );
+        const normalizedLeft = Number.isNaN(leftTime) ? Number.NEGATIVE_INFINITY : leftTime;
+        const normalizedRight = Number.isNaN(rightTime) ? Number.NEGATIVE_INFINITY : rightTime;
+        return normalizedRight - normalizedLeft;
       });
       for (const session of sortedSessions) {
         const sessionCwd = session.cwd;
