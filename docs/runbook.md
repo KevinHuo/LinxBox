@@ -1,6 +1,6 @@
 # LinxBox 运行说明
 
-本文面向独立部署和使用者。示例中的域名、SSH 用户和版本号均为占位符；真实地址、凭据和设备身份只保存在自己的受限配置中，不写入共享文档。设备身份自动登记，普通使用无需手动配置设备 ID。
+本文面向独立部署和使用者。示例中的域名和版本号均为占位符；真实地址、凭据和设备身份只保存在自己的受限配置中，不写入共享文档。设备身份自动登记，普通使用无需手动配置设备 ID。
 
 ## 运行 Desktop
 
@@ -61,20 +61,21 @@ make test
 make smoke-local
 ```
 
-## 更新已部署 Gateway（简版）
+## 部署 Gateway
 
-在本机终端进入发布包所在目录，将 `LINX_PACKAGE` 换成不含 `.tar.gz` 的实际包名，`LINX_SSH_TARGET` 换成自己的 SSH 用户和服务器域名。服务器 x86_64 选择 amd64，aarch64/arm64 选择 arm64。
+生产环境使用与服务器架构匹配的 Linux 发布包，并通过 HTTPS/WSS 提供服务。以下以带安装脚本的发布包和 systemd 为例，部署流程不限定本机系统或文件传输工具。
+
+1. **准备环境与配置**：选择对应架构的发布包，确定监听地址、可写数据库目录、各接入方的独立凭据及 TLS 或反向代理配置。真实地址和凭据只保存在自己的受限配置中。
+2. **上传并解压**：将发布包传到目标服务器，核对随包校验和后解压。上传方式和存放目录按自己的环境选择。
+3. **安装并启动**：在解压目录执行下方命令。安装脚本创建运行用户、安装程序并注册、启动 systemd 服务；具体配置按随包说明设置。
+4. **验证服务**：检查服务状态和 `/readyz` 就绪入口，再验证 HTTPS/WSS 入口及客户端连接。就绪检查成功不代表真实设备、MCP 或 Codex 执行链路已经验收。
 
 ```sh
-LINX_PACKAGE=linxbox-gateway-linux-amd64-实际版本
-LINX_SSH_TARGET=user@server.example.com
-scp "$LINX_PACKAGE.tar.gz" "$LINX_SSH_TARGET:~/"
-ssh -t "$LINX_SSH_TARGET" "tar -xzf $LINX_PACKAGE.tar.gz && cd $LINX_PACKAGE && sudo bash install.sh"
+sudo bash install.sh
+sudo systemctl status linxbox-gateway --no-pager
 ```
 
-安装脚本替换程序并重启服务，普通更新保留配置、token 和数据库。设备 WS 的身份自动登记，无需服务器预配 MAC 白名单；MCP 的授权范围按所用版本配置。
-
-示例用户名、域名和包名均需替换，文档不提供实际服务器、账号或凭据。生产接入使用 HTTPS/WSS。升级前保留原配置、程序和完整数据库备份；更多部署参数见 [Gateway 部署说明](../gateway/docs/ws-deployment.md)。
+已有服务升级时，先停服并备份原程序、配置和完整数据库，再安装新版本并验证。普通更新保留已有配置、token 和数据库，程序启动时执行必要迁移。更多部署参数与排查方式见 [Gateway 部署说明](../gateway/docs/ws-deployment.md)。
 
 ## 构建和检查 Desktop
 
