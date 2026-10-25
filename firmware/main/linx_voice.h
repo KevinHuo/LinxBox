@@ -9,10 +9,15 @@
 typedef enum {
     LINX_VOICE_START,
     LINX_VOICE_FINISH,
+    /* 取消本条，保留连接。 */
     LINX_VOICE_CANCEL,
     LINX_VOICE_WIFI_SCAN,
     LINX_VOICE_WIFI_SAVE,
-    LINX_VOICE_WIFI_SETUP
+    LINX_VOICE_WIFI_SETUP,
+    /* 只准备网络和语音通道，禁止开始录音。 */
+    LINX_VOICE_PREPARE,
+    /* 关闭语音连接，保留 Wi-Fi。 */
+    LINX_VOICE_RELEASE
 } linx_voice_command_t;
 
 typedef enum {
@@ -21,13 +26,18 @@ typedef enum {
     LINX_VOICE_LISTENING,
     LINX_VOICE_WAITING,
     LINX_VOICE_SPEAKING,
+    /* 本轮回复已播完；不代表 Codex 已接收或完成任务。 */
+    LINX_VOICE_FINISHED,
     LINX_VOICE_ERROR,
     LINX_VOICE_CLOSED,
     LINX_VOICE_WIFI_SCANNING,
     LINX_VOICE_WIFI_NETWORKS,
     LINX_VOICE_WIFI_CONNECTING,
     LINX_VOICE_WIFI_SAVED,
-    LINX_VOICE_WIFI_PORTAL
+    LINX_VOICE_WIFI_PORTAL,
+    LINX_VOICE_READY,
+    LINX_VOICE_PREPARING,
+    LINX_VOICE_DRAINING
 } linx_voice_state_t;
 
 typedef enum {

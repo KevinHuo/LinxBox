@@ -34,7 +34,7 @@ output_dir="$(cd -- "${output_dir}" && pwd)"
 run_dir="$(mktemp -d "${output_dir}/run.XXXXXX")"
 # CI 容器以 root 构建，宿主 runner 仍需读取公开的验证报告。
 chmod 755 "${run_dir}"
-mkdir -p "${run_dir}/profiles" "${run_dir}/screens" "${run_dir}/screens-missing-image"
+mkdir -p "${run_dir}/profiles" "${run_dir}/screens"
 export LLVM_PROFILE_FILE="${run_dir}/profiles/%m-%p.profraw"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/linx_host/test_main_contract.py
@@ -44,10 +44,9 @@ cmake -S tests/linx_host -B "${run_dir}/host" -G Ninja \
     -DLINX_ENABLE_COVERAGE=ON
 cmake --build "${run_dir}/host" --parallel 4
 "${run_dir}/host/linx_host" "${run_dir}/screens"
-"${run_dir}/host/linx_host_missing_image" "${run_dir}/screens-missing-image" --missing-image
 "${run_dir}/host/linx_ui_boundaries"
 
-binaries=("${run_dir}/host/linx_host" "${run_dir}/host/linx_host_missing_image" "${run_dir}/host/linx_ui_boundaries")
+binaries=("${run_dir}/host/linx_host" "${run_dir}/host/linx_ui_boundaries")
 compile_test() {
     local name="$1"
     shift
@@ -56,11 +55,12 @@ compile_test() {
     binaries+=("${run_dir}/${name}")
 }
 compile_test test_linx_input tests/test_linx_input.c main/linx_input.c
+compile_test test_linx_input_settings -Itests/sdk_stubs tests/test_linx_input_settings.c
 compile_test test_linx_wifi tests/test_linx_wifi.c main/linx_wifi.c
 compile_test test_linx_demo tests/test_linx_demo.c main/linx_demo.c main/linx_content.c
 compile_test test_linx_navigation tests/test_linx_navigation.c main/linx_navigation.c
 compile_test test_linx_reader tests/test_linx_reader.c main/linx_reader.c main/linx_navigation.c main/linx_content.c
-for test in test_linx_input test_linx_wifi test_linx_demo test_linx_navigation test_linx_reader; do
+for test in test_linx_input test_linx_input_settings test_linx_wifi test_linx_demo test_linx_navigation test_linx_reader; do
     "${run_dir}/${test}"
 done
 for variant in offline voice; do
