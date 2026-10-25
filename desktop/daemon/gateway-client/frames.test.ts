@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildAgentSessionsSyncFrame,
   buildAckFrame,
   buildHelloFrame,
   buildHeartbeatFrame,
@@ -45,6 +46,44 @@ describe('parseInboundFrame', () => {
       payload: { task_id: 'tsk_1', reason: 'user_requested' },
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('accepts a device-selected existing Codex session continuation', () => {
+    const result = parseInboundFrame({
+      ...dispatchFrame,
+      payload: {
+        ...dispatchFrame.payload,
+        continuation: { agent_session_id: 'codex_th_1', thread_id: 'th_1' },
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts an agent session sync result', () => {
+    const result = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'agent_sessions.sync.result',
+      payload: { reply_to_message_id: 'sync_1', ok: true },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects the legacy PublicError shape in a session sync result', () => {
+    const result = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'agent_sessions.sync.result',
+      payload: {
+        reply_to_message_id: 'sync_1',
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENT',
+          message: '目录非法',
+          retryable: false,
+          request_id: 'sync_1',
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
   });
 
   it('rejects a frame that is not an object', () => {
@@ -195,6 +234,29 @@ describe('outbound frame builders', () => {
     });
     expect(frame.type).toBe('task.completed');
     expect(frame.payload.event_sequence).toBe(1);
+  });
+
+  it('builds a full Codex session directory sync without local paths', () => {
+    const frame = buildAgentSessionsSyncFrame({
+      messageId: 'sync_1',
+      sequence: 4,
+      sentAt: '2026-10-25T00:00:00Z',
+      items: [
+        {
+          agent_session_id: 'codex_th_1',
+          thread_id: 'th_1',
+          project_id: 'prj_1',
+          project_name: 'LinxBox',
+          agent: 'codex',
+          title: '修复问题',
+          status: 'idle',
+          summary: '修复问题',
+        },
+      ],
+    });
+    expect(frame.type).toBe('agent_sessions.sync');
+    expect(frame.payload.items[0]?.thread_id).toBe('th_1');
+    expect(JSON.stringify(frame)).not.toContain('/Users/');
   });
 });
 

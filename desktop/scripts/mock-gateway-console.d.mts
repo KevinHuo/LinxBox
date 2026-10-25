@@ -27,7 +27,7 @@ export type MockDispatchPayload = {
   prompt: string;
   acceptance_criteria: string[];
   policy_version: string;
-  continuation: { parent_task_id: string } | null;
+  continuation: { parent_task_id: string } | { agent_session_id: string; thread_id: string } | null;
 };
 
 /** The payload of a `task.cancel` frame. */
@@ -53,6 +53,15 @@ export type MockDispatchFrame = MockFrame & { readonly payload: MockDispatchPayl
 /** A `task.cancel` frame, whose payload shape is known. */
 export type MockCancelFrame = MockFrame & { readonly payload: MockCancelPayload };
 
+/** An `agent_sessions.sync.result` frame. */
+export type MockAgentSessionsSyncResultFrame = MockFrame & {
+  readonly payload: {
+    readonly reply_to_message_id: string;
+    readonly ok: boolean;
+    readonly error?: Record<string, unknown>;
+  };
+};
+
 /** One row of the console message list. */
 export type MockConsoleEntry = {
   readonly id: string;
@@ -68,6 +77,7 @@ export type MockGatewayConsole = {
   readonly port: number;
   readonly received: MockFrame[];
   readonly sent: MockFrame[];
+  readonly agentSessions: Record<string, unknown>[];
   close(): Promise<void>;
 };
 
@@ -78,6 +88,13 @@ export declare function buildDispatchFrame(
 
 /** Build a `task.cancel` frame. */
 export declare function buildCancelFrame(taskId: string, reason?: string): MockCancelFrame;
+
+/** Build the Gateway acknowledgement for a Desktop session catalogue sync. */
+export declare function buildAgentSessionsSyncResult(
+  syncFrame: { message_id: string },
+  ok?: boolean,
+  message?: string,
+): MockAgentSessionsSyncResultFrame;
 
 /** Summarise a frame for the console list. */
 export declare function summarizeFrame(frame: unknown): string;

@@ -15,7 +15,6 @@
  */
 import type { CodexDomainEvent } from '../codex-adapter/events.js';
 import type { CodexTurnState } from '../codex-adapter/client.js';
-import { isPathInsideRoot } from '../policy/authorization.js';
 import { sanitizeVoiceSummary } from '../result-projector/projection.js';
 import { publicError } from './frames.js';
 import type {
@@ -63,6 +62,14 @@ export interface DispatchProject {
   readonly enabled: boolean;
 }
 
+/** A device-visible session resolved from the Desktop's own local catalogue. */
+export interface DispatchAgentSession {
+  readonly agentSessionId: string;
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly rootPath: string;
+}
+
 export type TaskEventType =
   | 'task.started'
   | 'task.progress'
@@ -77,8 +84,12 @@ export interface DispatchedTaskEvent {
 }
 
 export interface TaskDispatcherOptions {
-  /** Resolve a `project_id` to a locally authorised project. */
-  readonly resolveProject: (projectId: string) => DispatchProject | null;
+  /** Resolve a project when the gateway supplies a known local mapping. */
+  readonly resolveProject?: (projectId: string) => DispatchProject | null;
+  /** Working directory for a new WSS command when no local mapping exists. */
+  readonly defaultCwd?: string;
+  /** Resolve an existing Codex conversation previously published by this Desktop. */
+  readonly resolveAgentSession?: (agentSessionId: string) => DispatchAgentSession | null;
   /** Run a turn on the local provider. */
   readonly runner: CodexRunner;
   /** Called for every task event. */
@@ -153,15 +164,10 @@ export class TaskDispatcher {
     }
 
     const payload: TaskDispatchPayload = frame.payload;
-    const project = this.options.resolveProject(payload.project_id);
-    if (project === null) {
-      const outcome = this.reject('项目未授权');
-      this.handled.set(messageId, outcome);
-      this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
-      return outcome;
-    }
-    if (!project.enabled) {
-      const outcome = this.reject('项目授权已撤销');
+    const project = this.options.resolveProject?.(payload.project_id) ?? null;
+    const cwd = project?.enabled ? project.rootPath : this.options.defaultCwd;
+    if (cwd === undefined) {
+      const outcome = this.reject('没有可用的 Codex 工作目录');
       this.handled.set(messageId, outcome);
       this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
       return outcome;
@@ -186,12 +192,18 @@ export class TaskDispatcher {
       this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
       return outcome;
     }
+    const executionCwd = continuation.cwd ?? cwd;
 
     // Reserve the message before the provider side effect. A concurrent replay
     // can now only observe the reservation and cannot start a second turn.
     const reservation: DispatchOutcome = { disposition: 'accepted', error: null };
     this.handled.set(messageId, reservation);
-    const context: ActiveDispatchContext = { messageId, taskId, threadId: null, turnId: null };
+    const context: ActiveDispatchContext = {
+      messageId,
+      taskId,
+      threadId: continuation.threadId,
+      turnId: null,
+    };
     this.active = context;
     this.eventCounter = 0;
     this.terminalEmitted = false;
@@ -202,13 +214,13 @@ export class TaskDispatcher {
         continuation.threadId === null
           ? await this.options.runner.startTurn({
               prompt: payload.prompt,
-              cwd: project.rootPath,
+              cwd: executionCwd,
               clientMessageId: messageId,
             })
           : await this.options.runner.continueTurn({
               threadId: continuation.threadId,
               prompt: payload.prompt,
-              cwd: project.rootPath,
+              cwd: executionCwd,
               clientMessageId: messageId,
             });
       if (this.active === context) {
@@ -226,16 +238,22 @@ export class TaskDispatcher {
           error: null,
         });
       }
-    } catch {
+    } catch (error) {
+      // Keep the Gateway-facing message generic, but retain the local cause
+      // so a failed resume can be diagnosed without exposing it remotely.
+      console.error('[linxbox] Codex task start failed', error);
       if (this.active !== context) {
         this.options.onDisposition?.(reservation.disposition, messageId);
         return reservation;
       }
-      const message = '本机 Codex 启动失败';
+      const baseMessage =
+        continuation.threadId === null ? '本机 Codex 启动失败' : '目标 Codex 会话续接失败';
+      const detail = error instanceof Error ? error.message : '';
+      const message = detail.length > 0 ? `${baseMessage}：${detail}` : baseMessage;
       this.emit(taskId, 'task.failed', {
         state: 'failed',
         stage: 'finished',
-        summary: '本机 Codex 启动失败',
+        summary: message,
         result: null,
         error: publicError('DEPENDENCY_UNAVAILABLE', message, taskId),
       });
@@ -376,11 +394,28 @@ export class TaskDispatcher {
    */
   private async resolveContinuation(payload: TaskDispatchPayload): Promise<{
     threadId: string | null;
+    cwd?: string;
     reason: string | null;
   }> {
     const continuation = payload.continuation;
     if (continuation === null) {
       return { threadId: null, reason: null };
+    }
+    if ('agent_session_id' in continuation) {
+      const target = this.options.resolveAgentSession?.(continuation.agent_session_id) ?? null;
+      if (target === null || target.threadId !== continuation.thread_id) {
+        const cwd = await this.options.runner.sessionCwd(continuation.thread_id);
+        return cwd === null || cwd.length === 0
+          ? { threadId: null, reason: '目标会话不存在或不可续接' }
+          : { threadId: continuation.thread_id, cwd, reason: null };
+      }
+      if (target.projectId !== payload.project_id) {
+        return { threadId: null, reason: '续接目标不属于本次授权项目' };
+      }
+      // The session was published by this Desktop, so Codex remains the
+      // authority for its working directory. Electron must not ask for a
+      // second project grant before forwarding the WSS command.
+      return { threadId: target.threadId, cwd: target.rootPath, reason: null };
     }
     const parent = this.taskSessions.get(continuation.parent_task_id);
     if (parent === undefined) {
@@ -395,14 +430,10 @@ export class TaskDispatcher {
     }
     // The authorisation is checked again right before the turn starts, so a
     // grant revoked while the session was being looked up cannot slip through.
-    const parentProject = this.options.resolveProject(parent.projectId);
-    if (parentProject === null || !parentProject.enabled) {
-      return { threadId: null, reason: '原任务项目授权已撤销' };
+    if (sessionCwd.length === 0) {
+      return { threadId: null, reason: '目标会话没有可校验的工作目录' };
     }
-    if (!isPathInsideRoot(parentProject.rootPath, sessionCwd)) {
-      return { threadId: null, reason: '目标会话不属于本次授权项目' };
-    }
-    return { threadId: parent.threadId, reason: null };
+    return { threadId: parent.threadId, cwd: sessionCwd, reason: null };
   }
 
   private safeSummary(text: string, fallback: string): string {

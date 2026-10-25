@@ -146,6 +146,60 @@ describe('mock gateway console', () => {
     socket.close();
   });
 
+  it('stores the Desktop session catalogue and dispatches the selected session', async () => {
+    const service = await start();
+    const socket = await connectDesktop(service.port);
+    const received: { type: string; payload: Record<string, unknown> }[] = [];
+    socket.on('message', (data) => {
+      received.push(parseFrame<{ type: string; payload: Record<string, unknown> }>(data));
+    });
+
+    socket.send(
+      JSON.stringify({
+        protocol_version: '1.0',
+        message_id: 'sync_1',
+        sequence: 2,
+        type: 'agent_sessions.sync',
+        sent_at: new Date().toISOString(),
+        payload: {
+          items: [
+            {
+              agent_session_id: 'codex_th_1',
+              thread_id: 'th_1',
+              project_id: 'prj_local_1',
+              project_name: 'LinxBox',
+              agent: 'codex',
+              title: '已有会话',
+              status: 'idle',
+              summary: '已有会话',
+            },
+          ],
+        },
+      }),
+    );
+    await waitFor(() => service.agentSessions.length === 1);
+
+    const response = await fetch(`http://127.0.0.1:${service.port}/api/dispatch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'dispatch',
+        agent_session_id: 'codex_th_1',
+        payload: { prompt: '继续检查' },
+      }),
+    });
+    expect(response.status).toBe(200);
+    await waitFor(() => received.some((frame) => frame.type === 'task.dispatch'));
+
+    const dispatch = received.find((frame) => frame.type === 'task.dispatch');
+    expect(dispatch?.payload['project_id']).toBe('prj_local_1');
+    expect(dispatch?.payload['continuation']).toEqual({
+      agent_session_id: 'codex_th_1',
+      thread_id: 'th_1',
+    });
+    socket.close();
+  });
+
   it('refuses to dispatch when no Desktop is connected', async () => {
     const service = await start();
     const response = await fetch(`http://127.0.0.1:${service.port}/api/dispatch`, {

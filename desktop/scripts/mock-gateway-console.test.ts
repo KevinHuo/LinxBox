@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCancelFrame,
+  buildAgentSessionsSyncResult,
   buildDispatchFrame,
   summarizeFrame,
   toHistoryEntry,
@@ -75,6 +76,24 @@ describe('buildCancelFrame', () => {
   });
 });
 
+describe('buildAgentSessionsSyncResult', () => {
+  it('correlates the result to the Desktop sync frame', () => {
+    const frame = buildAgentSessionsSyncResult({ message_id: 'sync_1' });
+    expect(frame.type).toBe('agent_sessions.sync.result');
+    expect(frame.payload.reply_to_message_id).toBe('sync_1');
+    expect(frame.payload.ok).toBe(true);
+  });
+
+  it('uses the minimal shared-contract error shape on failure', () => {
+    const frame = buildAgentSessionsSyncResult({ message_id: 'sync_1' }, false, '目录非法');
+    expect(frame.payload).toEqual({
+      reply_to_message_id: 'sync_1',
+      ok: false,
+      error: { code: 'INVALID_ARGUMENT', message: '目录非法' },
+    });
+  });
+});
+
 describe('summarizeFrame', () => {
   it('summarises the client hello', () => {
     const summary = summarizeFrame({
@@ -126,6 +145,14 @@ describe('summarizeFrame', () => {
       payload: { client_time: '2026-10-25T00:00:00.000Z' },
     });
     expect(summary).toContain('client_time');
+  });
+
+  it('summarises a published Codex session catalogue', () => {
+    const summary = summarizeFrame({
+      type: 'agent_sessions.sync',
+      payload: { items: [{ agent_session_id: 'codex_th_1' }] },
+    });
+    expect(summary).toContain('1 项');
   });
 
   it('returns an empty summary for an unknown frame type', () => {

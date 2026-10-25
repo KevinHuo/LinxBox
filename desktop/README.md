@@ -32,10 +32,10 @@ desktop/
 
 主窗口三个视图：
 
-| 视图       | 内容                                                                        |
-| ---------- | --------------------------------------------------------------------------- |
-| 未配对     | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口                     |
-| 已配对主页 | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步）                 |
+| 视图       | 内容                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| 未配对     | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口                                   |
+| 已配对主页 | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步）                               |
 | 全局设置   | 灵矽连接（Gateway 地址与 token）、本地项目授权、外观（暖白 / 深色）、开机自启、悬浮窗开关 |
 
 悬浮窗是独立的透明置顶 `BrowserWindow`：右下角常驻小球，点击展开状态卡片，拖拽可移动位置。位置由主进程持有并限制在显示器工作区内。
@@ -76,12 +76,12 @@ pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statem
 
 | 指标       | 覆盖率 |
 | ---------- | -----: |
-| Statements | 98.26% |
-| Branches   | 93.44% |
-| Functions  | 98.59% |
-| Lines      | 98.24% |
+| Statements | 97.10% |
+| Branches   | 91.67% |
+| Functions  | 98.42% |
+| Lines      | 97.25% |
 
-最近验证：2026-10-25，25 个测试文件通过、1 个跳过；518 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+最近验证：2026-10-25，29 个测试文件通过、1 个跳过；586 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
 
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 
@@ -126,6 +126,8 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
 - **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
 - **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + mock Gateway 联调脚本
+- **WSS 指令不重复授权**：Electron 收到 Gateway 的 `task.dispatch` 后直接交给本机 Codex；Electron 的本地项目目录授权不是执行前置条件。已发布会话沿用 Codex 自己记录的工作目录，普通新任务使用 Desktop 默认工作目录。
+- **会话目录联调**：Electron 把已授权项目内的 Codex 会话以 `agent_sessions.sync` 全量同步给 mock Gateway，控制台按会话下达续接任务
 - **本机会话浏览**：读 Codex 的会话列表与聊天记录（`thread/list` / `thread/read`），**本地读取、不调用模型，没有额度也能用**
 
 未实现（属于后续 Slice）：
@@ -251,8 +253,9 @@ pnpm mock:console -- --port 9000 --token my-token
 - **看消息流**：实时显示 Desktop 发来的每一帧（`client.hello` / `client.heartbeat` / `task.ack` /
   任务事件），点任意一条看完整 JSON。方向用箭头标记：↓ 橙底是 Desktop → 云端，↑ 灰底是云端 →
   Desktop。
-- **下达指令**：填好 prompt 与 `project_id` 后点「下达 task.dispatch」，帧会走**真实的
-  Gateway/Desktop 1.0 校验**发给 Desktop；Desktop 的 ack 与任务事件随即回到消息流。
+- **下达指令**：Electron 授权目录后会同步该目录下的 Codex 会话；在控制台选择会话、填写 prompt 并点
+  「下达 task.dispatch」，mock 根据本地发布的会话映射自动填写 `project_id` 与续接上下文。Desktop 的 ack
+  与任务事件随即回到消息流。
 - **取消任务**：填 `task_id` 下达 `task.cancel`。
 
 实时推送走 SSE（`/events`），因为控制台只需要服务端单向推给浏览器。
@@ -266,7 +269,8 @@ pnpm mock:console        # 终端 A：起控制台
 pnpm e2e:mock-console    # 终端 B：起 Desktop 侧，浏览器打开 http://127.0.0.1:8787/
 ```
 
-在控制台点「下达 task.dispatch」，左侧消息流会依次出现 `task.started`、`task.ack
+先在 Electron 设置页授权一个包含既有 Codex 会话的目录。控制台收到 `agent_sessions.sync` 后会出现会话
+选择框；选中会话并点「下达 task.dispatch」，左侧消息流会依次出现 `task.started`、`task.ack
 (disposition=accepted)`，最终由本机 Codex 给出结果。Desktop 忙时再下发一条会得到
 `disposition=rejected`，这是真实的单任务串行约束，不是模拟。
 
@@ -306,8 +310,11 @@ pnpm e2e:mock-console    # 终端 B：起 Desktop 侧，浏览器打开 http://1
 「项目未授权」）。
 
 > 目录只能由主进程的系统选择器给出，渲染层无法传入路径——这是安全边界，自动化脚本无法代替这一步。
-> mock 控制台里的 `project_id` 要和这里授权出来的项目 ID 对上：授权后项目 ID 形如 `prj_local_1`，
-> 在控制台的 `project_id` 填它即可。
+> 授权后 Electron 会枚举该目录下的既有 Codex 会话，并把不含绝对路径的会话目录同步给 mock Gateway。
+> 控制台只能选择这份目录里的会话，不再要求人工复制 `project_id`；未由本机发布的 `thread_id` 会被拒绝。
+
+项目授权当前仍是进程内状态，Electron 重启后需要重新授权目录。真实云端 Gateway、固件列表读取和灵矽
+MCP 路由仍属于 Issue #14 的后续实现；这里验证的是同一消息语义下的本机 mock 闭环。
 
 ### 本机接入的安全边界
 
