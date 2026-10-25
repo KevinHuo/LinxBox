@@ -3,6 +3,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -76,10 +78,10 @@ type MCPCredential struct {
 	AgentID  string `json:"agent_id"`
 }
 
-// DeviceCredential 是设备凭据：token 映射到稳定设备标识与账号主体。
+// DeviceCredential 认证设备接入账号；真实 MAC 由连接后的 device.hello 登记。
 type DeviceCredential struct {
 	Token    string `json:"token"`
-	DeviceID string `json:"device_id"`
+	DeviceID string `json:"device_id,omitempty"` // 兼容旧配置，不限制本凭据可登记的 MAC。
 	Subject  string `json:"subject"`
 }
 
@@ -90,12 +92,12 @@ type DesktopCredential struct {
 	Subject  string `json:"subject"`
 }
 
-// PairingConfig 是配对许可：知道 MAC 不等于拥有配对权。
+// PairingConfig 仅保留旧配置解析兼容；绑定权限由动态登记账号决定。
 type PairingConfig struct {
 	Rules []PairingRule `json:"rules"`
 }
 
-// PairingRule 规定某账号主体允许绑定的设备。
+// PairingRule 是旧版配对白名单，新版不再以其授权。
 type PairingRule struct {
 	Subject   string   `json:"subject"`
 	DeviceIDs []string `json:"device_ids"`
@@ -247,7 +249,7 @@ func (c *Config) Validate() error {
 		if err := checkToken("设备", d.Token, "device:"+d.DeviceID); err != nil {
 			return err
 		}
-		if !domain.IsDeviceID(d.DeviceID) {
+		if d.DeviceID != "" && !domain.IsDeviceID(d.DeviceID) {
 			return fmt.Errorf("设备凭据 device_id %q 不是合法 MAC", d.DeviceID)
 		}
 		if !domain.ValidateSubject(d.Subject) {
@@ -282,12 +284,8 @@ func (c *Config) Validate() error {
 		if err := checkToken("MCP", m.Token, "mcp:"+m.DeviceID); err != nil {
 			return err
 		}
-		deviceID, err := domain.NormalizeMAC(m.DeviceID)
-		if err != nil {
+		if _, err := domain.NormalizeMAC(m.DeviceID); err != nil {
 			return fmt.Errorf("MCP device_id 必须为合法 MAC")
-		}
-		if _, ok := c.DeviceSubject(deviceID); !ok {
-			return fmt.Errorf("MCP device_id 必须对应已配置设备")
 		}
 		if !domain.ValidateID(m.AgentID) {
 			return fmt.Errorf("MCP agent_id 必须为 1～128 个字符")
@@ -311,6 +309,21 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// DeviceCredentialKey 关联当前接入凭据与持久设备登记；数据库不保存明文 token。
+func DeviceCredentialKey(token string) string {
+	key := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(key[:])
+}
+
+func (c *Config) DeviceSubjectForCredential(key string) (domain.Subject, bool) {
+	for _, credential := range c.Credentials.Devices {
+		if DeviceCredentialKey(credential.Token) == key {
+			return domain.Subject(credential.Subject), true
+		}
+	}
+	return "", false
+}
+
 // DeviceByToken 按 token 精确匹配设备凭据。
 func (c *Config) DeviceByToken(token string) (DeviceCredential, bool) {
 	for _, d := range c.Credentials.Devices {
@@ -329,16 +342,6 @@ func (c *Config) DesktopByToken(token string) (DesktopCredential, bool) {
 		}
 	}
 	return DesktopCredential{}, false
-}
-
-// DeviceSubject 返回设备凭据所属主体。
-func (c *Config) DeviceSubject(deviceID domain.DeviceID) (domain.Subject, bool) {
-	for _, d := range c.Credentials.Devices {
-		if d.DeviceID == string(deviceID) {
-			return domain.Subject(d.Subject), true
-		}
-	}
-	return "", false
 }
 
 // DesktopSubject 返回当前 Desktop 凭据所属主体，用于复核持久化绑定。

@@ -110,6 +110,7 @@ type Connections struct {
 	operations  sync.Map // 已认证主体的操作锁，与连接替换使用同一边界。
 	devices     map[string]*Connection
 	desktops    map[string]*Connection
+	pending     map[uint64]*Connection // 已认证、尚未上报 MAC；独立有界，允许满员时同设备重连。
 	logger      *slog.Logger
 	maxTotal    int
 	closing     bool
@@ -126,6 +127,7 @@ func NewConnections(logger *slog.Logger, limits config.LimitsConfig) *Connection
 	return &Connections{
 		devices:     map[string]*Connection{},
 		desktops:    map[string]*Connection{},
+		pending:     map[uint64]*Connection{},
 		logger:      logger,
 		maxTotal:    limits.MaxOnlineConnections,
 		sendQueue:   limits.SendQueueSize,
@@ -134,6 +136,43 @@ func NewConnections(logger *slog.Logger, limits config.LimitsConfig) *Connection
 		pingPeriod:  30 * time.Second,
 		pongWait:    60 * time.Second,
 	}
+}
+
+// RegisterPending 暂存尚未 hello 的连接，不把它当作在线可绑定设备。
+func (c *Connections) RegisterPending(conn *Connection) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closing || len(c.pending) >= c.maxTotal {
+		return false
+	}
+	c.pending[conn.Generation()] = conn
+	return true
+}
+
+func (c *Connections) UnregisterPending(conn *Connection) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.pending, conn.Generation())
+}
+
+// IdentifyDevice 在 hello 登记成功后原子转为在线设备，替换与业务操作共用代次锁。
+func (c *Connections) IdentifyDevice(deviceID string, conn *Connection) bool {
+	guard := c.operationLock("device:" + deviceID)
+	guard.Lock()
+	defer guard.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closing || conn.closed.Load() || c.pending[conn.Generation()] != conn ||
+		(c.devices[deviceID] == nil && len(c.devices)+len(c.desktops) >= c.maxTotal) {
+		return false
+	}
+	if old := c.devices[deviceID]; old != nil {
+		c.logger.Info("设备连接已替换", "event", "connection.replaced", "kind", "device", "device_id", deviceID, "connection_id", conn.Generation(), "previous_connection_id", old.Generation())
+		old.Close()
+	}
+	delete(c.pending, conn.Generation())
+	c.devices[deviceID] = conn
+	return true
 }
 
 // RegisterDevice 注册或替换设备连接；连接数达上限时拒绝。
@@ -164,6 +203,7 @@ func (c *Connections) RegisterDesktop(clientID string, conn *Connection) bool {
 		return false
 	}
 	if old := c.desktops[clientID]; old != nil {
+		c.logger.Info("Desktop 连接已替换", "event", "connection.replaced", "kind", "desktop", "client_id", clientID, "connection_id", conn.Generation(), "previous_connection_id", old.Generation())
 		old.Close()
 	}
 	c.desktops[clientID] = conn
@@ -220,6 +260,10 @@ func (c *Connections) Desktop(clientID string) *Connection {
 func (c *Connections) CloseAll() {
 	c.mu.Lock()
 	c.closing = true
+	var pending []*Connection
+	for _, conn := range c.pending {
+		pending = append(pending, conn)
+	}
 	keys := make([]string, 0, len(c.devices)+len(c.desktops))
 	for id := range c.devices {
 		keys = append(keys, "device:"+id)
@@ -228,6 +272,9 @@ func (c *Connections) CloseAll() {
 		keys = append(keys, "desktop:"+id)
 	}
 	c.mu.Unlock()
+	for _, conn := range pending {
+		conn.Close()
+	}
 	for _, key := range keys {
 		guard := c.operationLock(key)
 		guard.Lock()

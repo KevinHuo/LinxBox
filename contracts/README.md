@@ -22,7 +22,9 @@ DRI：BoleLiu（Gateway）；受影响模块：固件、Gateway、Desktop；必�
 
 ## 固件与 Gateway
 
-固件连接使用配置的设备凭据，MAC 只是定位信息；连接已鉴权后才处理 `device.hello`。
+固件、Desktop 均可先使用各自的账号凭据建立 WS，无需服务端预置设备 MAC。
+固件须在连接后 10 秒内通过 `device.hello` 上报真实 MAC，Gateway 自动登记设备与认证账号，
+之后才允许该连接处理业务请求；MAC 只是定位信息，不替代凭据认证。
 
 | 方向 | type | payload / 成功返回对象 |
 | --- | --- | --- |
@@ -42,7 +44,7 @@ DRI：BoleLiu（Gateway）；受影响模块：固件、Gateway、Desktop；必�
 
 每个操作均有独立的 `$defs["操作.response"]`，例如 `#/$defs/messages.list.response`。Gateway/固件先按 `reply_to` 找到原操作，再用该定义校验 data。根入口只能检查 data 属于某个已知对象；空历史与空会话列表形状相同，根入口不能代替原查询配对。
 
-MAC 输入接受连续 12 个十六进制字符、统一冒号或统一横线格式；Gateway 规范输出大写冒号格式。Desktop 用户输入 MAC 后发送 `device.bind`；Gateway 校验已认证双方、在线设备与配对权限，成功保存绑定并发送双方通知。重复同一绑定幂等，不覆盖其他 Desktop 的绑定。
+MAC 输入接受连续 12 个十六进制字符、统一冒号或统一横线格式；Gateway 规范输出大写冒号格式。Desktop 用户输入 MAC 后发送 `device.bind`；Gateway 校验设备已 hello 登记、双方认证账号相同，首次绑定要求设备在线，成功保存绑定并发送双方通知。无需预配 `token → MAC` 或 `pairing.rules`；重复同一绑定幂等，不覆盖其他 Desktop 的绑定或其他账号的设备归属。
 
 ## Desktop 与 Gateway
 

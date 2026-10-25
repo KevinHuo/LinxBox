@@ -43,6 +43,14 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("初始化数据库: %w", err)
 	}
 	repos := storage.NewRepositories(db.DB())
+	for _, credential := range cfg.Credentials.Devices {
+		if credential.DeviceID != "" {
+			if err := repos.Devices.AdoptLegacyCredential(context.Background(), repos.DB(), credential.DeviceID, credential.Subject, config.DeviceCredentialKey(credential.Token)); err != nil {
+				db.Close()
+				return nil, fmt.Errorf("迁移旧设备凭据关联: %w", err)
+			}
+		}
+	}
 	conns := lifecycle.NewConnections(logger, cfg.Limits)
 
 	server := transport.NewServer(cfg, logger, validator, transport.NewAuthenticator(cfg), conns)

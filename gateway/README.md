@@ -49,13 +49,17 @@ make build
 
 `config.example.json` 含全部配置项与无效示例值；真实配置和凭据不入仓库。
 必需项：`listen.addr`、`database.path`、`credentials.devices`、
-`credentials.desktops`（至少各一个）。配对许可由 `pairing.rules` 预置；
-知道设备 MAC 不等于拥有配对权。
+`credentials.desktops`（至少各一个）。两端凭据各自唯一、`subject` 相同；
+无需预配置设备 MAC 或配对白名单。固件建立 WS 后用 `device.hello` 上报真实 MAC，
+Gateway 自动登记账号归属，Desktop 随后通过 `device.bind` 绑定同账号的在线设备。
+
+Ubuntu 安装、已有服务升级、二进制验证和两端接入地址见[WS 联调部署步骤](docs/ws-deployment.md)。
 
 - 开发与回环地址允许 HTTP/WS；公网由反向代理终止 TLS。如直接暴露，
   配置 `listen.tls_cert_file` / `listen.tls_key_file`。
 - 凭据 token 通过子协议 `linxbox.v1, linxbox-token.<token>` 或
-  `Authorization: Bearer <token>` 传递；token 不进入帧、日志或数据库。
+  `Authorization: Bearer <token>` 传递；明文 token 不进入帧、日志或数据库。
+  数据库仅保存设备登记所用凭据的 SHA-256 指纹，用于核对当前授权是否仍有效。
 - MCP 使用 `credentials.mcp` 的独立 Bearer 凭据，绑定一个设备及灵矽智能体；
   省略该配置时拒绝全部 MCP 访问。设备和 Desktop 凭据不能访问 MCP。
 

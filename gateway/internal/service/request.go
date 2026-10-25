@@ -55,7 +55,7 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 		if err != nil {
 			return err
 		}
-		if err := validateBindingOwner(s.cfg, binding); err != nil {
+		if err := validateBindingOwner(ctx, tx, s.cfg, binding); err != nil {
 			return err
 		}
 		existing, err := s.requests.Get(ctx, tx, id)
@@ -180,7 +180,7 @@ func (s *RequestService) change(ctx context.Context, device domain.DeviceID, id 
 		if err != nil {
 			return err
 		}
-		if err := validateBindingOwner(s.cfg, binding); err != nil {
+		if err := validateBindingOwner(ctx, tx, s.cfg, binding); err != nil {
 			return err
 		}
 		event, err = fn(tx, r)
@@ -233,7 +233,7 @@ func (s *RequestService) expireLocked(ctx context.Context) error {
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
-			if err == nil && binding.DesktopClientID == r.DesktopID && validateBindingOwner(s.cfg, binding) == nil {
+			if err == nil && binding.DesktopClientID == r.DesktopID && validateBindingOwner(ctx, tx, s.cfg, binding) == nil {
 				expired = append(expired, r)
 			}
 		}

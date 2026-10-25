@@ -34,6 +34,7 @@ func (s *Server) forwardQuery(ctx context.Context, source *lifecycle.Connection,
 	q, err := s.queries.Begin(service.Query{DeviceID: string(p.DeviceID), DesktopID: desktopID, FirmwareID: msg.ID,
 		Operation: msg.Type, DeviceGeneration: source.Generation(), DesktopGeneration: destination.Generation(), Payload: msg.Payload, Offset: input.Offset})
 	if err != nil {
+		s.logOperation("query.rejected", source, msg.Type, msg.ID, err, "device_id", p.DeviceID)
 		if domain.CodeOf(err) != domain.CodeConflict {
 			s.respondFirmware(source, msg.Type, msg.ID, nil, err)
 		}
@@ -53,7 +54,11 @@ func (s *Server) forwardQuery(ctx context.Context, source *lifecycle.Connection,
 		err = destination.Send(raw, s.conns.SendTimeout())
 	}
 	if err != nil {
+		s.logOperation("query.forward_failed", source, msg.Type, msg.ID, domain.ErrDependencyUnavailable(""), "query_id", q.ID, "device_id", p.DeviceID, "client_id", desktopID)
 		s.queries.Fail(q.ID, domain.ErrDependencyUnavailable("无法向 Desktop 发送查询"))
+	} else {
+		s.logger.Info("查询已转发 Desktop", "event", "query.forwarded", "request_id", msg.ID, "query_id", q.ID, "type", msg.Type,
+			"device_id", p.DeviceID, "client_id", desktopID, "connection_id", source.Generation(), "desktop_connection_id", destination.Generation(), "expires_at", expires)
 	}
 	return nil
 }
@@ -79,5 +84,6 @@ func (s *Server) notifyMessage(ctx context.Context, p Principal, raw json.RawMes
 			}{contracts.NewMessageID("msg_"), "message.available", raw})
 		}
 	}
+	s.logger.Info("新消息通知已处理", "event", "message.notified", "client_id", p.DesktopID, "agent_session_id", message.SessionID, "message_id", message.MessageID, "bound_device_count", len(devices))
 	return nil
 }

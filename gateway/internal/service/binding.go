@@ -36,7 +36,7 @@ func NewBindingService(repos *storage.Repositories, cfg *config.Config, notifier
 	return &BindingService{repos: repos, cfg: cfg, notifier: notifier, logger: logger}
 }
 
-// Bind 由已认证 Desktop 提交设备 MAC：校验配对权限与主体一致性，保存唯一绑定。
+// Bind 由已认证 Desktop 提交已动态登记的设备 MAC，校验账号归属并保存唯一绑定。
 // 同一 Desktop 重复绑定幂等；已绑定其他 Desktop 返回 CONFLICT。
 func (s *BindingService) Bind(ctx context.Context, desktopID domain.DesktopClientID, subject domain.Subject, mac string) (contracts.BoundBinding, error) {
 	deviceID, err := domain.NormalizeMAC(mac)
@@ -46,19 +46,23 @@ func (s *BindingService) Bind(ctx context.Context, desktopID domain.DesktopClien
 	if desktopSubject, ok := s.cfg.DesktopSubject(desktopID); !ok || desktopSubject != subject {
 		return contracts.BoundBinding{}, domain.ErrPermissionDenied("Desktop 与认证账号不匹配")
 	}
-	if !s.pairingAllowed(subject, deviceID) {
-		return contracts.BoundBinding{}, domain.ErrPermissionDenied("该账号无权绑定此设备")
-	}
-	if devSubject, ok := s.cfg.DeviceSubject(deviceID); !ok || devSubject != subject {
-		return contracts.BoundBinding{}, domain.ErrPermissionDenied("设备与 Desktop 不属于同一账号")
-	}
-
 	var created bool
 	err = s.repos.WithTx(ctx, func(tx *sql.Tx) error {
+		device, err := s.repos.Devices.Get(ctx, tx, string(deviceID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrDependencyUnavailable("设备尚未完成 hello 登记")
+		}
+		if err != nil {
+			return err
+		}
+		registeredSubject, credentialOK := s.cfg.DeviceSubjectForCredential(device.CredentialKey)
+		if device.Subject != string(subject) || !credentialOK || registeredSubject != subject {
+			return domain.ErrPermissionDenied("设备与 Desktop 不属于同一账号")
+		}
 		existing, err := s.repos.Bindings.GetByDevice(ctx, tx, string(deviceID))
 		switch {
 		case err == nil:
-			if err := validateBindingOwner(s.cfg, existing); err != nil {
+			if err := validateBindingOwner(ctx, tx, s.cfg, existing); err != nil {
 				return err
 			}
 			if existing.DesktopClientID == string(desktopID) {
@@ -93,7 +97,41 @@ func (s *BindingService) Bind(ctx context.Context, desktopID domain.DesktopClien
 	return binding, nil
 }
 
-// Hello 处理固件 device.hello：MAC 必须与认证设备一致，返回当前绑定。
+// RegisterDevice 在首次 hello 时登记认证账号与真实 MAC，不能覆盖其他账号的归属。
+func (s *BindingService) RegisterDevice(ctx context.Context, subject domain.Subject, mac, key string) (contracts.Binding, error) {
+	deviceID, err := domain.NormalizeMAC(mac)
+	if err != nil {
+		return contracts.Binding{}, err
+	}
+	if currentSubject, ok := s.cfg.DeviceSubjectForCredential(key); !ok || currentSubject != subject {
+		return contracts.Binding{}, domain.ErrPermissionDenied("设备接入账号已失效")
+	}
+	result := contracts.Binding{DeviceID: string(deviceID)}
+	err = s.repos.WithTx(ctx, func(tx *sql.Tx) error {
+		device, err := s.repos.Devices.Register(ctx, tx, string(deviceID), string(subject), key)
+		if err != nil {
+			return err
+		}
+		if device.Subject != string(subject) {
+			return domain.ErrPermissionDenied("设备已属于其他账号")
+		}
+		binding, err := s.repos.Bindings.GetByDevice(ctx, tx, string(deviceID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := validateBindingOwner(ctx, tx, s.cfg, binding); err != nil {
+			return err
+		}
+		result.DesktopClientID = &binding.DesktopClientID
+		return nil
+	})
+	return result, err
+}
+
+// Hello 处理同一连接的重复 hello；登记后的连接不能中途换成另一个 MAC。
 func (s *BindingService) Hello(ctx context.Context, deviceID domain.DeviceID, mac string) (contracts.Binding, error) {
 	got, err := domain.NormalizeMAC(mac)
 	if err != nil {
@@ -109,34 +147,22 @@ func (s *BindingService) Hello(ctx context.Context, deviceID domain.DeviceID, ma
 	if err != nil {
 		return contracts.Binding{}, err
 	}
-	if err := validateBindingOwner(s.cfg, row); err != nil {
+	if err := validateBindingOwner(ctx, s.repos.DB(), s.cfg, row); err != nil {
 		return contracts.Binding{}, err
 	}
 	clientID := row.DesktopClientID
 	return contracts.Binding{DeviceID: string(deviceID), DesktopClientID: &clientID}, nil
 }
 
-// pairingAllowed 判断账号主体是否被配置允许绑定该设备（知道 MAC 不等于拥有配对权）。
-func (s *BindingService) pairingAllowed(subject domain.Subject, deviceID domain.DeviceID) bool {
-	for _, rule := range s.cfg.Pairing.Rules {
-		if rule.Subject != string(subject) {
-			continue
-		}
-		for _, d := range rule.DeviceIDs {
-			if d == string(deviceID) {
-				return true
-			}
-		}
+// validateBindingOwner 核对持久登记、绑定和当前接入账号，不根据配置 MAC 推断设备归属。
+func validateBindingOwner(ctx context.Context, q storage.Queryer, cfg *config.Config, row *storage.BindingRow) error {
+	device, err := (storage.DeviceRepo{}).Get(ctx, q, row.DeviceID)
+	if err != nil {
+		return err
 	}
-	return false
-}
-
-// validateBindingOwner 同时核对绑定时保存的账号及双方当前配置；身份 ID 不代表账号不变。
-// 所属账号变化后拒绝沿用旧绑定，不自动换绑或删除原账号数据。
-func validateBindingOwner(cfg *config.Config, row *storage.BindingRow) error {
-	deviceSubject, deviceOK := cfg.DeviceSubject(domain.DeviceID(row.DeviceID))
 	desktopSubject, desktopOK := cfg.DesktopSubject(domain.DesktopClientID(row.DesktopClientID))
-	if !deviceOK || !desktopOK || row.Subject == "" || string(deviceSubject) != row.Subject || string(desktopSubject) != row.Subject {
+	deviceSubject, deviceOK := cfg.DeviceSubjectForCredential(device.CredentialKey)
+	if !deviceOK || string(deviceSubject) != device.Subject || !desktopOK || row.Subject == "" || device.Subject != row.Subject || string(desktopSubject) != row.Subject {
 		return domain.ErrPermissionDenied("绑定所属账号与当前设备或 Desktop 不匹配")
 	}
 	return nil
@@ -154,9 +180,13 @@ func authorizedDevices(ctx context.Context, repos *storage.Repositories, cfg *co
 		if err != nil {
 			return nil, err
 		}
-		if validateBindingOwner(cfg, row) == nil {
-			authorized = append(authorized, device)
+		if err := validateBindingOwner(ctx, repos.DB(), cfg, row); err != nil {
+			if errors.Is(err, domain.ErrPermissionDenied("")) {
+				continue
+			}
+			return nil, err
 		}
+		authorized = append(authorized, device)
 	}
 	return authorized, nil
 }

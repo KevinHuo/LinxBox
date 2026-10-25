@@ -12,30 +12,42 @@ import (
 	"github.com/KevinHuo/LinxBox/gateway/internal/lifecycle"
 )
 
+const deviceHelloTimeout = 10 * time.Second
+
 // serveFirmware 处理固件连接的消息循环。
 func (s *Server) serveFirmware(conn *websocket.Conn, p Principal) {
 	generation := s.conns.NextGeneration()
 	wsConn := lifecycle.NewConnection(conn, s.conns.SendQueueSize(), 10*time.Second, 30*time.Second, 60*time.Second, generation)
-	if !s.conns.RegisterDevice(string(p.DeviceID), wsConn) {
-		s.logger.Warn("设备连接数达上限，拒绝", "device_id", p.DeviceID)
+	if !s.conns.RegisterPending(wsConn) {
+		s.logger.Warn("待登记连接数达上限，拒绝", "event", "device.pending_rejected", "connection_id", generation, "subject", p.Subject)
 		wsConn.Close()
 		return
 	}
-	defer s.conns.UnregisterDevice(string(p.DeviceID), wsConn)
+	defer s.conns.UnregisterPending(wsConn)
+	defer func() {
+		if p.DeviceID != "" {
+			s.conns.UnregisterDevice(string(p.DeviceID), wsConn)
+			s.queries.Disconnect(true, string(p.DeviceID), generation)
+		}
+	}()
 	defer wsConn.Close()
-	defer s.queries.Disconnect(true, string(p.DeviceID), generation)
+	helloTimer := time.AfterFunc(s.helloTimeout, func() {
+		s.logger.Warn("设备 hello 超时，关闭连接", "event", "device.hello_timeout", "connection_id", generation, "subject", p.Subject)
+		wsConn.Close()
+	})
+	defer helloTimer.Stop()
 	conn.SetReadLimit(int64(s.cfg.Limits.MaxFrameBytes) + frameReadMargin)
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-	s.logger.Info("设备已连接", "device_id", p.DeviceID, "subject", p.Subject)
+	s.logger.Info("设备连接等待 hello", "event", "device.awaiting_hello", "connection_id", generation, "subject", p.Subject, "remote_addr", conn.RemoteAddr().String())
 	ctx := context.Background()
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
-				s.logger.Info("设备断开", "device_id", p.DeviceID)
+				s.logger.Info("设备断开", "event", "connection.closed", "kind", "device", "connection_id", generation, "device_id", p.DeviceID, "close_code", websocketCloseCode(err))
 			} else {
-				s.logger.Warn("设备连接异常", "device_id", p.DeviceID, "err", err)
+				s.logger.Warn("设备连接异常", "event", "connection.closed", "kind", "device", "connection_id", generation, "device_id", p.DeviceID, "close_code", websocketCloseCode(err))
 			}
 			return
 		}
@@ -45,10 +57,51 @@ func (s *Server) serveFirmware(conn *websocket.Conn, p Principal) {
 				websocket.FormatCloseMessage(websocket.CloseMessageTooBig, "frame too large"), time.Now().Add(time.Second))
 			return
 		}
+		if p.DeviceID == "" {
+			if s.identifyFirmware(ctx, wsConn, &p, data) {
+				helloTimer.Stop()
+			}
+			continue
+		}
 		if err := s.handleFirmwareMessage(ctx, wsConn, p, data); err != nil {
-			s.logger.Warn("固件消息处理失败", "device_id", p.DeviceID, "err", err)
+			s.logger.Warn("固件消息处理失败", "event", "request.failed", "connection_id", generation, "device_id", p.DeviceID, "error_code", domain.CodeOf(err))
 		}
 	}
+}
+
+// identifyFirmware 只允许待登记连接发送 hello，MAC 来自硬件上报而非 token 配置。
+func (s *Server) identifyFirmware(ctx context.Context, conn *lifecycle.Connection, p *Principal, data []byte) bool {
+	if err := s.validator.ValidateFirmwareIncoming(data); err != nil {
+		s.logger.Warn("待登记消息未通过 Schema 校验", "event", "request.invalid", "kind", "device", "connection_id", conn.Generation(), "bytes", len(data), "error_code", domain.CodeInvalidArgument)
+		return false
+	}
+	var msg contracts.FirmwareMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		return false
+	}
+	s.logger.Info("收到设备请求", "event", "request.received", "kind", "device", "connection_id", conn.Generation(), "request_id", msg.ID, "type", msg.Type)
+	if msg.Type != "device.hello" {
+		s.respondFirmware(conn, msg.Type, msg.ID, nil, domain.ErrConflict("请先发送 device.hello 登记设备"))
+		return false
+	}
+	var payload contracts.DeviceHelloPayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		return false
+	}
+	started := time.Now()
+	binding, err := s.binding.RegisterDevice(ctx, p.Subject, payload.MacAddress, p.CredentialKey)
+	if err == nil && !s.conns.IdentifyDevice(binding.DeviceID, conn) {
+		err = domain.ErrResourceExhausted("在线连接数已达上限或连接已关闭")
+	}
+	if err != nil {
+		s.logOperation("device.registration", conn, msg.Type, msg.ID, err, "subject", p.Subject, "mac_address", payload.MacAddress, "duration_ms", time.Since(started).Milliseconds())
+		s.respondFirmware(conn, msg.Type, msg.ID, nil, err)
+		return false
+	}
+	p.DeviceID = domain.DeviceID(binding.DeviceID)
+	s.respondFirmware(conn, msg.Type, msg.ID, binding, nil)
+	s.logger.Info("设备已登记上线", "event", "device.registered", "connection_id", conn.Generation(), "request_id", msg.ID, "device_id", p.DeviceID, "subject", p.Subject, "bound", binding.DesktopClientID != nil, "duration_ms", time.Since(started).Milliseconds())
+	return true
 }
 
 // handleFirmwareMessage 校验并分发一条固件消息。
@@ -60,13 +113,18 @@ func (s *Server) handleFirmwareMessage(ctx context.Context, wsConn *lifecycle.Co
 
 func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.Connection, p Principal, data []byte) error {
 	if err := s.validator.ValidateFirmwareIncoming(data); err != nil {
-		s.logger.Warn("固件消息未通过 Schema 校验", "device_id", p.DeviceID, "err", err)
+		s.logger.Warn("固件消息未通过 Schema 校验", "event", "request.invalid", "connection_id", wsConn.Generation(), "device_id", p.DeviceID, "bytes", len(data), "error_code", domain.CodeInvalidArgument)
 		return nil
 	}
 	var msg contracts.FirmwareMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return err
 	}
+	started := time.Now()
+	s.logger.Info("收到设备请求", "event", "request.received", "kind", "device", "connection_id", wsConn.Generation(), "device_id", p.DeviceID, "request_id", msg.ID, "type", msg.Type)
+	defer func() {
+		s.logger.Info("设备请求分发结束", "event", "request.dispatched", "kind", "device", "connection_id", wsConn.Generation(), "device_id", p.DeviceID, "request_id", msg.ID, "type", msg.Type, "duration_ms", time.Since(started).Milliseconds())
+	}()
 	switch msg.Type {
 	case "device.hello":
 		var payload contracts.DeviceHelloPayload
@@ -116,6 +174,7 @@ func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.
 		case "request.confirm":
 			err = domain.ErrDependencyUnavailable("任务调度尚未实现，请求未执行")
 		}
+		s.logOperation("request.state", wsConn, msg.Type, msg.ID, err, "device_id", p.DeviceID, "business_request_id", payload.RequestID, "agent_session_id", payload.AgentSessionID, "status", request.Status)
 		s.respondFirmware(wsConn, msg.Type, msg.ID, request, err)
 	default:
 		// 首版未开放的操作（request.* 等）：明确拒绝，不假装成功。
@@ -153,13 +212,15 @@ func (s *Server) respondFirmware(wsConn *lifecycle.Connection, op, replyTo strin
 		return
 	}
 	if verr := s.validator.ValidateFirmwareResponse(op, raw); verr != nil {
-		s.logger.Error("响应未通过 Schema 校验", "op", op, "err", verr)
+		s.logger.Error("响应未通过 Schema 校验", "op", op, "request_id", replyTo, "error_code", domain.CodeInternal)
 		s.respondFirmwareError(wsConn, op, replyTo, domain.ErrInternal("内部错误"))
 		return
 	}
 	if err := wsConn.Send(raw, s.conns.SendTimeout()); err != nil {
-		s.logger.Warn("固件响应发送失败", "op", op, "err", err)
+		s.logOperation("response.send_failed", wsConn, op, replyTo, domain.ErrDependencyUnavailable(""), "kind", "device")
+		return
 	}
+	s.logOperation("response.enqueued", wsConn, op, replyTo, err, "kind", "device", "bytes", len(raw))
 }
 
 // respondFirmwareError 不携带原始超限内容；兜底也须满足原操作 Schema 和编码后帧上限。
@@ -177,13 +238,15 @@ func (s *Server) respondFirmwareError(conn *lifecycle.Connection, op, replyTo st
 		return
 	}
 	if err := s.validator.ValidateFirmwareResponse(op, raw); err != nil {
-		s.logger.Error("有界错误响应不符合 Schema", "op", op)
+		s.logger.Error("有界错误响应不符合 Schema", "op", op, "request_id", replyTo, "error_code", domain.CodeInternal)
 		conn.Close()
 		return
 	}
 	if err := conn.Send(raw, s.conns.SendTimeout()); err != nil {
-		s.logger.Warn("固件错误响应发送失败", "op", op, "err", err)
+		s.logOperation("response.send_failed", conn, op, replyTo, domain.ErrDependencyUnavailable(""), "kind", "device")
+		return
 	}
+	s.logOperation("response.enqueued", conn, op, replyTo, cause, "kind", "device", "bytes", len(raw))
 }
 
 func wireError(err error) *contracts.Error {

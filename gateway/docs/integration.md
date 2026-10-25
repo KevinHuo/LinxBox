@@ -15,17 +15,30 @@ cp config.example.json config.local.json
 go run ./cmd/linxbox-gateway --config ./config.local.json
 ```
 
-设备、Desktop 的 token 必须分别唯一；两者 subject 相同，pairing.rules 允许该主体绑定该设备 MAC。真实 token 只保存在受限本机配置中。设备先连入，Desktop 再发送绑定操作。
+设备、Desktop 的 token 必须分别唯一，两者 `subject` 相同。配置只需账号凭据，无需设备 MAC 或 `pairing.rules`。
+两端建立 WS 的顺序不限；固件在连接后 10 秒内发送 `device.hello` 上报自己的 MAC，
+Gateway 自动将 MAC 登记到该凭据的账号，返回 Binding。Desktop 获得 MAC 后发送 `device.bind`。
+尚未 hello 的连接不计作在线设备，业务请求返回 `CONFLICT`；超过 10 秒未成功 hello 则关闭连接。
+未登记的 MAC 不能绑定，返回 `DEPENDENCY_UNAVAILABLE`。真实 token 只保存在受限本机配置中。
 
 首次绑定会检查设备当前在线，离线返回 `DEPENDENCY_UNAVAILABLE` 且不写入绑定；
 已有同一账号、同一 Desktop 的绑定允许离线重复提交并返回原结果。
 读取绑定、目录、历史路由、请求快照和发送通知时，均复核持久化绑定的 subject 与双方当前凭据归属。
-只轮换 token 而保持账号归属不会改变绑定；变更所属账号后旧绑定返回 `PERMISSION_DENIED`，
-不会自动换绑或把原账号数据交给新账号。
+设备登记记录持久化 MAC、账号和凭据 SHA-256 指纹，不保存明文 token。
+移除或改变凭据账号后，关联的旧绑定不能继续读取或推送数据；同账号的新凭据可在重新 hello 后恢复原绑定。
+不同账号上报同一个已登记 MAC 返回 `PERMISSION_DENIED`，不会替换原设备连接或归属。
+同一连接成功登记后不可更换 MAC；同账号的不同设备可使用账号接入凭据分别 hello，
+相同 MAC 重连替换旧连接。MAC 上报本身不证明硬件真实性，固件凭据应只交给对应账号的受信设备。
+
+升级时新增登记表，已有绑定自动保留原账号。旧配置的 `credentials.devices[].device_id` 仅用于为旧绑定补齐凭据关联，
+不限制新 hello 可上报的 MAC；旧 `pairing.rules` 仍能解析，但不再作为授权白名单。
+直接使用新配置升级时，已有设备重新 hello 后恢复凭据关联，不需要清空数据库。
 
 同一端口的路径分别是 `/v1/devices/connect` 和 `/v1/clients/connect`。采用子协议认证时客户端请求 `linxbox.v1, linxbox-token.<token>`，Gateway 只返回 `linxbox.v1`，不回显 token。固件也可通过 Authorization Bearer 头认证。
 
-公网必须使用 HTTPS/WSS 和有效证书。设备与电脑通过可到达的域名 / 局域网地址连接；设备上的 127.0.0.1 指向设备自身，不能作为云端地址。回环 HTTP/WS 只用于本机模拟。
+生产部署使用 HTTPS/WSS 和有效证书。本轮临时公网联调可通过 HTTP/WS 访问同一入口，
+例如固件 `ws://124.220.162.10:8787/v1/devices/connect`、Desktop `ws://124.220.162.10:8787/v1/clients/connect`；
+WS 不加密，使用联调专用凭据。设备上的 127.0.0.1 指向设备自身，不能作为云端地址。
 
 ## 当前开放接口
 
@@ -101,9 +114,10 @@ Desktop 离线或查询中断返回 `DEPENDENCY_UNAVAILABLE`，超出并发限�
 
 ## Desktop 接线清单
 
-现有 Electron 主进程尚未完成 Gateway 接线；仅启动本 Gateway 不会让原 Desktop 自动同步目录。Desktop 实现方按以下消息接入：
+Desktop 的连接与契约处理入口见 `desktop/main/gateway-connection.ts` 和 `desktop/daemon/gateway-client/frames.ts`。
+部署后仍需在 Desktop 配置实际 Gateway 地址和凭据，并按以下消息完成真实联调验收：
 
-1. 在 Electron 主进程接入真实 GatewayClient；扩展当前仅接受 task.dispatch / task.cancel 的入站解析器，接收 binding.result、agent_sessions.sync.result、messages.list、message.content.get。连接后发送 client.hello，并处理 WebSocket ping / pong。
+1. 核对 Electron 主进程 GatewayClient 的连接配置，确认能接收 binding.result、agent_sessions.sync.result、messages.list、message.content.get。连接后发送 client.hello，并处理 WebSocket ping / pong。
 2. 用户输入 MAC 后发送 device.bind，按 payload.reply_to_message_id 关联结果。
 3. 从本机明确允许共享的项目读取 Agent 会话。会话的项目授权、thread 归属和本机路径校验仍由 Desktop 负责；不将全部私人历史自动上传。
 4. 串行发送 agent_sessions.sync 并等待保存应答；变化合并到下一份完整目录。枚举失败或掉线不能发 items=[]，成功枚举为空才表示清空目录。
@@ -123,7 +137,7 @@ Desktop 离线或查询中断返回 `DEPENDENCY_UNAVAILABLE`，超出并发限�
 
 固件实现方应增加独立的 Gateway 只读连接，保持既有灵矽语音连接的职责不变：
 
-1. 认证后发 device.hello，使用真实 MAC，读取 Binding；未绑定时不能显示为已连接电脑。
+1. 认证建立 WS 后 10 秒内发 device.hello，使用自己的真实 MAC，无需服务端预登记；读取 Binding，未绑定时不能显示为已连接电脑。
 2. 收到 device.bound 后从 agent_sessions.list 首页读取目录；一次最多 5 项。
 3. 进入会话时读取 agent_session.get 和 messages.list；选中消息后通过 message.content.get 分块取正文。
 4. 固件每个请求使用唯一 id，通过 response.reply_to 配对。正文 offset / next_offset 是 UTF-8 字节位置，不是字符数或屏幕页码。
@@ -132,7 +146,7 @@ Desktop 离线或查询中断返回 `DEPENDENCY_UNAVAILABLE`，超出并发限�
 
 设备的内存、字形覆盖、按键响应和 LVGL 线程安全须由固件实现及真机验收。Gateway 的主机测试不替代硬件验证。
 
-最小固件建连消息示例，MAC 须匹配设备凭据对应的身份：
+最小固件建连消息示例，MAC 由固件在连接后上报：
 
 ```json
 {"id":"hello-f1","type":"device.hello","payload":{"mac_address":"AA:BB:CC:DD:EE:01"}}
@@ -208,6 +222,10 @@ go run ./cmd/linxbox-smoke --config ./config.local.json --url wss://gateway.exam
 
 ## 部署
 
+Ubuntu 24.04 的二进制安装、升级命令、两端接入地址和请求日志排查见
+[WS 联调部署步骤](ws-deployment.md)。固件模拟器可通过 `--device-mac` 指定主动上报的 MAC，
+无需修改服务端配置。
+
 直接部署使用 `make build` 的本机构建或 `make release` 的对应 Linux 架构产物，配置使用绝对数据库路径。systemd 模板通过 StateDirectory 建立数据目录，程序本身不自动创建任意父目录。
 
 容器从仓库根目录构建上下文运行：
@@ -219,3 +237,14 @@ docker compose -f gateway/deploy/compose.yaml up --build -d
 事先准备 gateway/deploy/gateway.json：容器内 listen.addr 为 0.0.0.0:8787，database.path 为 /var/lib/linxbox/gateway.db；该文件不提交。挂载配置需允许容器非 root 用户读取，并保持受限权限。Compose 默认只向宿主机回环地址发布端口，公网由反向代理提供 HTTPS/WSS。
 
 运行镜像不携带 Go 工具链、wget 或 shell；healthcheck 调用程序自身。SQLite 数据位于独立卷，禁止同时启动多个实例共享同一数据库。容器构建、目标机器运行、真实 TLS 与真机验证必须另行执行，不能用交叉编译成功代替。
+
+## 动态登记与日志验证
+
+2026-10-25 本机验证：`make check` 通过格式、静态检查、全部测试、覆盖率与 race。
+整体覆盖率 92.23%；本次变更包均达到 90%，包括 app 92.86%、service 92.09%、transport 90.77%。
+`make build release` 完成本机和 Linux amd64 / arm64 无 CGO 构建。
+
+真实回环 TCP 的模拟两端未配置 MAC 或白名单，分别验证首次联调、重复执行和 Gateway 重启后恢复；
+另有回归测试验证跨账号拒绝、旧绑定升级、待 hello 上限与超时、同 MAC 重连、原连接不可切换 MAC。
+请求日志测试验证成功、对端错误和超时查询的两端 ID 关联，并检查凭据、标题、正文、对端错误文案和畸形 payload 不进入日志。
+这些结果不代表腾讯云部署、真实固件、真实 Desktop 或 MCP 平台已完成验收。

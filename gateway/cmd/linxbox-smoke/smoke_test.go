@@ -32,15 +32,12 @@ func smokeConfig(t *testing.T) *config.Config {
 		Database: config.DatabaseConfig{Path: filepath.Join(t.TempDir(), "gw.db")},
 		Credentials: config.CredentialsConfig{
 			Devices: []config.DeviceCredential{
-				{Token: "dev-token", DeviceID: "AA:BB:CC:DD:EE:01", Subject: "alice"},
+				{Token: "dev-token", Subject: "alice"},
 			},
 			Desktops: []config.DesktopCredential{
 				{Token: "dt-token", ClientID: "desktop-1", Subject: "alice"},
 			},
 		},
-		Pairing: config.PairingConfig{Rules: []config.PairingRule{
-			{Subject: "alice", DeviceIDs: []string{"AA:BB:CC:DD:EE:01"}},
-		}},
 		Limits: config.LimitsConfig{
 			MaxFrameBytes: 64 * 1024, SessionPageSize: 5, MaxCatalogItems: 200,
 			MaxOnlineConnections: 16, SendQueueSize: 8, SendTimeout: config.Duration(2 * time.Second),
@@ -122,6 +119,7 @@ func startSmokeServer(t *testing.T, cfg *config.Config) func() {
 // TestSmokerAgainstLiveServer 使用模拟两端验证真实 TCP 入口；重复执行不清理数据库，
 // Gateway 重启后先读取快照，再同步目录，避免把重写数据当作持久化证据。
 func TestSmokerAgainstLiveServer(t *testing.T) {
+	const mac = "34:00:00:00:00:77"
 	cfg := smokeConfig(t)
 	stop := startSmokeServer(t, cfg)
 	configPath := filepath.Join(t.TempDir(), "smoke.json")
@@ -133,12 +131,12 @@ func TestSmokerAgainstLiveServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("first", func(t *testing.T) {
-		if code := run([]string{"--config", configPath}); code != 0 {
+		if code := run([]string{"--config", configPath, "--device-mac", mac}); code != 0 {
 			t.Fatalf("首次模拟联调退出码: %d", code)
 		}
 	})
 	t.Run("repeat", func(t *testing.T) {
-		if code := run([]string{"--config", configPath, "--url", "ws://" + cfg.Listen.Addr}); code != 0 {
+		if code := run([]string{"--config", configPath, "--url", "ws://" + cfg.Listen.Addr, "--device-mac", mac}); code != 0 {
 			t.Fatalf("同一数据库重复联调退出码: %d", code)
 		}
 	})
@@ -150,7 +148,7 @@ func TestSmokerAgainstLiveServer(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer fw.close()
-		hello, err := fw.request("device.hello", map[string]any{"mac_address": cfg.Credentials.Devices[0].DeviceID})
+		hello, err := fw.request("device.hello", map[string]any{"mac_address": mac})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,7 +164,7 @@ func TestSmokerAgainstLiveServer(t *testing.T) {
 		if !page.OK || len(page.Page.Items) != 5 || page.Page.NextCursor == nil || page.Page.Items[0].AgentSessionID != "sess-01" {
 			t.Fatalf("Gateway 重启后目录未保留: %+v", page)
 		}
-		if code := run([]string{"--config", configPath, "--url", "ws://" + cfg.Listen.Addr}); code != 0 {
+		if code := run([]string{"--config", configPath, "--url", "ws://" + cfg.Listen.Addr, "--device-mac", mac}); code != 0 {
 			t.Fatalf("重启后模拟联调退出码: %d", code)
 		}
 	})

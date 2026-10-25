@@ -11,7 +11,6 @@
     "devices": [
       {
         "token": "<设备凭据 token，与部署环境注入保持一致>",
-        "device_id": "AA:BB:CC:DD:EE:01",
         "subject": "<账号主体>"
       }
     ],
@@ -27,14 +26,6 @@
         "token": "<Desktop 凭据 token，与部署环境注入保持一致>",
         "client_id": "desktop-<唯一标识>",
         "subject": "<账号主体>"
-      }
-    ]
-  },
-  "pairing": {
-    "rules": [
-      {
-        "subject": "<账号主体>",
-        "device_ids": ["AA:BB:CC:DD:EE:01"]
       }
     ]
   },

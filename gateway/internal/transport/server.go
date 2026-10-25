@@ -24,29 +24,31 @@ const frameReadMargin = 4 * 1024
 
 // Server 是单端口 HTTP/WSS 服务：健康检查、固件与 Desktop 入口共用监听端口。
 type Server struct {
-	cfg       *config.Config
-	logger    *slog.Logger
-	validator *contracts.Validator
-	auth      *Authenticator
-	conns     *lifecycle.Connections
-	binding   *service.BindingService
-	sessions  *service.SessionService
-	queries   *service.QueryRouter
-	requests  *service.RequestService
-	mcp       *mcpEndpoint
-	upgrader  websocket.Upgrader
-	ready     atomic.Bool
-	httpSrv   *http.Server
+	cfg          *config.Config
+	logger       *slog.Logger
+	validator    *contracts.Validator
+	auth         *Authenticator
+	conns        *lifecycle.Connections
+	binding      *service.BindingService
+	sessions     *service.SessionService
+	queries      *service.QueryRouter
+	requests     *service.RequestService
+	mcp          *mcpEndpoint
+	upgrader     websocket.Upgrader
+	ready        atomic.Bool
+	httpSrv      *http.Server
+	helloTimeout time.Duration
 }
 
 // NewServer 构造传输层服务；绑定与目录服务随后通过 SetServices 注入。
 func NewServer(cfg *config.Config, logger *slog.Logger, validator *contracts.Validator, auth *Authenticator, conns *lifecycle.Connections) *Server {
 	s := &Server{
-		cfg:       cfg,
-		logger:    logger,
-		validator: validator,
-		auth:      auth,
-		conns:     conns,
+		cfg:          cfg,
+		logger:       logger,
+		validator:    validator,
+		auth:         auth,
+		conns:        conns,
+		helloTimeout: deviceHelloTimeout,
 		upgrader: websocket.Upgrader{
 			Subprotocols: []string{"linxbox.v1"},
 			CheckOrigin:  func(*http.Request) bool { return true },
@@ -54,6 +56,15 @@ func NewServer(cfg *config.Config, logger *slog.Logger, validator *contracts.Val
 	}
 	s.queries = service.NewQueryRouter(validator, cfg.Timeouts.QueryTimeout.Std(), cfg.Limits.MaxPendingQueries, cfg.Limits.MaxDeviceQueries,
 		func(q service.Query, data json.RawMessage, err error) {
+			attrs := []any{"event", "query.completed", "query_id", q.ID, "request_id", q.FirmwareID, "type", q.Operation,
+				"device_id", q.DeviceID, "client_id", q.DesktopID, "connection_id", q.DeviceGeneration,
+				"desktop_connection_id", q.DesktopGeneration, "duration_ms", time.Since(q.StartedAt).Milliseconds(), "end_reason", q.EndReason, "ok", err == nil}
+			if err != nil {
+				// Desktop 返回的错误文案可能包含私人内容，只记录错误码。
+				s.logger.Warn("查询结束", append(attrs, "error_code", domain.CodeOf(err))...)
+			} else {
+				s.logger.Info("查询结束", attrs...)
+			}
 			conn := conns.Device(q.DeviceID)
 			if conn != nil && conn.Generation() == q.DeviceGeneration {
 				s.respondFirmware(conn, q.Operation, q.FirmwareID, data, err)
@@ -99,6 +110,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
+		s.logger.Info("Gateway 开始监听", "event", "server.starting", "addr", s.cfg.Listen.Addr, "tls", s.cfg.Listen.TLSCert != "")
 		var err error
 		if s.cfg.Listen.TLSCert != "" {
 			err = s.httpSrv.ListenAndServeTLS(s.cfg.Listen.TLSCert, s.cfg.Listen.TLSKey)
@@ -111,9 +123,11 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	select {
 	case err := <-errCh:
+		s.logger.Error("Gateway 监听失败", "event", "server.listen_failed")
 		s.ready.Store(false)
 		return err
 	case <-ctx.Done():
+		s.logger.Info("Gateway 正在停止", "event", "server.stopping")
 		s.ready.Store(false)
 		s.CloseMCP()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeouts.ShutdownGrace.Std())
@@ -177,16 +191,18 @@ func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) upgradeAndAuthenticate(w http.ResponseWriter, r *http.Request, kind PrincipalKind) (*websocket.Conn, Principal, bool) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.logger.Warn("WebSocket 升级失败", "event", "connection.upgrade_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr)
 		return nil, Principal{}, false
 	}
 	principal, err := s.auth.Authenticate(kind, r)
 	if err != nil {
-		s.logger.Warn("认证失败", "kind", kindName(kind), "err", err)
+		s.logger.Warn("认证失败", "event", "connection.auth_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr, "error_code", domain.CodeOf(err))
 		_ = conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(4401, "unauthenticated"), time.Now().Add(time.Second))
 		_ = conn.Close()
 		return nil, Principal{}, false
 	}
+	s.logger.Info("连接认证成功", "event", "connection.authenticated", "kind", kindName(kind), "subject", principal.Subject, "client_id", principal.DesktopID, "remote_addr", r.RemoteAddr)
 	return conn, principal, true
 }
 
@@ -258,7 +274,7 @@ func (s *Server) sendFirmwarePush(conn *lifecycle.Connection, typ string, msg an
 		return
 	}
 	if err := s.validator.ValidateFirmwarePush(typ, raw); err != nil {
-		s.logger.Error("推送校验失败", "type", typ, "err", err)
+		s.logger.Error("推送校验失败", "type", typ, "error_code", domain.CodeInternal)
 		return
 	}
 	if err := conn.Send(raw, s.conns.SendTimeout()); err != nil {

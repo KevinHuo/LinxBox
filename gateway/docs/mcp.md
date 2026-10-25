@@ -6,7 +6,7 @@ Refs #14、#1。DRI：BoleLiu（Gateway）。主模块：Gateway；受影响模�
 
 ## Gateway 配置
 
-在部署配置中增加 `credentials.mcp`，每项包含独立 `token`、已配置设备的规范 MAC `device_id` 和灵矽 `agent_id`。同一 token 不能用于设备或 Desktop；凭据不写入请求数据库。省略或空数组保留只读服务，全部 MCP 调用返回 401。
+在部署配置中增加 `credentials.mcp`，每项包含独立 `token`、目标设备的规范 MAC `device_id`（设备通过 hello 登记） 和灵矽 `agent_id`。同一 token 不能用于设备或 Desktop；凭据不写入请求数据库。省略或空数组保留只读服务，全部 MCP 调用返回 401。
 
 灵矽侧服务地址配置为公网 HTTPS `https://<网关域名>/mcp`，通过 `Authorization: Bearer <独立 MCP token>` 认证。该入口使用灵矽文档的 HTTP/SSE 传输：
 

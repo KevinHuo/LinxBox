@@ -139,6 +139,10 @@ func TestSubjectIsolation(t *testing.T) {
 
 	// alice 固件先连接；Desktop 绑定后固件收到 device.bound 推送。
 	aliceFW := dial(t, env.baseWS+"/v1/devices/connect", "alice-dev")
+	writeJSON(t, aliceFW, map[string]any{"id": "hello-alice", "type": "device.hello", "payload": map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}})
+	if readReply(t, aliceFW, "hello-alice")["payload"].(map[string]any)["ok"] != true {
+		t.Fatal("设备 hello 失败")
+	}
 
 	// alice 的 Desktop 绑定 alice 设备并同步目录。
 	aliceDT := dial(t, env.baseWS+"/v1/clients/connect", "alice-dt")
@@ -187,6 +191,10 @@ func TestSubjectIsolation(t *testing.T) {
 
 	// bob 的固件尝试读取 alice 目录 → 未绑定拒绝。
 	bobFW := dial(t, env.baseWS+"/v1/devices/connect", "bob-dev")
+	writeJSON(t, bobFW, map[string]any{"id": "hello-bob", "type": "device.hello", "payload": map[string]any{"mac_address": "AA:BB:CC:DD:EE:02"}})
+	if response := readReply(t, bobFW, "hello-bob"); response["payload"].(map[string]any)["ok"] != true {
+		t.Fatalf("bob hello 失败: %v", response)
+	}
 	reqID = "req-2"
 	writeJSON(t, bobFW, map[string]any{
 		"id": reqID, "type": "agent_sessions.list", "payload": map[string]any{},

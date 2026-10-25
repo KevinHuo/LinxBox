@@ -105,6 +105,9 @@ func callMCP(t *testing.T, env *testEnv, session *mcp.ClientSession, args any, c
 func TestMCPSSEOriginalASRFlow(t *testing.T) {
 	env := newMCPEnv(t)
 	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if reply := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !reply.OK {
+		t.Fatal("设备 hello 失败", reply)
+	}
 	dt := dialWS(t, env.baseWS+"/v1/clients/connect", "dt-token")
 	if r := dt.dtReq(t, "device.bind", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !r.OK {
 		t.Fatal(r)

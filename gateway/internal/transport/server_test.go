@@ -582,9 +582,12 @@ func TestAuthFailureClose4401(t *testing.T) {
 	}
 }
 
-func TestFirmwareForgedMAC(t *testing.T) {
+func TestFirmwareCannotChangeRegisteredMAC(t *testing.T) {
 	env := newTestEnv(t, nil)
 	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if response := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !response.OK {
+		t.Fatal("初次 hello 应登记成功", response)
+	}
 	resp := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:00:00:00:00:FF"})
 	if resp.OK {
 		t.Fatal("伪造 MAC 应被拒绝")
@@ -597,6 +600,9 @@ func TestFirmwareForgedMAC(t *testing.T) {
 func TestUnboundDeviceListDenied(t *testing.T) {
 	env := newTestEnv(t, nil)
 	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if reply := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !reply.OK {
+		t.Fatal("hello 失败", reply)
+	}
 	resp := fw.fwReq(t, "agent_sessions.list", map[string]any{})
 	if resp.OK {
 		t.Fatal("未绑定设备不应读取目录")

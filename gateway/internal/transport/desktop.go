@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/KevinHuo/LinxBox/gateway/internal/contracts"
+	"github.com/KevinHuo/LinxBox/gateway/internal/domain"
 	"github.com/KevinHuo/LinxBox/gateway/internal/lifecycle"
 )
 
@@ -26,15 +27,15 @@ func (s *Server) serveDesktop(conn *websocket.Conn, p Principal) {
 	conn.SetReadLimit(int64(s.cfg.Limits.MaxFrameBytes) + frameReadMargin)
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-	s.logger.Info("Desktop 已连接", "client_id", p.DesktopID, "subject", p.Subject)
+	s.logger.Info("Desktop 已连接", "event", "desktop.connected", "connection_id", generation, "client_id", p.DesktopID, "subject", p.Subject, "remote_addr", conn.RemoteAddr().String())
 	ctx := context.Background()
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
-				s.logger.Info("Desktop 断开", "client_id", p.DesktopID)
+				s.logger.Info("Desktop 断开", "event", "connection.closed", "kind", "desktop", "connection_id", generation, "client_id", p.DesktopID, "close_code", websocketCloseCode(err))
 			} else {
-				s.logger.Warn("Desktop 连接异常", "client_id", p.DesktopID, "err", err)
+				s.logger.Warn("Desktop 连接异常", "event", "connection.closed", "kind", "desktop", "connection_id", generation, "client_id", p.DesktopID, "close_code", websocketCloseCode(err))
 			}
 			return
 		}
@@ -45,7 +46,7 @@ func (s *Server) serveDesktop(conn *websocket.Conn, p Principal) {
 			return
 		}
 		if err := s.handleDesktopMessage(ctx, wsConn, p, data); err != nil {
-			s.logger.Warn("Desktop 消息处理失败", "client_id", p.DesktopID, "err", err)
+			s.logger.Warn("Desktop 消息处理失败", "event", "request.failed", "connection_id", generation, "client_id", p.DesktopID, "error_code", domain.CodeOf(err))
 		}
 	}
 }
@@ -59,16 +60,24 @@ func (s *Server) handleDesktopMessage(ctx context.Context, wsConn *lifecycle.Con
 
 func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.Connection, p Principal, data []byte) error {
 	if err := s.validator.ValidateDesktopIncoming(data); err != nil {
-		s.logger.Warn("Desktop 消息未通过 Schema 校验", "client_id", p.DesktopID, "err", err)
+		s.logger.Warn("Desktop 消息未通过 Schema 校验", "event", "request.invalid", "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "bytes", len(data), "error_code", domain.CodeInvalidArgument)
 		return nil
 	}
 	var msg contracts.DesktopMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return err
 	}
+	if msg.Type != "client.heartbeat" {
+		started := time.Now()
+		s.logger.Info("收到 Desktop 请求", "event", "request.received", "kind", "desktop", "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "request_id", msg.MessageID, "type", msg.Type)
+		defer func() {
+			s.logger.Info("Desktop 请求分发结束", "event", "request.dispatched", "connection_id", wsConn.Generation(), "client_id", p.DesktopID, "request_id", msg.MessageID, "type", msg.Type, "duration_ms", time.Since(started).Milliseconds())
+		}()
+	}
 	if msg.ExpiresAt != nil {
 		expires, err := time.Parse(time.RFC3339, *msg.ExpiresAt)
 		if err != nil || !time.Now().Before(expires) {
+			s.logOperation("request.expired", wsConn, msg.Type, msg.MessageID, domain.ErrConflict(""), "client_id", p.DesktopID)
 			return nil
 		}
 	}
@@ -83,16 +92,26 @@ func (s *Server) dispatchDesktopMessage(ctx context.Context, wsConn *lifecycle.C
 			return err
 		}
 		binding, err := s.binding.Bind(ctx, p.DesktopID, p.Subject, payload.MacAddress)
+		s.logOperation("device.binding", wsConn, msg.Type, msg.MessageID, err, "client_id", p.DesktopID, "mac_address", payload.MacAddress)
 		s.sendDesktopReply(wsConn, "binding.result", msg.MessageID, bindingResult(binding, err, msg.MessageID))
 	case "agent_sessions.sync":
 		var payload contracts.SessionSyncPayload
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 			return err
 		}
-		_, err := s.sessions.Sync(ctx, p.DesktopID, payload.Items)
+		version, err := s.sessions.Sync(ctx, p.DesktopID, payload.Items)
+		s.logOperation("catalog.synced", wsConn, msg.Type, msg.MessageID, err, "client_id", p.DesktopID, "item_count", len(payload.Items), "catalog_version", version)
 		s.sendDesktopReply(wsConn, "agent_sessions.sync.result", msg.MessageID, syncResult(err, msg.MessageID))
 	case "query.result":
-		return s.queries.Complete(string(p.DesktopID), wsConn.Generation(), data)
+		var result struct {
+			ReplyTo string `json:"reply_to_message_id"`
+		}
+		if err := json.Unmarshal(msg.Payload, &result); err != nil {
+			return err
+		}
+		err := s.queries.Complete(string(p.DesktopID), wsConn.Generation(), data)
+		s.logOperation("query.result_received", wsConn, msg.Type, msg.MessageID, err, "client_id", p.DesktopID, "query_id", result.ReplyTo)
+		return err
 	case "message.available":
 		return s.notifyMessage(ctx, p, msg.Payload)
 	case "task.ack", "task.started", "task.progress",
@@ -122,12 +141,14 @@ func (s *Server) sendDesktopReply(wsConn *lifecycle.Connection, typ, replyTo str
 		return
 	}
 	if err := s.validator.ValidateDesktopType(typ, raw); err != nil {
-		s.logger.Error("应答未通过 Schema 校验", "type", typ, "err", err)
+		s.logger.Error("应答未通过 Schema 校验", "type", typ, "request_id", replyTo, "error_code", domain.CodeInternal)
 		return
 	}
 	if err := wsConn.Send(raw, s.conns.SendTimeout()); err != nil {
-		s.logger.Warn("应答发送失败", "type", typ, "err", err)
+		s.logOperation("response.send_failed", wsConn, typ, replyTo, domain.ErrDependencyUnavailable(""), "kind", "desktop")
+		return
 	}
+	s.logger.Info("Desktop 应答已入队", "event", "response.enqueued", "kind", "desktop", "connection_id", wsConn.Generation(), "type", typ, "request_id", replyTo, "bytes", len(raw))
 }
 
 func bindingResult(binding contracts.BoundBinding, err error, replyTo string) contracts.BindingResultPayload {
