@@ -1,0 +1,8 @@
+# Gateway 本地构建产物与生成资源
+/bin/
+/dist/
+/coverage.out
+/internal/contracts/assets/
+/config.local.json
+
+/deploy/gateway.json

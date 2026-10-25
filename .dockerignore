@@ -1,0 +1,14 @@
+**
+!gateway/
+!gateway/**
+!contracts/
+!contracts/*.schema.json
+gateway/bin/
+gateway/dist/
+gateway/coverage.out
+gateway/internal/contracts/assets/
+gateway/config*.json
+!gateway/config.example.json
+gateway/deploy/gateway.json
+**/*.key
+**/*.pem

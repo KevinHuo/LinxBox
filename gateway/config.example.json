@@ -1,0 +1,53 @@
+{
+  "listen": {
+    "addr": "127.0.0.1:8787",
+    "tls_cert_file": "",
+    "tls_key_file": ""
+  },
+  "database": {
+    "path": "/var/lib/linxbox/gateway.db"
+  },
+  "credentials": {
+    "devices": [
+      {
+        "token": "<设备凭据 token，与部署环境注入保持一致>",
+        "device_id": "AA:BB:CC:DD:EE:01",
+        "subject": "<账号主体>"
+      }
+    ],
+    "desktops": [
+      {
+        "token": "<Desktop 凭据 token，与部署环境注入保持一致>",
+        "client_id": "desktop-<唯一标识>",
+        "subject": "<账号主体>"
+      }
+    ]
+  },
+  "pairing": {
+    "rules": [
+      {
+        "subject": "<账号主体>",
+        "device_ids": ["AA:BB:CC:DD:EE:01"]
+      }
+    ]
+  },
+  "limits": {
+    "max_frame_bytes": 65536,
+    "draft_max_codepoints": 16000,
+    "draft_max_utf8_bytes": 16384,
+    "session_page_size": 5,
+    "max_catalog_items": 200,
+    "max_online_connections": 128,
+    "max_pending_queries": 128,
+    "max_device_queries": 4,
+    "send_queue_size": 64,
+    "send_timeout": "5s"
+  },
+  "timeouts": {
+    "shutdown_grace": "10s",
+    "query_timeout": "15s"
+  },
+  "log": {
+    "level": "info"
+  }
+}
