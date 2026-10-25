@@ -67,12 +67,14 @@ function readDeviceFacts(): void {
 
 /** Render the device rows shared with the main window. */
 function renderStatus(): void {
+  const deviceBound = state.device.mac !== null;
+  const deviceOnline = state.connection.connected && deviceBound;
   const device = qs('#fc-device');
   if (device) {
-    device.textContent = state.connection.connected ? '灵矽设备 · 在线' : '灵矽设备 · 等待';
+    device.textContent = deviceOnline ? '灵矽设备 · 在线' : '等待设备绑定';
   }
   const dot = qs('.fc-row b i');
-  dot?.classList.toggle('is-on', state.connection.connected);
+  dot?.classList.toggle('is-on', deviceOnline);
 
   qs('#fc-paired-at')!.textContent = formatDeviceDate(state.device.pairedAt);
   qs('#fc-device-mac')!.textContent = state.device.mac ?? '—';
