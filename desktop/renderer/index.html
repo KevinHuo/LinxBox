@@ -70,10 +70,9 @@
           <!-- 视图：未配对 -->
           <section class="view is-active" data-view="pair" aria-labelledby="pair-title">
             <div class="hero">
-              <h1 id="pair-title">把 灵矽设备 与这台 Mac 配对</h1>
+              <h1 id="pair-title">设置 WSS 连接</h1>
               <p class="lede">
-                配对后，设备上的语音指令会路由到这台电脑，由你授权的编码 Agent
-                执行。任务状态与回复会同步回设备，LinxBox 常驻后台，不打断你的工作。
+                先在「设置」中填写 Gateway WSS 地址、访问令牌和电脑名称并连接；设备 MAC 绑定是后续独立步骤，不与 WSS 配置混用。
               </p>
             </div>
             <div class="pair-layout">
@@ -82,29 +81,29 @@
                   <li>
                     <span class="step-no" aria-hidden="true">01</span>
                     <div class="step-txt">
-                      <strong>查看 MAC 地址</strong>
-                      <span>在 灵矽设备 上打开「设置 · 关于」，查看设备 MAC 地址</span>
+                      <strong>打开设置</strong>
+                      <span>先配置 Gateway WSS 地址、访问令牌和电脑名称</span>
                     </div>
                   </li>
                   <li>
                     <span class="step-no" aria-hidden="true">02</span>
                     <div class="step-txt">
-                      <strong>填写 MAC 地址</strong>
-                      <span>在这台 Mac 上输入设备信息中的 MAC 地址</span>
+                      <strong>保存并连接</strong>
+                      <span>确认 WSS 连接状态为已连接</span>
                     </div>
                   </li>
                   <li>
                     <span class="step-no" aria-hidden="true">03</span>
                     <div class="step-txt">
-                      <strong>完成配对</strong>
-                      <span>建立连接，LinxBox 开始常驻</span>
+                      <strong>绑定设备</strong>
+                      <span>连接成功后再填写设备 MAC 地址</span>
                     </div>
                   </li>
                 </ol>
               </div>
 
               <div class="code-card">
-                <p>设备 MAC 地址 · 在 灵矽设备 上查看</p>
+                <p>设备 MAC 地址 · WSS 连接后绑定</p>
                 <div class="mac-field">
                   <input
                     id="mac-input"
@@ -118,7 +117,7 @@
                   />
                 </div>
                 <button class="btn btn-primary" id="btn-start" type="button" style="width: 100%">
-                  开始配对
+                  绑定设备
                 </button>
                 <p class="card-note" id="pair-note">已填入测试设备 MAC，可直接开始配对。</p>
               </div>

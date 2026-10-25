@@ -314,6 +314,11 @@ function applyTheme(theme: AppearanceFacts['theme']): void {
  * client reports that honestly instead of pretending a device confirmed.
  */
 async function startPairing(): Promise<void> {
+  if (!state.gateway.connected) {
+    showToast('请先在设置中配置并连接 Gateway WSS');
+    go('settings');
+    return;
+  }
   const input = qs<HTMLInputElement>('#mac-input');
   const mac = normalizeMacAddress(input?.value ?? '');
   if (!isValidMacAddress(mac)) {
