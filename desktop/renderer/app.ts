@@ -460,14 +460,6 @@ function wireEvents(): void {
     });
   });
 
-  qsa<HTMLButtonElement>('[data-switch="startup"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      // Launch at login is a system-level preference. It is not wired to a
-      // channel yet, so the switch reports that it is not in effect.
-      showToast('开机自启尚未接入系统设置');
-    });
-  });
-
   qsa<HTMLButtonElement>('[data-back="main"]').forEach((button) => {
     button.addEventListener('click', () => go('home'));
   });
