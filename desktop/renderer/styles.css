@@ -373,6 +373,7 @@ a:focus-visible,
 .mac-field input {
   width: 100%;
   padding: 11px 13px;
+  margin-bottom: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--paper);
