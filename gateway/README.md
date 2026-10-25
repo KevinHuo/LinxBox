@@ -34,7 +34,7 @@ cd gateway
 go mod download
 make generate          # 从根目录 contracts/ 复制共享 Schema
 cp config.example.json config.local.json
-# 编辑 config.local.json：监听地址、数据库路径、凭据与配对规则
+# 编辑 config.local.json：监听地址、数据库路径、账号及独立凭据；设备身份自动登记
 go run ./cmd/linxbox-gateway --config ./config.local.json
 ```
 
@@ -60,7 +60,8 @@ Ubuntu 安装、已有服务升级、二进制验证和两端接入地址见[WS 
 - 凭据 token 通过子协议 `linxbox.v1, linxbox-token.<token>` 或
   `Authorization: Bearer <token>` 传递；明文 token 不进入帧、日志或数据库。
   数据库仅保存设备登记所用凭据的 SHA-256 指纹，用于核对当前授权是否仍有效。
-- MCP 使用 `credentials.mcp` 的独立 Bearer 凭据，绑定一个设备及灵矽智能体；
+- MCP 使用 `credentials.mcp` 的独立 Bearer 凭据，限制到单台设备和指定灵矽智能体；
+  设备 WS 自动登记与 MCP 授权范围是两个独立配置，详见 [MCP 接入说明](docs/mcp.md#旧版单设备配置兼容)。
   省略该配置时拒绝全部 MCP 访问。设备和 Desktop 凭据不能访问 MCP。
 - 日志默认 `log.format=text`，可设 `json`。info 显示中文交互摘要、追踪短号、脱敏请求 body、错误原因和排查提示；
   分发与入队细节位于 debug。正文、凭据等不直接写入日志，body 有大小限制。

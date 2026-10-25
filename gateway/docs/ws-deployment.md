@@ -1,17 +1,18 @@
 # Ubuntu 24.04 WS 联调部署与升级
 
 本包实现连接后动态登记 MAC，不需要提前填写设备 MAC 或配对白名单。范围为 Gateway；
-固件与 Desktop 按[三端联调说明](integration.md)接入。未进行腾讯云安装或真实板卡验收。
+固件与 Desktop 按[三端联调说明](integration.md)接入。本页使用通用占位符，不提供实际服务器、账号、设备身份或凭据，也不代表已完成目标服务器安装或真实板卡验收。
 
 ## 上传安装包
 
 在服务器执行 `uname -m`：`x86_64` 选 amd64，`aarch64` 选 arm64。
-下列命令按 amd64 编写，arm64 替换包名和目录中的架构。
-在 Mac 终端进入发布目录执行：
+下列命令按 amd64 编写，arm64 替换架构。将包名换成实际发布版本，SSH 目标换成自己的用户和服务器域名，在本机发布目录执行：
 
 ```sh
-scp linxbox-gateway-linux-amd64-dynamic.tar.gz ubuntu@124.220.162.10:~/
-ssh ubuntu@124.220.162.10
+LINX_PACKAGE=linxbox-gateway-linux-amd64-实际版本
+LINX_SSH_TARGET=user@server.example.com
+scp "$LINX_PACKAGE.tar.gz" "$LINX_SSH_TARGET:~/"
+ssh "$LINX_SSH_TARGET"
 ```
 
 ## 安装或更新
@@ -28,8 +29,9 @@ sudo cp -a /var/lib/linxbox "/var/lib/linxbox-backup-$(date +%Y%m%d%H%M%S)"
 ```sh
 sudo apt update
 sudo apt install -y python3 curl ca-certificates
-tar -xzf linxbox-gateway-linux-amd64-dynamic.tar.gz
-cd linxbox-gateway-linux-amd64-dynamic
+LINX_PACKAGE=linxbox-gateway-linux-amd64-实际版本
+tar -xzf "$LINX_PACKAGE.tar.gz"
+cd "$LINX_PACKAGE"
 sha256sum -c SHA256SUMS
 sudo bash install.sh
 sudo systemctl status linxbox-gateway --no-pager
@@ -40,8 +42,8 @@ curl --fail --show-error http://127.0.0.1:8787/readyz
 数据库为 `/var/lib/linxbox/gateway.db`。更新时停止旧服务并替换二进制，保留已有配置和数据库；
 程序启动自动执行数据库迁移。不要删除旧数据库，不需要传入 MAC。
 
-已有配置中的旧 `device_id` 和 `pairing.rules` 可以保留，不再限制新设备 hello 上报的 MAC。
-设备与 Desktop 的 token 需要不同，`subject` 需要相同。修改配置使用：
+普通部署不填写设备 ID 或 MAC 白名单，设备建立连接后自动上报并登记身份。设备与 Desktop 的 token 不同，账号相同。
+MCP 使用独立凭据，并按所用版本限定设备及智能体范围；设备 WS 自动登记不会自动扩大 MCP 授权，见[MCP 接入说明](mcp.md#旧版单设备配置兼容)。修改配置使用：
 
 ```sh
 sudoedit /etc/linxbox/gateway.json
@@ -49,65 +51,42 @@ sudo systemctl restart linxbox-gateway
 sudo journalctl -u linxbox-gateway -n 80 --no-pager
 ```
 
-腾讯云安全组及已启用的 Ubuntu 防火墙须允许联调设备来源访问 TCP 8787。
-WS 不加密，当前只使用专用联调凭据与模拟数据；生产使用 WSS。
+按自己的监听与反向代理配置设置云主机安全组和防火墙，仅开放所需入口。公网使用 HTTPS/WSS；明文 WS 仅限隔离的测试环境及专用测试凭据。
 
 ## 先运行模拟两端
 
-在服务器执行，模拟 MAC 可自行指定，无需修改配置：
+仅在专用模拟实例的服务器执行，工具使用模拟设备身份，无需修改配置或填写真实设备 ID：
 
 ```sh
 sudo -u linxbox /opt/linxbox/bin/linxbox-smoke \
   --config /etc/linxbox/gateway.json \
-  --url ws://127.0.0.1:8787 \
-  --device-mac 34:00:00:00:00:77
+  --url ws://127.0.0.1:8787
 ```
 
 期望 `SMOKE PASS: 15 项检查通过`。重复执行、重启服务后再执行均应通过。
 smoke 会替换该 Desktop 的会话目录，并以相同身份连接；只在专用 mock 实例运行，
 不要与真实 Desktop 同时使用同一身份。
 
-从 Mac 验证公网：
+从另一台机器验证远程就绪入口，将示例域名换成自己的 Gateway 域名：
 
 ```sh
-curl --fail --show-error http://124.220.162.10:8787/readyz
-umask 077
-ssh ubuntu@124.220.162.10 'sudo cat /etc/linxbox/gateway.json' > server-smoke.local.json
-./linxbox-smoke-macos-arm64 \
-  --config ./server-smoke.local.json \
-  --url ws://124.220.162.10:8787 \
-  --device-mac 34:00:00:00:00:77
+curl --fail --show-error https://gateway.example.com/readyz
 ```
 
-若 sudo 需要交互密码，在服务器终端查看配置后，将两端凭据填入本机权限 600 的配置，
-不要将凭据提交 Git。公网 smoke 通过才验证了 WS 业务入口，HTTP 探测只验证就绪接口。
+此检查只验证 HTTP 就绪入口，不能代替 WS 业务联调。不要把服务器配置正文、真实 token 或设备身份复制到共享文档、截图和公开日志中。
 
 ## 交给两端的信息
 
 | 信息 | 固件端 | Desktop 端 |
 | --- | --- | --- |
-| WS 地址 | `ws://124.220.162.10:8787/v1/devices/connect` | `ws://124.220.162.10:8787/v1/clients/connect` |
+| WS 地址示例 | `wss://gateway.example.com/v1/devices/connect` | `wss://gateway.example.com/v1/clients/connect` |
 | 专属 token | `credentials.devices[].token` | `credentials.desktops[].token` |
-| 身份 | 固件自己的真实 MAC | 配置中的 `client_id` |
+| 身份 | 设备自动上报，无需服务端预填 | 自己部署的 Desktop 客户端标识 |
 | 认证 | `Authorization: Bearer <token>` 或子协议 | 同左，使用 Desktop 自己的 token |
 
 子协议认证发送 `linxbox.v1, linxbox-token.<token>`，服务端只回选 `linxbox.v1`。
-两端均可先连 WS；固件在连接后 10 秒内发送：
-
-```json
-{"id":"hello-1","type":"device.hello","payload":{"mac_address":"34:00:00:00:00:01"}}
-```
-
-成功响应返回规范 MAC，未绑定时 `desktop_client_id=null`。固件把该 MAC 展示或通过产品配对流程交给 Desktop；
-Gateway 不自动将所有设备的 MAC 广播给 Desktop，也不推导硬件 MAC。
-Desktop 获得 MAC 后，按自己的帧结构发送：
-
-```json
-{"protocol_version":"1.0","message_id":"bind-1","sequence":1,"type":"device.bind","sent_at":"2026-10-25T10:00:00Z","payload":{"mac_address":"34:00:00:00:00:01"}}
-```
-
-`sent_at` 使用发送时的实际 RFC 3339 时间。绑定成功后验证目录同步、分页、详情、历史、正文分块、
-新消息通知和断线重连；完整帧与应答见[联调接口](integration.md)。不同账号不能认领已登记的 MAC。
+两端均可先连 WS；固件在连接后 10 秒内完成 hello 并上报自身 MAC。用户在 Desktop 配对界面使用设备显示的 MAC 完成绑定，不需要在服务器上配置设备 ID。
+绑定后验证目录同步、分页、详情、历史、正文分块、新消息通知和断线重连；协议字段与完整帧见[联调接口](integration.md)，其中示例身份仅用于说明格式。不同账号不能认领已登记的设备。
 
 ## 查看请求日志
 

@@ -37,8 +37,9 @@ Gateway 自动将 MAC 登记到该凭据的账号，返回 Binding。Desktop 获
 同一端口的路径分别是 `/v1/devices/connect` 和 `/v1/clients/connect`。采用子协议认证时客户端请求 `linxbox.v1, linxbox-token.<token>`，Gateway 只返回 `linxbox.v1`，不回显 token。固件也可通过 Authorization Bearer 头认证。
 
 生产部署使用 HTTPS/WSS 和有效证书。本轮临时公网联调可通过 HTTP/WS 访问同一入口，
-例如固件 `ws://124.220.162.10:8787/v1/devices/connect`、Desktop `ws://124.220.162.10:8787/v1/clients/connect`；
-WS 不加密，使用联调专用凭据。设备上的 127.0.0.1 指向设备自身，不能作为云端地址。
+例如固件 `wss://gateway.example.com/v1/devices/connect`、Desktop `wss://gateway.example.com/v1/clients/connect`，
+将示例域名替换为自己的部署地址。临时 HTTP/WS 仅用于隔离的联调环境，不加密，应使用专用测试凭据；
+设备上的 127.0.0.1 指向设备自身，不能作为云端地址。
 
 ## 当前开放接口
 

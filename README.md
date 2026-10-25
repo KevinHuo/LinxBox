@@ -50,11 +50,17 @@ LinxBox 是围绕 **FoloToy AI Passport** 构建的随身 AI 编程交互项目�
 
 首版阅读页仅展示文字，阅读时不会开启录音；图片浏览和设备间对讲尚未提供。详细操作见[固件使用说明](firmware/README.md#灵矽配置与操作)。
 
+## 演示视频
+
+当前仓库尚未提供可访问的录制 demo 视频或视频链接。上方图片为产品示意图，`docs/linx-box-ui/` 下的 HTML 为界面原型，均不代表真实设备的录屏或端到端验收。
+
+后续提供视频时，应在本节补充实际链接、对应代码或镜像版本、演示场景及验证范围；模拟数据演示与真实固件、灵矽、Gateway、Desktop 联动需分别标明。
+
 ## 当前分工
 
 | 范围                  | 负责人                                          |
 | --------------------- | ----------------------------------------------- |
-| 项目 Leader、设备固件 | [KevinHuo](https://github.com/KevinHuo)         |
+| 设备固件 | [KevinHuo](https://github.com/KevinHuo)         |
 | MCP Gateway           | [BoleLiu](https://github.com/BoleLiu)           |
 | macOS 客户端          | [yydounai1234](https://github.com/yydounai1234) |
 
@@ -110,8 +116,8 @@ cd firmware
 
 ## 架构与运行
 
-- [架构设计](docs/architecture.md)：模块职责、数据流、安全边界和当前限制。
-- [运行说明](docs/runbook.md)：使用已部署 Gateway 启动 Desktop、本地部署 Gateway、固件验证和排障步骤。
+- [架构设计](docs/architecture.md)：总体拓扑、模块职责、规格与分工入口、数据流、安全边界和当前限制。
+- [运行说明](docs/runbook.md)：启动 Desktop、本地运行和简版部署 Gateway、固件构建／烧录入口及排障步骤。
 
 ## 代码
 

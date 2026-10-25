@@ -8,17 +8,20 @@ LinxBox 把 AI Passport 上的设备请求交给云端 Gateway，再由 macOS De
 
 ## 总体拓扑
 
+下图表示三端目标链路。当前固件默认实现的是直连灵矽录放音，Cloud MCP Gateway 的设备业务接线仍需完成并单独验收；图中的连线不代表整条链路已通过真机测试。
+
 ```text
-AI Passport / 灵矽入口
-          │ WSS / MCP
-          ▼
-      Cloud Gateway ───── SQLite（绑定、目录、查询索引、请求状态）
-          │ WSS
-          ▼
-   macOS Desktop（Electron 主进程 + daemon）
-          │ stdio JSON-RPC
-          ▼
-      Codex app-server ─── 本机 thread / turn / events
+AI Passport ── 语音 WSS ──> 灵矽服务
+    │                           │ MCP 文字提案
+    │ 设备业务 WSS（待接线）     ▼
+    └──────────────────> Cloud MCP Gateway
+                                │       └─ SQLite：设备登记、绑定、目录、请求与执行事实
+                                │ Desktop 主动建立 WSS
+                                ▼
+                        macOS Desktop（Main + daemon）
+                                │ stdio JSON-RPC
+                                ▼
+                          Codex app-server ── 本机 thread / turn / events
 ```
 
 Desktop 主动连接 Gateway，公网不暴露本地监听端口。Gateway 是设备、灵矽服务和 Desktop 之间的路由与状态边界；它不读取用户本机文件，也不直接调用 Codex。
@@ -27,7 +30,7 @@ Desktop 主动连接 Gateway，公网不暴露本地监听端口。Gateway 是�
 
 | 模块 | 目录 | 负责 | 明确不负责 |
 | --- | --- | --- | --- |
-| 固件 | `firmware/` | 配网、设备交互、录音、会话目录和回复展示 | Codex 执行、Mac 文件授权 |
+| 固件 | `firmware/` | 配网、设备交互、灵矽录放音；Cloud Gateway 目录与请求接线按固件进度实现 | Codex 执行、Mac 文件授权 |
 | 共享契约 | `contracts/` | 消息 Envelope、字段、方向、响应配对和错误结构 | 网络传输、业务存储和副作用 |
 | Gateway | `gateway/` | WSS/MCP 接入、认证、设备绑定、目录、查询关联、请求生命周期和 SQLite | 本机路径解析、Codex 调用 |
 | Desktop 主进程 | `desktop/main/` | Electron 生命周期、连接配置、项目/会话注册、Gateway 编排和窗口状态 | Renderer 直接访问 token、文件系统或子进程 |
@@ -35,21 +38,36 @@ Desktop 主动连接 Gateway，公网不暴露本地监听端口。Gateway 是�
 | Preload / Renderer | `desktop/preload/`, `desktop/renderer/` | 受限 IPC、主页面和悬浮窗展示 | token、Node API、路径和子进程 |
 | Codex adapter | `desktop/daemon/codex-adapter/` | 通过 app-server JSON-RPC 读取会话、续接 thread、启动 turn、映射事件 | 读取 Codex 私有数据库 |
 
+## 模块规格与分工入口
+
+本节索引当前仓库已有的规格与实现说明，不新增协议或替代评审。人员分工以[根目录分工表](../README.md#当前分工)为准，跨模块任务的 DRI 与 reviewer 由对应 Issue 明确。
+
+| 模块 | 当前负责人 | 规格、运行与验收入口 |
+| --- | --- | --- |
+| 设备固件 | KevinHuo | [固件说明](../firmware/README.md)、[应用与验收边界](../firmware/main/README.md)、[硬件接入](../firmware/hardware/folotoy/ai-passport/README.md) |
+| Gateway | BoleLiu | [Gateway 说明](../gateway/README.md)、[执行流程与状态](../gateway/docs/execution.md)、[MCP 接入](../gateway/docs/mcp.md) |
+| macOS Desktop | yydounai1234 | [Desktop 说明](../desktop/README.md)、[Gateway / Desktop API](../desktop/GATEWAY_API.md) |
+| 三端字段契约 | 按 Issue #14 组织三端评审 | [共享 Schema 与 fixtures](../contracts/README.md)、[联调说明](../gateway/docs/integration.md) |
+
+字段、方向和响应结构以根目录 `contracts/` 为唯一正文。各模块 README 记录实现与验证边界；历史草稿编号不能替代可访问的规格正文，也不能作为功能已验收的证据。
+
 ## 关键数据流
 
 ### 设备请求与本机执行
 
-1. 固件或灵矽 MCP 入口向 Gateway 提交请求，Gateway 校验认证、绑定和目标会话。
-2. Gateway 向已认证的 Desktop 发送 `task.dispatch`。
-3. Desktop 根据已同步的 `project_id` / `agent_session_id` 解析本机目标，不信任远端绝对路径。
-4. Dispatcher 校验幂等键、过期时间、项目归属和当前任务占用，再向 Codex adapter 请求执行。
-5. Adapter 对已存在会话使用 `thread/resume`，对新会话创建 thread，然后调用 `turn/start`。
-6. Codex 事件投影为 `task.started`、`task.progress`、`task.completed` 或失败/中断终态，并按契约回传 Gateway。
-7. Gateway 保存可查询的会话/消息元数据；设备通过 `messages.list` 和 `message.content.get` 读取历史与正文。
+以下是 Gateway / Desktop 已提供的处理流程，固件和灵矽接线仍需真实环境验收；完整时序、状态与限制见[确认执行说明](../gateway/docs/execution.md)。
+
+1. 设备先通过 `request.prepare` 固定绑定 Desktop 和目标会话，成功后再开始录音。
+2. 灵矽通过 MCP `propose_task_reply` 提交文字，Gateway 校验来源并保存为待确认提案，此时不投递执行任务。
+3. 用户确认后，设备发送 `request.confirm`；Gateway 先保存固定投递身份，再向原 Desktop 发送 `task.dispatch`。重复确认不重复投递。
+4. Desktop 根据本地保存的项目与会话映射解析目标，校验去重、过期和固定目标；不会把远端绝对路径作为工作目录。已发布会话沿用本机目录，WSS 任务不重复触发项目授权弹窗。
+5. 已有会话由 adapter 执行 `thread/resume`、`turn/start`；固定会话续接失败时明确报错，不静默改成新会话。
+6. ACK 只表示接收，`task.started` 才表示运行；一致成功 TaskResult 才推进 completed，失败或中断按真实事实回传。
+7. Gateway 持久保存请求与执行事实；断线或重启后的不确定结果保持 unknown，不自动重投。历史与正文经 Desktop 查询转发，不把查询入队当成内容已送达。
 
 ### 会话目录同步
 
-Desktop 通过 app-server 的 `thread/list` 获取本机会话，只发布不含绝对路径的元数据，并用 `agent_sessions.sync` 做全量替换。Gateway 保存目录版本并返回 `agent_sessions.sync.result`。空 `thread_id` 或非法记录必须在 Desktop 侧过滤，不能上传给 Gateway。
+Desktop 根据本地项目配置、Codex 项目或默认目录组织可发布会话，通过 app-server 读取会话元数据，并用 `agent_sessions.sync` 全量替换目录，不上传本机绝对路径。Gateway 保存目录版本并返回 `agent_sessions.sync.result`。空 `thread_id` 或非法记录必须在 Desktop 侧过滤，不能上传给 Gateway。
 
 `status: idle` 只表示 Desktop 当前没有任务，不保证 thread 可立即写入。Codex Desktop 或其他 app-server 仍可能持有该 thread 的 writer；这种情况必须返回续接失败，不能静默创建新会话。
 
@@ -59,14 +77,18 @@ Desktop 通过 app-server 的 `thread/list` 获取本机会话，只发布不含
 
 ### 绑定
 
-Desktop 发送 `device.bind` 提交规范化 MAC。Gateway 只有在设备在线、双方认证且配对规则允许时保存绑定，并分别返回 Desktop 的 `binding.result` 和设备侧绑定通知。绑定状态、WSS 连接状态和 Codex 会话状态是三个独立状态，UI 不应混为“设备在线”。
+设备先使用账号凭据连接，在 10 秒内通过 `device.hello` 上报真实 MAC，Gateway 动态登记设备、账号及凭据指纹。Desktop 再通过 `device.bind` 提交该 MAC；首次绑定要求设备在线，登记账号与 Desktop 账号一致，且设备未被其他 Desktop 绑定。重复同一绑定幂等，不同账号不能覆盖既有归属。
+
+无需预填设备 MAC 或 `pairing.rules` 白名单；旧配置仍可解析，但不再作为配对白名单。绑定状态、WSS 连接状态和 Codex 会话状态是三个独立状态，UI 不应混为“设备在线”。
+
+MCP 使用独立凭据，并按主线配置限制设备和智能体；设备 WS 的自动登记不会自动扩大 MCP 的授权范围。配置见[MCP 接入说明](../gateway/docs/mcp.md)。
 
 ## 安全与失败边界
 
 - token 仅由 Desktop 主进程保存和使用；Renderer 只看到脱敏状态。
 - Renderer 通过 sandbox、context isolation 和具名 IPC 工作；路径只能来自主进程系统目录选择器。
 - Codex 子进程使用参数数组启动，不经 shell；stderr 只保留本地诊断，不上行。
-- Gateway 只接收 `project_id`、`agent_session_id` 等标识，不接收或转发本机绝对路径、token、cookie 和原始环境变量。
+- Gateway 使用项目、会话等标识路由，本机路径由 Desktop 解析；各端凭据仅用于入口认证，不透传给其他端，不把 cookie 或原始环境变量作为业务消息同步。
 - 消息必须按共享 Schema 校验；非法消息拒绝并保留可关联的错误码，不能以“已收到”代替“已执行”。
 - `accepted` 只表示消息通过初检并进入处理，不代表 Codex 已启动或任务已成功。
 - 目标 thread 已被其他 writer 占用时，Desktop 返回明确的续接失败；不 fallback 到新 thread，避免把指令写入错误会话。
@@ -74,9 +96,9 @@ Desktop 发送 `device.bind` 提交规范化 MAC。Gateway 只有在设备在线
 
 ## 当前实现边界
 
-- Gateway 已提供 WSS 设备/Desktop 入口、绑定、会话目录、历史/正文查询、新消息通知以及 MCP 请求准备/查询/取消等实现；完整的灵矽逐轮语音闭环仍需真实环境验收。
+- Gateway 已提供 WSS 设备/Desktop 入口、动态登记与绑定、目录、历史/正文查询、新消息通知、MCP 提案、确认投递和执行恢复；完整的灵矽逐轮语音闭环仍需真实环境验收。
 - Desktop 已有 Gateway 连接、会话目录同步、任务调度和 Codex app-server 适配；真实线上链路的凭据、网络和 Codex Desktop writer 竞争仍需按部署环境验证。
-- 固件已接入 Gateway 客户端和契约校验，但真机烧录、设备网络、灵矽服务和线上 Gateway 的端到端结果不由本地构建自动证明。
+- 本仓库固件默认实现直连灵矽录放音，目录与回复仍使用本地演示数据；其中“设备接入网关”不是本项目 Cloud MCP Gateway。设备业务 WSS、真实目录与追问确认流程仍需接线，不能用固件构建或直连灵矽的短流程验收证明三端闭环可用。
 
 ## 评审入口
 
