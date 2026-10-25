@@ -232,6 +232,30 @@ describe('mock gateway console', () => {
     socket.close();
   });
 
+  it.each([
+    ['project.upsert', { project_id: 'prj_local_1', display_name: 'LinxBox', capabilities: ['read', 'write', 'test'], availability: 'online', grant_version: 2 }],
+    ['project.revoke', { project_id: 'prj_local_1', grant_version: 2, revoked_at: '2026-10-25T00:00:00.000Z' }],
+  ] as const)('delivers %s to the connected Desktop', async (kind, payload) => {
+    const service = await start();
+    const socket = await connectDesktop(service.port);
+    const received: { type: string; payload: Record<string, unknown> }[] = [];
+    socket.on('message', (data) => received.push(parseFrame(data)));
+
+    const response = await fetch(`http://127.0.0.1:${service.port}/api/dispatch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, ...payload }),
+    });
+    expect(response.status).toBe(200);
+    await waitFor(() => received.length > 0);
+    expect(received[0]?.type).toBe(kind);
+    expect(received[0]?.payload).toMatchObject(
+      kind === 'project.revoke' ? { project_id: payload.project_id, grant_version: payload.grant_version } : payload,
+    );
+    expect(service.sent[0]?.type).toBe(kind);
+    socket.close();
+  });
+
   it('reports the connection count and the recorded frames as state', async () => {
     const service = await start();
     const socket = await connectDesktop(service.port);

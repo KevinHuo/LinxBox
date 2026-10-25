@@ -185,9 +185,9 @@ export function summarizeFrame(frame) {
     case 'task.approval_required':
       return `task ${payload.task_id ?? '-'} · state=${payload.state ?? '-'} · ${String(payload.summary ?? '').slice(0, 60)}`;
     case 'project.upsert':
-      return `project ${payload.project_id ?? '-'}`;
+      return `project ${payload.project_id ?? '-'} · ${payload.availability ?? '-'}`;
     case 'project.revoke':
-      return `project ${payload.project_id ?? '-'}`;
+      return `project ${payload.project_id ?? '-'} · revoke`;
     case 'messages.list':
       return `读取会话消息 · ${payload.agent_session_id ?? '-'}`;
     case 'message.content.get':

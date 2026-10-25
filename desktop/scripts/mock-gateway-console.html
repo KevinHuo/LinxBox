@@ -725,13 +725,17 @@
       });
 
       async function post(url, body) {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await response.json().catch(() => ({}));
-        return { ok: response.ok && data.ok !== false, message: data.message ?? '' };
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await response.json().catch(() => ({}));
+          return { ok: response.ok && data.ok !== false, message: data.message ?? '' };
+        } catch {
+          return { ok: false, message: '无法连接 Mock Gateway 服务' };
+        }
       }
 
       $('#btn-dispatch').addEventListener('click', async () => {
@@ -794,6 +798,13 @@
               return;
             }
             extra = { message_id: messageId };
+          }
+          if (kind === 'project.upsert' || kind === 'project.revoke') {
+            const projectId = $('#in-project').value.trim();
+            if (projectId) {
+              extra.project_id = projectId;
+              extra.display_name = $('#in-project').selectedOptions[0]?.textContent?.trim() || projectId;
+            }
           }
           const result = await post('/api/dispatch', { kind, ...extra });
           toast(result.ok ? `已发送 ${kind}` : result.message || '发送失败');
