@@ -32,11 +32,11 @@ desktop/
 
 主窗口三个视图：
 
-| 视图         | 内容                                                       |
-| ------------ | ---------------------------------------------------------- |
-| 未配对       | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口     |
-| 已配对主页   | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步） |
-| 全局设置     | 外观（暖白 / 深色）、开机自启、悬浮窗开关                 |
+| 视图       | 内容                                                        |
+| ---------- | ----------------------------------------------------------- |
+| 未配对     | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口     |
+| 已配对主页 | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步） |
+| 全局设置   | 外观（暖白 / 深色）、开机自启、悬浮窗开关                   |
 
 悬浮窗是独立的透明置顶 `BrowserWindow`：右下角常驻小球，点击展开状态卡片，拖拽可移动位置。位置由主进程持有并限制在显示器工作区内。
 
@@ -229,6 +229,48 @@ pnpm mock:gateway        # 单独跑 mock Gateway，供 Electron 客户端联调
 `disposition` 取 `accepted | duplicate | expired | rejected`；`accepted` 只表示"已落盘并通过
 初检"，不等于 started 或 succeeded。同一个 `message_id` 重放返回 `duplicate`，绝不创建第二个
 turn。
+
+### 可视化 Mock Gateway 控制台
+
+`pnpm mock:gateway` 只能把帧打印到终端。要"看得见收到的消息"并"手动下达指令"，用带控制台的版本：
+
+```bash
+pnpm mock:console          # 默认 8787 端口
+pnpm mock:console -- --port 9000 --token my-token
+```
+
+同一个端口上开两个端点：
+
+| 端点                                     | 用途                                          |
+| ---------------------------------------- | --------------------------------------------- |
+| `ws://127.0.0.1:8787/v1/clients/connect` | Desktop 的出站连接（与真实 Gateway 同一路径） |
+| `http://127.0.0.1:8787/`                 | 浏览器控制台                                  |
+
+控制台能做三件事：
+
+- **看消息流**：实时显示 Desktop 发来的每一帧（`client.hello` / `client.heartbeat` / `task.ack` /
+  任务事件），点任意一条看完整 JSON。方向用箭头标记：↓ 橙底是 Desktop → 云端，↑ 灰底是云端 →
+  Desktop。
+- **下达指令**：填好 prompt 与 `project_id` 后点「下达 task.dispatch」，帧会走**真实的
+  Gateway/Desktop 1.0 校验**发给 Desktop；Desktop 的 ack 与任务事件随即回到消息流。
+- **取消任务**：填 `task_id` 下达 `task.cancel`。
+
+实时推送走 SSE（`/events`），因为控制台只需要服务端单向推给浏览器。
+
+配套的联调脚本会启动真实 Desktop 侧（`GatewayClient` + `TaskDispatcher` + 本机 Codex
+app-server）并连上控制台：
+
+```bash
+pnpm build
+pnpm mock:console        # 终端 A：起控制台
+pnpm e2e:mock-console    # 终端 B：起 Desktop 侧，浏览器打开 http://127.0.0.1:8787/
+```
+
+在控制台点「下达 task.dispatch」，左侧消息流会依次出现 `task.started`、`task.ack
+(disposition=accepted)`，最终由本机 Codex 给出结果。Desktop 忙时再下发一条会得到
+`disposition=rejected`，这是真实的单任务串行约束，不是模拟。
+
+> 这个服务只用于本机联调：没有鉴权、只监听 `127.0.0.1`、不落盘，不是生产实现。
 
 ### 本机接入的安全边界
 

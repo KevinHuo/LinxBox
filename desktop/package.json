@@ -25,7 +25,9 @@
     "package": "pnpm build && electron-builder --mac --dir",
     "probe:codex": "node scripts/probe-codex.mjs --out codex-capabilities.json --turn",
     "mock:gateway": "node scripts/mock-gateway.mjs",
-    "e2e:gateway-codex": "node scripts/e2e-wss-codex.mjs"
+    "mock:console": "node scripts/mock-gateway-console.mjs",
+    "e2e:gateway-codex": "node scripts/e2e-wss-codex.mjs",
+    "e2e:mock-console": "node scripts/e2e-mock-console.mjs"
   },
   "dependencies": {
     "zod": "4.6.7"
@@ -33,6 +35,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "26.6.5",
+    "@types/ws": "8.18.1",
     "@vitest/coverage-v8": "5.0.5",
     "electron": "45.0.0",
     "electron-builder": "26.18.0",

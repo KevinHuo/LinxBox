@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock Gateway 控制台</title>
+    <style>
+      /* 设计 token 与桌面客户端保持一致（固件端暖白色板） */
+      :root {
+        color-scheme: light;
+        --paper: #f7f2e8;
+        --paper-deep: #efe9dc;
+        --ink: #292722;
+        --muted: #746b5f;
+        --line: #d8d0c3;
+        --line-soft: #e6dfd2;
+        --accent: #d94f28;
+        --accent-deep: #ad391c;
+        --selected: #f8e0cf;
+        --white: #ffffff;
+        --shadow: rgb(41 39 34 / 12%);
+        --font:
+          'PingFang SC', 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', -apple-system,
+          sans-serif;
+        --mono: 'SF Mono', Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font: 14px/1.6 var(--font);
+        color: var(--ink);
+        background: var(--paper);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* ---------- 顶部 ---------- */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 14px 22px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper-deep);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+      }
+
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        background: var(--accent);
+        color: var(--paper);
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      .brand div {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.3;
+      }
+
+      .brand strong {
+        font-size: 15px;
+      }
+
+      .brand small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .status-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .pill .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+
+      .pill.on {
+        background: var(--selected);
+        border-color: var(--accent);
+        color: var(--accent-deep);
+      }
+
+      .pill.on .dot {
+        background: var(--accent);
+      }
+
+      .btn {
+        padding: 7px 14px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--white);
+        cursor: pointer;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .btn:hover {
+        border-color: var(--accent);
+      }
+
+      .btn-primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--paper);
+        font-weight: 600;
+      }
+
+      .btn-primary:hover {
+        background: var(--accent-deep);
+      }
+
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* ---------- 主体 ---------- */
+      main {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .left {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-width: 0;
+        border-right: 1px solid var(--line);
+      }
+
+      .left-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 22px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .left-head h2 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .filters {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        padding: 5px 11px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chip.is-active {
+        background: var(--selected);
+        border-color: var(--accent);
+        color: var(--accent-deep);
+        font-weight: 600;
+      }
+
+      .log {
+        overflow-y: auto;
+        padding: 8px 14px 20px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 74px 132px 1fr;
+        gap: 12px;
+        align-items: baseline;
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--line-soft);
+        cursor: pointer;
+      }
+
+      .row:hover {
+        background: var(--white);
+      }
+
+      .row.is-selected {
+        background: var(--selected);
+      }
+
+      .row .time {
+        font: 11px/1.5 var(--mono);
+        color: var(--muted);
+      }
+
+      .row .type {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font: 600 12px/1.5 var(--mono);
+      }
+
+      .row .dir {
+        display: inline-grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        border-radius: 4px;
+        font-size: 10px;
+        color: var(--paper);
+      }
+
+      .row.inbound .dir {
+        background: var(--accent);
+      }
+
+      .row.outbound .dir {
+        background: var(--muted);
+      }
+
+      .row .summary {
+        color: var(--muted);
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .empty {
+        padding: 40px 10px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      /* ---------- 右栏 ---------- */
+      aside {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 12px 16px 0;
+      }
+
+      .tab {
+        padding: 8px 15px;
+        border: 1px solid var(--line);
+        border-bottom: none;
+        border-radius: 9px 9px 0 0;
+        background: var(--paper-deep);
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .tab.is-active {
+        background: var(--white);
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .tab-body {
+        overflow-y: auto;
+        padding: 16px;
+        border-top: 1px solid var(--line);
+        background: var(--white);
+      }
+
+      .tab-body[hidden] {
+        display: none;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin-bottom: 13px;
+      }
+
+      .field label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .field input,
+      .field textarea,
+      .field select {
+        width: 100%;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--paper);
+      }
+
+      .field textarea {
+        min-height: 92px;
+        resize: vertical;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .field-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .hint {
+        margin: -4px 0 12px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--paper);
+        font: 12px/1.55 var(--mono);
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translate(-50%, 12px);
+        padding: 10px 18px;
+        border-radius: 9px;
+        background: var(--ink);
+        color: var(--paper);
+        font-size: 13px;
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.18s ease,
+          transform 0.18s ease;
+        z-index: 20;
+      }
+
+      .toast.is-visible {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand">
+          <span class="mark" aria-hidden="true">灵</span>
+          <div>
+            <strong>Mock Gateway 控制台</strong>
+            <small>Gateway / Desktop 1.0 · 本机联调</small>
+          </div>
+        </div>
+        <div class="status-group">
+          <span class="pill" id="conn-pill"
+            ><i class="dot" aria-hidden="true"></i><span id="conn-text">未连接</span></span
+          >
+          <span class="pill" id="count-pill">↑ 收到 <b id="count-num">0</b> 帧</span>
+          <button class="btn" id="btn-clear" type="button">清空</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="left">
+          <div class="left-head">
+            <h2>消息流</h2>
+            <div class="filters" id="filters">
+              <button class="chip is-active" type="button" data-filter="all">全部</button>
+              <button class="chip" type="button" data-filter="inbound">↓ Desktop → 云端</button>
+              <button class="chip" type="button" data-filter="outbound">↑ 云端 → Desktop</button>
+            </div>
+          </div>
+          <div class="log" id="log">
+            <p class="empty">等待 Desktop 连接…</p>
+          </div>
+        </section>
+
+        <aside>
+          <div class="tabs">
+            <button class="tab is-active" type="button" data-tab="dispatch">下达指令</button>
+            <button class="tab" type="button" data-tab="detail">帧详情</button>
+          </div>
+
+          <div class="tab-body" id="tab-dispatch">
+            <div class="field">
+              <label for="in-prompt">任务提示词（prompt）</label>
+              <textarea id="in-prompt">
+只回答一句话：当前工作目录里能看到什么？不要执行任何命令。</textarea>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="in-task">task_id</label>
+                <input id="in-task" type="text" placeholder="留空自动生成" />
+              </div>
+              <div class="field">
+                <label for="in-project">project_id</label>
+                <input id="in-project" type="text" value="prj_demo_0001" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="in-agent">agent</label>
+                <input id="in-agent" type="text" value="codex" />
+              </div>
+              <div class="field">
+                <label for="in-policy">policy_version</label>
+                <input id="in-policy" type="text" value="2026-10-24" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="in-caps">capabilities（逗号分隔）</label>
+              <input id="in-caps" type="text" value="read,write,test" />
+            </div>
+            <button class="btn btn-primary" id="btn-dispatch" type="button" style="width: 100%">
+              下达 task.dispatch
+            </button>
+            <p class="hint" style="margin-top: 10px">
+              下发的帧会走真实的 Gateway/Desktop 1.0 校验。Desktop 回传的
+              <code>task.ack</code> 与任务事件会出现在左侧消息流里。
+            </p>
+
+            <hr style="border: none; border-top: 1px solid var(--line); margin: 18px 0" />
+
+            <div class="field">
+              <label for="in-cancel-task">取消任务（task_cancel.task_id）</label>
+              <input id="in-cancel-task" type="text" placeholder="填入要取消的 task_id" />
+            </div>
+            <button class="btn" id="btn-cancel" type="button" style="width: 100%">
+              下达 task.cancel
+            </button>
+          </div>
+
+          <div class="tab-body" id="tab-detail" hidden>
+            <pre id="detail-json">选择左侧的一条消息查看完整帧。</pre>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      const state = {
+        entries: [],
+        filter: 'all',
+        selectedId: null,
+        connected: false,
+      };
+
+      const $ = (selector) => document.querySelector(selector);
+      const log = $('#log');
+      const detailJson = $('#detail-json');
+
+      let toastTimer;
+      function toast(message) {
+        const el = $('#toast');
+        el.textContent = message;
+        el.classList.add('is-visible');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2400);
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (character) => {
+          const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+          return entities[character] ?? character;
+        });
+      }
+
+      function render() {
+        const visible = state.entries.filter((entry) => {
+          if (state.filter === 'all') return true;
+          return entry.direction === state.filter;
+        });
+
+        $('#count-num').textContent = String(
+          state.entries.filter((entry) => entry.direction === 'inbound').length,
+        );
+
+        if (visible.length === 0) {
+          log.innerHTML = '<p class="empty">暂无消息</p>';
+          return;
+        }
+
+        log.innerHTML = visible
+          .slice()
+          .reverse()
+          .map((entry) => {
+            const time = new Date(entry.receivedAt).toLocaleTimeString('zh-CN', { hour12: false });
+            const arrow = entry.direction === 'inbound' ? '↓' : '↑';
+            const selected = entry.id === state.selectedId ? ' is-selected' : '';
+            return `
+              <div class="row ${entry.direction}${selected}" data-id="${escapeHtml(entry.id)}">
+                <span class="time">${escapeHtml(time)}</span>
+                <span class="type"><i class="dir">${arrow}</i>${escapeHtml(entry.type)}</span>
+                <span class="summary">${escapeHtml(entry.summary || '')}</span>
+              </div>`;
+          })
+          .join('');
+      }
+
+      function renderDetail() {
+        const entry = state.entries.find((item) => item.id === state.selectedId);
+        detailJson.textContent = entry
+          ? JSON.stringify(entry.frame, null, 2)
+          : '选择左侧的一条消息查看完整帧。';
+      }
+
+      log.addEventListener('click', (event) => {
+        const row = event.target.closest('.row');
+        if (!row) return;
+        state.selectedId = row.dataset.id;
+        render();
+        renderDetail();
+        $('#tab-dispatch').hidden = true;
+        $('#tab-detail').hidden = false;
+        document.querySelectorAll('.tab').forEach((tab) => {
+          tab.classList.toggle('is-active', tab.dataset.tab === 'detail');
+        });
+      });
+
+      $('#filters').addEventListener('click', (event) => {
+        const chip = event.target.closest('.chip');
+        if (!chip) return;
+        state.filter = chip.dataset.filter;
+        document.querySelectorAll('.chip').forEach((item) => {
+          item.classList.toggle('is-active', item === chip);
+        });
+        render();
+      });
+
+      document.querySelectorAll('.tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((item) => {
+            item.classList.toggle('is-active', item === tab);
+          });
+          $('#tab-dispatch').hidden = tab.dataset.tab !== 'dispatch';
+          $('#tab-detail').hidden = tab.dataset.tab !== 'detail';
+        });
+      });
+
+      $('#btn-clear').addEventListener('click', () => {
+        state.entries = [];
+        state.selectedId = null;
+        render();
+        renderDetail();
+        toast('已清空本地消息列表');
+      });
+
+      async function post(url, body) {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json().catch(() => ({}));
+        return { ok: response.ok && data.ok !== false, message: data.message ?? '' };
+      }
+
+      $('#btn-dispatch').addEventListener('click', async () => {
+        const caps = $('#in-caps')
+          .value.split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+        const taskId = $('#in-task').value.trim();
+
+        const payload = {
+          prompt: $('#in-prompt').value,
+          agent: $('#in-agent').value.trim() || 'codex',
+          capabilities: caps,
+          acceptance_criteria: ['给出一句话回答'],
+          policy_version: $('#in-policy').value.trim() || '2026-10-24',
+          continuation: null,
+        };
+        if (taskId) {
+          payload.task_id = taskId;
+        }
+
+        const result = await post('/api/dispatch', {
+          kind: 'dispatch',
+          payload: { ...payload, project_id: $('#in-project').value.trim() || 'prj_demo_0001' },
+        });
+        toast(result.ok ? '已下达 task.dispatch' : result.message || '下达失败');
+      });
+
+      $('#btn-cancel').addEventListener('click', async () => {
+        const taskId = $('#in-cancel-task').value.trim();
+        if (!taskId) {
+          toast('请先填写要取消的 task_id');
+          return;
+        }
+        const result = await post('/api/dispatch', { kind: 'cancel', task_id: taskId });
+        toast(result.ok ? '已下达 task.cancel' : result.message || '下达失败');
+      });
+
+      function setConnected(connected) {
+        state.connected = connected;
+        const pill = $('#conn-pill');
+        pill.classList.toggle('on', connected);
+        $('#conn-text').textContent = connected ? 'Desktop 已连接' : '未连接';
+        $('#btn-dispatch').disabled = !connected;
+        $('#btn-cancel').disabled = !connected;
+      }
+
+      // ---------- 实时事件流 ----------
+      const events = new EventSource('/events');
+      events.addEventListener('message', (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+
+        if (data.kind === 'frame') {
+          state.entries.push(data.entry);
+          if (state.entries.length > 500) state.entries.shift();
+          render();
+          if (state.selectedId === data.entry.id) renderDetail();
+        }
+        if (data.kind === 'connection') {
+          setConnected(data.tokenOk);
+          if (!data.tokenOk) toast('连接被拒绝：token 校验失败');
+        }
+        if (data.kind === 'status') {
+          setConnected(data.connections > 0);
+        }
+        if (data.kind === 'invalid') {
+          toast('收到非法 JSON 帧');
+        }
+      });
+
+      events.addEventListener('open', () => {
+        $('#conn-text').textContent = '控制台已连接';
+      });
+
+      // ---------- 初始状态 ----------
+      fetch('/api/state')
+        .then((response) => response.json())
+        .then((data) => {
+          setConnected(data.connections > 0);
+          // The server already returns console entries in the same shape the
+          // live stream sends, so both paths render identically.
+          state.entries = [...(data.sent ?? []), ...(data.received ?? [])];
+          render();
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>
