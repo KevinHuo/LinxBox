@@ -247,6 +247,64 @@ describe('GatewayConnectionManager', () => {
     expect(JSON.stringify(sync)).not.toContain('/tmp/work');
   });
 
+  it('does not publish a managed session when thread creation returns no id', async () => {
+    const { socket } = createManager({
+      listProjects: () => [
+        {
+          projectId: 'prj_1',
+          displayName: 'LinxBox',
+          rootPath: '/tmp/work',
+          enabled: true,
+        },
+      ],
+      session: createSessionStub({ createSession: () => Promise.resolve('') }),
+    });
+
+    socket.emit('open', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const sync = socket.frames().find((frame) => frame.type === 'agent_sessions.sync');
+    expect(sync?.payload['items']).toEqual([]);
+  });
+
+  it('returns an empty message list when an idle managed session cannot list turns yet', async () => {
+    const { socket } = createManager({
+      listProjects: () => [
+        {
+          projectId: 'prj_1',
+          displayName: 'LinxBox',
+          rootPath: '/tmp/work',
+          enabled: true,
+        },
+      ],
+      session: createSessionStub({
+        createSession: () => Promise.resolve('th_managed'),
+        readSession: () => Promise.reject(new Error('list_turns is not supported yet')),
+      }),
+    });
+    socket.emit('open', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        protocol_version: '1.0',
+        message_id: 'qry_1',
+        sequence: 3,
+        type: 'messages.list',
+        sent_at: '2026-10-25T13:38:16Z',
+        payload: { agent_session_id: 'codex_prj_1' },
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const result = socket.frames().find((frame) => frame.type === 'query.result');
+    expect(result?.payload).toEqual({
+      reply_to_message_id: 'qry_1',
+      ok: true,
+      data: { items: [], next_cursor: null },
+    });
+  });
+
   it('continues the existing thread selected from the published catalogue', async () => {
     const continued: string[] = [];
     const session = createSessionStub({
@@ -515,10 +573,14 @@ describe('GatewayConnectionManager', () => {
       if (frame.type === 'device.bind') {
         socket.emit('message', {
           data: JSON.stringify({
-            protocol_version: '1.0', message_id: 'msg_result', sequence: 2,
-            type: 'binding.result', sent_at: new Date().toISOString(),
+            protocol_version: '1.0',
+            message_id: 'msg_result',
+            sequence: 2,
+            type: 'binding.result',
+            sent_at: new Date().toISOString(),
             payload: {
-              reply_to_message_id: frame.message_id, ok: true,
+              reply_to_message_id: frame.message_id,
+              ok: true,
               data: { device_id: 'AA:BB:CC:DD:EE:FF', desktop_client_id: 'desktop-1' },
             },
           }),

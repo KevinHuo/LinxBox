@@ -1,84 +1,111 @@
-/**
- * Local connection settings on disk.
- *
- * The Gateway URL, the access token and the computer name are the only
- * settings the user has to enter, and re-entering them on every restart is
- * needless friction. They are stored in the app's own user-data directory as
- * a small JSON file.
- *
- * The file holds a secret, so it is written with owner-only permissions and
- * never written to a log. The token is never handed to the renderer: the
- * renderer only ever sees a mask of it.
- */
+/** Persistent Gateway profiles stored in Electron's user-data directory. */
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-/** The settings as they are stored on disk. */
+export type GatewayProfileId = 'local' | 'online';
+
+export interface StoredGatewayProfile {
+  readonly gatewayUrl: string;
+  readonly accessToken: string;
+}
+
 export interface StoredConnectionSettings {
+  readonly activeProfile: GatewayProfileId;
+  readonly profiles: Readonly<Record<GatewayProfileId, StoredGatewayProfile>>;
+  readonly computerName: string;
+}
+
+interface LegacyConnectionSettings {
   readonly gatewayUrl: string;
   readonly accessToken: string;
   readonly computerName: string;
 }
 
-/** Where the settings live inside the user-data directory. */
+export const LOCAL_GATEWAY_URL = 'ws://127.0.0.1:8787/v1/clients/connect';
+export const ONLINE_GATEWAY_URL = 'ws://124.220.162.10:8787/v1/clients/connect';
 export const SETTINGS_FILE_NAME = 'connection.json';
-
-/** The file mode of the settings file: readable by the owner only. */
 const OWNER_ONLY = 0o600;
 
-/**
- * The path of the settings file.
- *
- * The user-data directory is created by Electron, but the tests run outside
- * it, so the parent directory is created here when it is missing.
- */
 export function resolveSettingsPath(userDataDir: string): string {
   return join(userDataDir, SETTINGS_FILE_NAME);
 }
 
-/**
- * Read the stored settings.
- *
- * A missing file means "not configured yet". A damaged file is treated the
- * same way: the user can simply enter the settings again, and the broken file
- * does not stop the client from starting.
- */
+export function createConnectionSettings(
+  computerName = '',
+  onlineToken = '',
+): StoredConnectionSettings {
+  return {
+    activeProfile: 'online',
+    profiles: {
+      local: { gatewayUrl: LOCAL_GATEWAY_URL, accessToken: 'demo-client-token' },
+      online: { gatewayUrl: ONLINE_GATEWAY_URL, accessToken: onlineToken },
+    },
+    computerName,
+  };
+}
+
+function isProfile(value: unknown): value is StoredGatewayProfile {
+  if (!value || typeof value !== 'object') return false;
+  const profile = value as Partial<StoredGatewayProfile>;
+  return typeof profile.gatewayUrl === 'string' && typeof profile.accessToken === 'string';
+}
+
+function migrateLegacy(value: Partial<LegacyConnectionSettings>): StoredConnectionSettings | null {
+  if (
+    typeof value.gatewayUrl !== 'string' ||
+    typeof value.accessToken !== 'string' ||
+    typeof value.computerName !== 'string' ||
+    value.gatewayUrl === '' ||
+    value.accessToken === ''
+  ) {
+    return null;
+  }
+  const activeProfile: GatewayProfileId = /^(ws|wss):\/\/(127\.0\.0\.1|localhost)(:|\/)/i.test(
+    value.gatewayUrl,
+  )
+    ? 'local'
+    : 'online';
+  const defaults = createConnectionSettings(value.computerName);
+  return {
+    ...defaults,
+    activeProfile,
+    profiles: {
+      ...defaults.profiles,
+      [activeProfile]: { gatewayUrl: value.gatewayUrl, accessToken: value.accessToken },
+    },
+  };
+}
+
 export function readConnectionSettings(userDataDir: string): StoredConnectionSettings | null {
-  const path = resolveSettingsPath(userDataDir);
   let raw: string;
   try {
-    raw = readFileSync(path, 'utf8');
+    raw = readFileSync(resolveSettingsPath(userDataDir), 'utf8');
   } catch {
     return null;
   }
-
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredConnectionSettings>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!('activeProfile' in parsed)) return migrateLegacy(parsed);
     if (
-      typeof parsed.gatewayUrl !== 'string' ||
-      typeof parsed.accessToken !== 'string' ||
-      typeof parsed.computerName !== 'string'
+      (parsed['activeProfile'] !== 'local' && parsed['activeProfile'] !== 'online') ||
+      typeof parsed['computerName'] !== 'string' ||
+      !parsed['profiles'] ||
+      typeof parsed['profiles'] !== 'object'
     ) {
       return null;
     }
-    if (parsed.gatewayUrl === '' || parsed.accessToken === '') {
-      return null;
-    }
+    const profiles = parsed['profiles'] as Record<string, unknown>;
+    if (!isProfile(profiles['local']) || !isProfile(profiles['online'])) return null;
     return {
-      gatewayUrl: parsed.gatewayUrl,
-      accessToken: parsed.accessToken,
-      computerName: parsed.computerName,
+      activeProfile: parsed['activeProfile'],
+      profiles: { local: profiles['local'], online: profiles['online'] },
+      computerName: parsed['computerName'],
     };
   } catch {
     return null;
   }
 }
 
-/**
- * Write the settings.
- *
- * The file is written with owner-only permissions because it holds a token.
- */
 export function writeConnectionSettings(
   userDataDir: string,
   settings: StoredConnectionSettings,
@@ -86,16 +113,12 @@ export function writeConnectionSettings(
   const path = resolveSettingsPath(userDataDir);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`, { mode: OWNER_ONLY });
-  // `writeFileSync` only applies the mode when it creates the file, so the
-  // permissions are set again for an existing file.
   chmodSync(path, OWNER_ONLY);
 }
 
-/** Remove the stored settings. */
 export function clearConnectionSettings(userDataDir: string): void {
-  const path = resolveSettingsPath(userDataDir);
   try {
-    writeFileSync(path, '{}\n', { mode: OWNER_ONLY });
+    writeFileSync(resolveSettingsPath(userDataDir), '{}\n', { mode: OWNER_ONLY });
   } catch {
     // Nothing to clear.
   }
