@@ -165,6 +165,7 @@ const floatSetVisibleSchema = z
   })
   .strict();
 
+const floatSetExpandedSchema = z.object({ expanded: z.boolean() }).strict();
 const appearanceSaveSchema = z
   .object({
     theme: appearanceThemeSchema,
@@ -207,6 +208,7 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'window.float.read': emptyPayloadSchema,
   'window.float.setVisible': floatSetVisibleSchema,
   'window.float.move': floatMoveSchema,
+  'window.float.setExpanded': floatSetExpandedSchema,
   'window.main.focus': emptyPayloadSchema,
   'app.quit': emptyPayloadSchema,
 };

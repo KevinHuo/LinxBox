@@ -143,6 +143,7 @@ function broadcastConnectionStatus(status: {
 let mainWindow: BrowserWindow | null = null;
 let floatWindow: BrowserWindow | null = null;
 let isQuitting = false;
+let floatExpanded = false;
 
 /** Resolve the realpath of a directory chosen in the system dialog. */
 function canonicalizeDirectory(candidate: string): string {
@@ -366,6 +367,18 @@ function handleFloatRead(): unknown {
   return { ok: true, data: readFloatView(floatState) };
 }
 
+function handleFloatSetExpanded(payload: unknown): unknown {
+  const parsed = parseIpcRequest('window.float.setExpanded', payload);
+  if (!parsed.ok) return { ok: false, code: parsed.code, message: parsed.message };
+  const { expanded } = parsed.data as { expanded: boolean };
+  floatExpanded = expanded;
+  if (floatWindow !== null && !floatWindow.isDestroyed()) {
+    floatWindow.setSize(expanded ? FLOAT_PANEL_WIDTH : FLOAT_BALL_SIZE, expanded ? FLOAT_PANEL_HEIGHT : FLOAT_BALL_SIZE);
+    applyFloatPosition();
+  }
+  return { ok: true };
+}
+
 function handleMainWindowFocus(): unknown {
   ensureMainWindowVisible();
   return { ok: true };
@@ -413,6 +426,7 @@ function showFloatWindow(): void {
     const workArea = screen.getPrimaryDisplay().workArea;
     floatState.position = defaultFloatPosition(workArea);
   }
+  window.setSize(FLOAT_BALL_SIZE, FLOAT_BALL_SIZE);
   applyFloatPosition();
   if (!window.isVisible()) {
     window.showInactive();
@@ -454,8 +468,8 @@ function applyFloatPosition(): void {
   }
   const { x, y } = floatState.position;
   floatWindow.setPosition(
-    Math.round(x - (FLOAT_PANEL_WIDTH - FLOAT_BALL_SIZE)),
-    Math.round(y - (FLOAT_PANEL_HEIGHT - FLOAT_BALL_SIZE)),
+    Math.round(x - (floatExpanded ? FLOAT_PANEL_WIDTH - FLOAT_BALL_SIZE : 0)),
+    Math.round(y - (floatExpanded ? FLOAT_PANEL_HEIGHT - FLOAT_BALL_SIZE : 0)),
   );
 }
 
@@ -623,6 +637,7 @@ const HANDLERS: Readonly<Record<IpcMethod, (payload: unknown) => unknown>> = {
   'window.float.read': () => handleFloatRead(),
   'window.float.setVisible': (payload) => handleFloatSetVisible(payload),
   'window.float.move': (payload) => handleFloatMove(payload),
+  'window.float.setExpanded': (payload) => handleFloatSetExpanded(payload),
   'window.main.focus': () => handleMainWindowFocus(),
   'app.quit': () => {
     app.quit();
@@ -764,6 +779,7 @@ void app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  codexSession.close();
 });
 
 /**
@@ -818,8 +834,8 @@ function restoreSavedConnection(): void {
 }
 
 app.on('window-all-closed', () => {
-  codexSession.close();
   if (process.platform !== 'darwin') {
+    codexSession.close();
     app.quit();
   }
 });
