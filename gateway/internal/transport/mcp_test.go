@@ -187,7 +187,7 @@ func TestMCPHTTPGuards(t *testing.T) {
 		{"GET", "/mcp", "dev-token", "", "", 401},
 		{"GET", "/mcp", "dt-token", "", "", 401},
 		{"GET", "/mcp", "mcp-token", "https://example.com", "", 403},
-		{"DELETE", "/mcp", "mcp-token", "", "", 405},
+		{"DELETE", "/mcp", "mcp-token", "", "", 400},
 		{"GET", "/mcp/message", "mcp-token", "", "", 405},
 		{"POST", "/mcp/message", "mcp-token", "", "{}", 404},
 	} {

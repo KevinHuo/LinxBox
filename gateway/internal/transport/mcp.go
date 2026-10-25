@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -20,13 +22,15 @@ import (
 	"github.com/KevinHuo/LinxBox/gateway/internal/service"
 )
 
-// mcpEndpoint 保留灵矽的旧版 HTTP/SSE 入口；JSON-RPC 与工具分发交给官方 SDK。
+// mcpEndpoint 同时接入 Streamable HTTP 与旧版 SSE，工具业务共用一个处理函数。
 type mcpEndpoint struct {
-	server   *Server
-	sdk      *mcp.Server
-	mu       sync.Mutex
-	sessions map[string]*mcpSSESession
-	closed   bool
+	server    *Server
+	sdk       *mcp.Server
+	streamSDK *mcp.Server
+	stream    http.Handler
+	mu        sync.Mutex
+	sessions  map[string]*mcpSSESession
+	closed    bool
 }
 
 // SetRequests 接入请求服务；无 MCP 凭据时入口仍保持拒绝访问。
@@ -37,8 +41,25 @@ func (s *Server) SetRequests(requests *service.RequestService) error {
 	}
 	s.requests = requests
 	e := &mcpEndpoint{server: s, sessions: map[string]*mcpSSESession{}}
-	e.sdk = mcp.NewServer(&mcp.Implementation{Name: "linxbox-gateway", Version: "1.0.0"}, &mcp.ServerOptions{Logger: s.logger})
-	e.sdk.AddTool(&mcp.Tool{Name: "propose_task_reply", Description: "原样接收本轮最终 ASR 文字，等待设备确认；不执行任务。", InputSchema: schema}, e.propose)
+	sdkLogger := slog.New(mcpSDKLogHandler{Handler: s.logger.Handler()})
+	newSDK := func() *mcp.Server {
+		sdk := mcp.NewServer(&mcp.Implementation{Name: "linxbox-gateway", Version: "1.0.0"}, &mcp.ServerOptions{Logger: sdkLogger})
+		sdk.AddTool(&mcp.Tool{Name: "propose_task_reply", Description: "原样接收本轮最终 ASR 文字，等待设备确认；不执行任务。", InputSchema: schema}, e.propose)
+		return sdk
+	}
+	e.sdk, e.streamSDK = newSDK(), newSDK()
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return e.streamSDK }, &mcp.StreamableHTTPOptions{
+		JSONResponse: true, SessionTimeout: 30 * time.Minute, Logger: sdkLogger,
+	})
+	// SDK 用 UserID 将传输会话绑定到同一凭据；只传不可逆指纹，不把明文 token 用作身份。
+	e.stream = auth.RequireBearerToken(func(_ context.Context, _ string, r *http.Request) (*auth.TokenInfo, error) {
+		cred, err := s.authenticateMCP(r)
+		if err != nil {
+			return nil, auth.ErrInvalidToken
+		}
+		// SDK 要求当前认证上下文有有效期；每个 HTTP 请求均重新验证部署凭据。
+		return &auth.TokenInfo{UserID: mcpCredentialIdentity(cred.Token), Expiration: time.Now().Add(time.Hour)}, nil
+	}, nil)(handler)
 	s.mcp = e
 	return nil
 }
@@ -80,12 +101,17 @@ func (e *mcpEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.server.rejectMCPHTTP(w, r, trace, http.StatusForbidden, domain.CodePermissionDenied, "不接受浏览器来源")
 		return
 	}
+	if r.URL.Path == "/mcp" && (r.Method == http.MethodPost || r.Method == http.MethodDelete || r.Method == http.MethodHead || r.Method == http.MethodOptions ||
+		(r.Method == http.MethodGet && len(r.Header.Values("Mcp-Session-Id")) > 0)) {
+		e.serveStreamable(w, r, trace)
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/mcp" {
 		e.connect(w, r, cred)
 		return
 	}
 	if r.Method != http.MethodPost || r.URL.Path != "/mcp/message" {
-		w.Header().Set("Allow", "GET, POST")
+		w.Header().Set("Allow", "GET, POST, DELETE, HEAD, OPTIONS")
 		e.server.rejectMCPHTTP(w, r, trace, http.StatusMethodNotAllowed, domain.CodeInvalidArgument, "入口或方法不匹配")
 		return
 	}
@@ -122,6 +148,7 @@ func (e *mcpEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Clone()
 		// 仅携带日志元数据，覆盖同名客户端头；不能把它们用于认证或请求归属。
 		header.Set(mcpLogTraceHeader, trace)
+		header.Set(mcpLogTransportHeader, "sse")
 		header.Set(mcpLogConnectionHeader, strconv.FormatUint(session.logID, 10))
 		header.Set(mcpLogRPCHeader, e.server.mcpRPCID(req.ID.Raw()))
 		req.Extra = &mcp.RequestExtra{Header: header}
@@ -140,7 +167,7 @@ func (e *mcpEndpoint) connect(w http.ResponseWriter, r *http.Request, cred confi
 	started := time.Now()
 	trace := newMCPTrace()
 	e.mu.Lock()
-	if e.closed || len(e.sessions) >= e.server.cfg.Limits.MaxOnlineConnections {
+	if e.closed || e.sessionCountLocked() >= e.server.cfg.Limits.MaxOnlineConnections {
 		e.mu.Unlock()
 		e.server.rejectMCPHTTP(w, r, trace, http.StatusServiceUnavailable, domain.CodeResourceExhausted, "MCP 连接数达到上限")
 		return
@@ -245,6 +272,9 @@ func (e *mcpEndpoint) close() {
 	e.closed = true
 	for _, session := range e.sessions {
 		session.Close()
+	}
+	for session := range e.streamSDK.Sessions() {
+		_ = session.Close()
 	}
 }
 

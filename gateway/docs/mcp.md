@@ -1,6 +1,6 @@
 # MCP 最终识别文字接入
 
-Refs #14、#1。DRI：BoleLiu（Gateway）。主模块：Gateway；受影响模块：固件、Desktop 与灵矽平台接入；必要跨端评审：KevinHuo（固件）、yydounai1234（Desktop）。协议沿用已合并的 `contracts/`，不新增文字投递 API。
+Refs #31、#14、#1。DRI：BoleLiu（Gateway）。主模块：Gateway；受影响模块：固件、Desktop 与灵矽平台接入；必要跨端评审：KevinHuo（固件）、yydounai1234（Desktop）。业务协议沿用已合并的 `contracts/`；Streamable HTTP 传输适配的独立设计见 #31，不能视为已经通过跨端评审或真实联调。
 
 目标是接收每轮最终 ASR 原文并保存为待确认请求。范围包括 MCP 接入、录音目标准备、持久化、取消、超时和来源校验；不包括任务确认投递、Agent 执行或灵矽平台代码修改。
 
@@ -8,14 +8,24 @@ Refs #14、#1。DRI：BoleLiu（Gateway）。主模块：Gateway；受影响模�
 
 在部署配置中增加 `credentials.mcp`，每项包含独立 `token`、目标设备的规范 MAC `device_id`（设备通过 hello 登记） 和灵矽 `agent_id`。同一 token 不能用于设备或 Desktop；凭据不写入请求数据库。省略或空数组保留只读服务，全部 MCP 调用返回 401。
 
-灵矽侧服务地址配置为公网 HTTPS `https://<网关域名>/mcp`，通过 `Authorization: Bearer <独立 MCP token>` 认证。该入口使用灵矽文档的 HTTP/SSE 传输：
+灵矽侧服务地址配置为公网 HTTPS `https://<网关域名>/mcp`，通过 `Authorization: Bearer <独立 MCP token>` 认证。自定义 MCP 页面选择 `Streamable HTTP`、`Normal`，Query 留空，Header 设置 Authorization。联调实例可沿用 `http://124.220.162.10:8787/mcp` 和专用测试凭据；此地址不使用 ws/wss。
 
-- `GET /mcp` 建立 SSE，SDK 返回 `endpoint` 事件，指向 `POST /mcp/message?sessionid=...`。
-- 每个 POST 都需要相同凭据。SSE sessionid 只定位 MCP 连接，不是业务 `request_id` 或灵矽语音会话。
-- 每条消息不超过配置帧限制和契约的 64 KiB；接收队列有界，MCP 连接数受 `max_online_connections` 单独限制。SSE 连接最长保留 30 分钟，客户端到期后重连；单次工具业务操作最长 15 秒。
+| 传输方式 | 入口与会话 |
+| --- | --- |
+| Streamable HTTP | `POST /mcp` 完成 initialize、通知、tools/list 和 tools/call；初始化响应返回 Mcp-Session-Id，后续每次请求携带该头。GET /mcp 携带此头读取独立流，DELETE /mcp 携带此头释放会话 |
+| 旧版 HTTP/SSE | 无 Mcp-Session-Id 的 GET /mcp 建立 SSE；使用 endpoint 事件返回的 POST /mcp/message?sessionid=... 地址发送消息 |
+
+Streamable HTTP 的 POST 设置 `Content-Type: application/json`、`Accept: application/json, text/event-stream`，后续请求携带协商出的 `MCP-Protocol-Version`。SDK 返回 JSON 响应；HEAD /mcp 返回 200，OPTIONS /mcp 返回 204 和 Allow，仅表示通过认证的入口探测，不代表已初始化或收到识别文字。两类探测都不会创建会话，也不开放浏览器跨源访问。
+
+两种传输共用以下约束：
+
+- 每个 HTTP 请求都需要独立 MCP 凭据；传输会话绑定创建它的凭据。Mcp-Session-Id、旧 SSE sessionid 都不是业务 request_id 或灵矽语音会话，不能混用。
+- 每条消息不超过配置帧限制和契约的 64 KiB；旧 SSE 接收队列有界，两种传输共用 MCP `max_online_connections` 上限。旧 SSE 最长保留 30 分钟；Streamable 会话空闲 30 分钟释放，客户端到期后重新 initialize。关闭 Gateway 时释放所有会话。单次工具业务操作最长 15 秒，Streamable POST 处理最长 20 秒。
 - 反向代理保持 SSE 流式转发，禁用响应缓冲。不得把 token 放在地址中；代理访问日志不得记录凭据或语音原文。
 
 唯一工具 `propose_task_reply` 的参数为 `{"text":"最终 ASR 原文"}`。inputSchema 从共享契约导出，不依赖客户端联网解析 `$ref`；不接受模型指定设备、目标或请求标识。保留原有空白、标点和文字，拒绝纯空白、超过 16000 码点或超过 16 KiB UTF-8 的文字，不截断。
+
+initialize 与 tools/list 只需认证，不要求录音业务上下文；真正调用工具时仍必须逐轮传递以下四头。不要在自定义 MCP 页面把 X-Linx-Request-Id 写成固定值；配置服务描述或提示词也不能保证所有最终 ASR 自动调用工具。
 
 ## 每轮顺序
 
@@ -50,6 +60,7 @@ DRI：BoleLiu（Gateway）。本次日志改动仅涉及 Gateway 传输层，不
 | --- | --- |
 | `mcp.connection.opened` / `mcp.connection.closed` | SSE 建连与结束，包含连接编号、持续时间和结束原因；建连成功不表示已收到识别结果 |
 | `mcp.http.rejected` | HTTP 入口拒绝，包含状态码、错误原因和排查提示；检查凭据、Origin、入口、SSE 是否过期或消息大小 |
+| `mcp.http.completed` | Streamable HTTP 处理结束，包含具体 HTTP 方法、受限 RPC 方法、传输类型和状态码；HTTP 200/202 不能代替工具业务结果 |
 | `mcp.call.received` | 已收到 `propose_task_reply`，记录本轮上下文、脱敏参数 body 和文字长度 |
 | `mcp.call.validated` | 来源和参数 Schema 校验通过，开始核对原请求并保存文字；不表示持久化已经成功 |
 | `mcp.call.completed` | 工具最终业务结果；成功包含请求状态、目标会话和脱敏 response_body；失败包含 failed_stage、error_code、error_message、error_hint 和耗时 |
@@ -87,13 +98,15 @@ make check
 make build
 ```
 
-测试使用临时 SQLite、模拟语音文字和真实本机 HTTP/SSE/WSS 协议栈，不连接灵矽或真实 Agent，不产生编码任务。涵盖工具发现、唯一参数、原文保留、普通闲聊接收、多轮 SSE 逐次上下文、认证/来源隔离、重复调用、取消后迟到、超时及恢复。
+测试使用临时 SQLite、模拟语音文字和真实本机 HTTP/Streamable HTTP/SSE/WSS 协议栈，不连接灵矽或真实 Agent，不产生编码任务。涵盖工具发现、唯一参数、原文保留、普通闲聊接收、两种传输的逐次上下文、认证/来源隔离、重复调用、取消后迟到、超时及恢复；另验证 DELETE/HEAD/OPTIONS、传输会话凭据隔离、连接上限、关闭释放、消息大小、Content-Type/Accept/版本头及 SDK 日志脱敏。
 
 真实验收必须分别提供：固件 prepare 后录音、灵矽最终 ASR 固定调用与逐轮 ID 透传、错误时不转入通用 LLM、设备显示原文及确认页的证据。现有测试不能替代这些结果。
 
 ## 本次本地验证结果
 
-2026-10-25（补齐 MCP 日志）：在独立源码快照执行 `GOCACHE=/tmp/linxbox-gateway-integration-go-cache GOFLAGS=-buildvcs=false make check build release`，并基于同一 coverage.out 运行 `tools/covergate -base origin/main`，格式、静态检查、全部单元/集成测试、整体/关键包/增量包覆盖率与全部包 race 检测均通过。整体语句覆盖率为 **93.14%（2390/2566）**；请求服务所在包 92.11%、传输包 93.50%、存储包 92.26%，所有关键包和增量包均通过原有 90% 门禁，没有新增统计排除或下调门槛。MCP 日志回归覆盖正常/重复调用、上下文与参数错误、来源不匹配、请求不存在、设备离线、通知失败和敏感信息脱敏；测试配置在建连前固定，避免活跃 SSE 期间写入配置。
+2026-10-25（Streamable HTTP 适配）：在独立管理工作树执行 `GOCACHE=/tmp/linxbox-gateway-integration-go-cache GOFLAGS=-buildvcs=false make check build release`，并基于同一 coverage.out 运行 `tools/covergate -base origin/main`，格式、静态检查、全部单元/集成测试、整体/关键包/增量包覆盖率与全部包 race 检测均通过。整体语句覆盖率为 **93.41%（2525/2703）**；请求服务所在包 92.11%、传输包 94.11%、存储包 92.26%，所有关键包和增量包均通过原有 90% 门禁，没有新增统计排除或下调门槛。
+
+官方 Streamable 客户端验证初始化、独立 GET 流、工具发现、原文保存、同轮幂等、多轮逐 POST 上下文与 DELETE。HTTP 回归另覆盖跨 token 会话拒绝、关闭后不可复用、连接总量、停止时释放、HEAD/OPTIONS、Content-Type/Accept/版本头、错误 JSON 与超限。SDK 日志适配器隐藏原始会话 ID 和不可信消息，机械 SDK 事件留在 debug；即使 debug 日志也断言私人正文、路径、凭据、传输 session ID 和伪造诊断头不落日志。旧版 SSE 及既有固件/Desktop 回归通过。
 
 `make build release` 通过：本机可执行文件及 Linux amd64/arm64 无 CGO 发布构建均已生成；`git diff --check` 通过。Linux 结果为交叉编译，尚未在目标主机运行；容器镜像尚未构建验证。
 

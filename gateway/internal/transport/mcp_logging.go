@@ -22,6 +22,7 @@ const (
 	mcpLogTraceHeader      = "X-Linx-Gateway-Log-Trace"
 	mcpLogConnectionHeader = "X-Linx-Gateway-Log-Connection"
 	mcpLogRPCHeader        = "X-Linx-Gateway-Log-Rpc"
+	mcpLogTransportHeader  = "X-Linx-Gateway-Log-Transport"
 )
 
 func newMCPTrace() string { return contracts.NewMessageID("mcp_")[:12] }
@@ -52,6 +53,7 @@ func (s *Server) safeMCPID(value string) string {
 }
 
 type mcpCallLog struct {
+	transport                                          string
 	trace, rpcID, device, agent, voiceSession, request string
 	expectedDevice, expectedAgent                      string
 	connection                                         uint64
@@ -67,6 +69,10 @@ func (s *Server) mcpCallContext(req *mcp.CallToolRequest) mcpCallLog {
 		header = req.Extra.Header
 	}
 	entry := mcpCallLog{trace: singleHeader(header, mcpLogTraceHeader)}
+	entry.transport = "sse"
+	if singleHeader(header, mcpLogTransportHeader) == "streamable_http" {
+		entry.transport = "streamable_http"
+	}
 	validTrace := len(entry.trace) == 12 && strings.HasPrefix(entry.trace, "mcp_")
 	if validTrace {
 		_, err := strconv.ParseUint(entry.trace[4:], 16, 32)
@@ -109,7 +115,7 @@ func (s *Server) mcpCallContext(req *mcp.CallToolRequest) mcpCallLog {
 }
 
 func (entry mcpCallLog) fields() []any {
-	return []any{"trace_id", entry.trace, "tool", "propose_task_reply", "mcp_connection_id", entry.connection, "rpc_id", entry.rpcID,
+	return []any{"trace_id", entry.trace, "transport", entry.transport, "tool", "propose_task_reply", "mcp_connection_id", entry.connection, "rpc_id", entry.rpcID,
 		"device_id", entry.device, "linx_agent_id", entry.agent, "voice_session_id", entry.voiceSession, "request_id", entry.request,
 		"credential_device_id", entry.expectedDevice, "credential_linx_agent_id", entry.expectedAgent,
 		"missing_headers", entry.missing, "duplicate_headers", entry.duplicate, "text_is_string", entry.textIsString,
@@ -191,24 +197,27 @@ func mcpBusinessHint(code domain.Code) string {
 func mcpHTTPHint(status int) string {
 	switch status {
 	case http.StatusUnauthorized:
-		return "GET 与每个 POST 都须携带 credentials.mcp 中的独立 Bearer token，不能复用固件或 Desktop token"
+		return "每个 MCP HTTP 请求都须携带 credentials.mcp 中的独立 Bearer token，不能复用固件或 Desktop token"
 	case http.StatusForbidden:
-		return "拒绝浏览器 Origin；POST 必须使用建立该 SSE 连接的同一凭据"
+		return "拒绝浏览器 Origin 或不安全 Host；传输会话必须使用初始化时的同一凭据"
 	case http.StatusNotFound, http.StatusGone:
-		return "先 GET /mcp 建立 SSE，再使用 endpoint 事件返回的 POST 地址；旧连接失效后重建，不要把 sessionid 当作 request_id"
+		return "Streamable HTTP 重新 POST /mcp initialize，使用返回的 Mcp-Session-Id；旧 SSE 重新 GET /mcp 并使用 endpoint 地址。传输会话 ID 不是业务 request_id"
 	case http.StatusMethodNotAllowed:
-		return "只支持 GET /mcp 与 POST /mcp/message"
+		return "Streamable HTTP 使用 POST /mcp，GET/DELETE 携带 Mcp-Session-Id；旧 SSE 使用 GET /mcp 与 POST /mcp/message。核对日志中的实际 method"
 	case http.StatusRequestEntityTooLarge:
 		return "检查消息是否超过 limits.max_frame_bytes，或 HTTP 请求体是否读取中断"
 	case http.StatusBadRequest:
-		return "检查 JSON-RPC 2.0 信封和 tools/call 参数结构，不能直接 POST 固件 WS 帧"
+		return "检查 JSON-RPC 2.0 信封、Accept（application/json 与 text/event-stream）、Mcp-Session-Id 和 MCP-Protocol-Version；先完成 initialize"
+	case http.StatusUnsupportedMediaType:
+		return "Streamable HTTP 的 POST 必须使用 Content-Type: application/json"
 	default:
 		return "检查 MCP 服务配置、SSE 连接数量及 Gateway 启动状态"
 	}
 }
 
 func (s *Server) safeMCPMethod(method string) string {
-	if method == "GET" || method == "POST" {
+	switch method {
+	case "GET", "POST", "DELETE", "HEAD", "OPTIONS", "PUT", "PATCH", "CONNECT", "TRACE":
 		return method
 	}
 	return "OTHER"
