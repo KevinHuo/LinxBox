@@ -74,8 +74,8 @@ func TestLoadValid(t *testing.T) {
 	if _, ok := got.DesktopByToken("dt-token"); !ok {
 		t.Fatal("DesktopByToken 应命中")
 	}
-	if subj, ok := got.DeviceSubject("AA:BB:CC:DD:EE:01"); !ok || subj != "alice" {
-		t.Fatalf("DeviceSubject 结果错误: %v %v", subj, ok)
+	if subject, ok := got.DeviceSubjectForCredential(DeviceCredentialKey("dev-token")); !ok || subject != "alice" {
+		t.Fatal("设备接入账号缺失")
 	}
 }
 
@@ -178,7 +178,41 @@ func TestLookupMisses(t *testing.T) {
 	if _, ok := c.DesktopByToken("missing"); ok {
 		t.Fatal("未知 token 不应命中")
 	}
-	if _, ok := c.DeviceSubject("AA:BB:CC:DD:EE:99"); ok {
+	if _, ok := c.DeviceSubjectForCredential(DeviceCredentialKey("missing")); ok {
 		t.Fatal("未知设备不应命中")
+	}
+}
+
+func TestLoadWithoutMACOrPairing(t *testing.T) {
+	c := validConfig()
+	c.Credentials.Devices[0].DeviceID = ""
+	c.Pairing.Rules = nil
+	got, err := Load(writeConfig(t, c))
+	if err != nil || got.Credentials.Devices[0].DeviceID != "" || len(got.Pairing.Rules) != 0 {
+		t.Fatal("新配置无需预登记 MAC 或配对白名单", got, err)
+	}
+}
+
+func TestLogFormats(t *testing.T) {
+	for _, format := range []string{"", "text", "json", "xml"} {
+		cfg := validConfig()
+		cfg.Log.Format = format
+		got, err := Load(writeConfig(t, cfg))
+		if format == "xml" {
+			if err == nil {
+				t.Fatal("未知格式应拒绝")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := format
+		if want == "" {
+			want = "text"
+		}
+		if got.Log.Format != want {
+			t.Fatal("日志格式未应用", got.Log.Format)
+		}
 	}
 }

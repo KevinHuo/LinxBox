@@ -13,27 +13,34 @@ import (
 
 // forwardQuery 校验设备归属后只向固定 Desktop 当前连接转发读取请求。
 func (s *Server) forwardQuery(ctx context.Context, source *lifecycle.Connection, p Principal, msg contracts.FirmwareMessage) error {
+	reject := func(err error) {
+		fields := []any{"device_id", p.DeviceID, "direction", "Gateway"}
+		fields = append(fields, payloadReferences(msg.Payload)...)
+		s.logOperation("query.rejected", source, msg.Type, msg.ID, err, fields...)
+		s.respondFirmware(source, msg.Type, msg.ID, nil, err)
+	}
 	var input struct {
 		SessionID string `json:"agent_session_id"`
 		Offset    int64  `json:"offset"`
 	}
 	if err := json.Unmarshal(msg.Payload, &input); err != nil {
-		s.respondFirmware(source, msg.Type, msg.ID, nil, domain.ErrInvalidArgument("查询参数超出支持范围"))
+		reject(domain.ErrInvalidArgument("查询参数超出支持范围"))
 		return nil
 	}
 	desktopID, err := s.sessions.DesktopForSession(ctx, p.DeviceID, input.SessionID)
 	if err != nil {
-		s.respondFirmware(source, msg.Type, msg.ID, nil, err)
+		reject(err)
 		return nil
 	}
 	destination := s.conns.Desktop(desktopID)
 	if destination == nil {
-		s.respondFirmware(source, msg.Type, msg.ID, nil, domain.ErrDependencyUnavailable("Desktop 未连接"))
+		reject(domain.ErrDependencyUnavailable("Desktop 未连接"))
 		return nil
 	}
 	q, err := s.queries.Begin(service.Query{DeviceID: string(p.DeviceID), DesktopID: desktopID, FirmwareID: msg.ID,
 		Operation: msg.Type, DeviceGeneration: source.Generation(), DesktopGeneration: destination.Generation(), Payload: msg.Payload, Offset: input.Offset})
 	if err != nil {
+		s.logOperation("query.rejected", source, msg.Type, msg.ID, err, "device_id", p.DeviceID)
 		if domain.CodeOf(err) != domain.CodeConflict {
 			s.respondFirmware(source, msg.Type, msg.ID, nil, err)
 		}
@@ -54,6 +61,12 @@ func (s *Server) forwardQuery(ctx context.Context, source *lifecycle.Connection,
 	}
 	if err != nil {
 		s.queries.Fail(q.ID, domain.ErrDependencyUnavailable("无法向 Desktop 发送查询"))
+	} else {
+		fields := []any{"event", "query.forwarded", "trace_id", traceID(source.Generation(), msg.ID), "direction", "Gateway→Desktop", "message_id", msg.ID, "query_id", q.ID, "type", msg.Type,
+			"device_id", p.DeviceID, "client_id", desktopID, "connection_id", source.Generation(), "desktop_connection_id", destination.Generation(), "expires_at", expires}
+		fields = append(fields, payloadReferences(msg.Payload)...)
+		fields = append(fields, s.bodyFields("body", msg.Payload)...)
+		s.logger.Info("Gateway → Desktop：转发"+operationName(msg.Type), fields...)
 	}
 	return nil
 }
@@ -79,5 +92,6 @@ func (s *Server) notifyMessage(ctx context.Context, p Principal, raw json.RawMes
 			}{contracts.NewMessageID("msg_"), "message.available", raw})
 		}
 	}
+	s.logger.Info("新消息通知已处理", "event", "message.notified", "client_id", p.DesktopID, "agent_session_id", message.SessionID, "message_id", message.MessageID, "bound_device_count", len(devices))
 	return nil
 }

@@ -65,7 +65,11 @@ func TestReviewBindingOwnerAfterCredentialChange(t *testing.T) {
 				{"request.prepare", map[string]any{"request_id": "private-request", "agent_session_id": "sess-1"}},
 			} {
 				reply := device.fwReq(t, request.op, request.payload)
-				if reply.OK || reply.Code != "PERMISSION_DENIED" {
+				wantCode := "PERMISSION_DENIED"
+				if request.op != "device.hello" {
+					wantCode = "CONFLICT" // hello 被拒后连接仍未登记，所有业务请求继续拒绝。
+				}
+				if reply.OK || reply.Code != wantCode {
 					t.Errorf("%s 更换账号后未拒绝旧绑定: %+v", request.op, reply)
 				}
 				if strings.Contains(string(reply.RawData), "原账号私有") {

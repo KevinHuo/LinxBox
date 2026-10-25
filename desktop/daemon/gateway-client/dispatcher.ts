@@ -183,10 +183,8 @@ export class TaskDispatcher {
     }
 
     const taskId = payload.task_id;
-    // A continuation has to land in the parent conversation, inside the
-    // project the parent task ran in. When that cannot be confirmed the
-    // request is refused: falling back to a new session would answer the
-    // wrong conversation.
+    // 续接保持原目标，工作目录取自本机 Codex；不能验证会话时拒绝，
+    // 不得回退到新建会话。WSS 不重复要求 Electron 项目授权。
     const continuation = await this.resolveContinuation(payload);
     if (continuation.reason !== null) {
       const outcome = this.reject(continuation.reason);
@@ -338,7 +336,7 @@ export class TaskDispatcher {
         });
         return;
       case 'terminal':
-        if (event.outcome === 'completed') {
+        if (event.outcome === 'completed' && event.error === null) {
           const result = buildTaskResult({
             taskId,
             status: 'succeeded',
@@ -416,10 +414,8 @@ export class TaskDispatcher {
   /**
    * Resolve where a continuation has to run.
    *
-   * The continuation is only allowed when the parent task ran in the very
-   * project this request names, that project is still authorised, and the
-   * session really lives inside the authorised directory. Anything else is
-   * refused instead of silently answering a different conversation.
+   * 已发布目标及父任务仍核对 project_id；工作目录取自本机目录映射或
+   * provider 查询，不从远端 ID 推导路径，不重复要求 Electron 授权。
    */
   private async resolveContinuation(payload: TaskDispatchPayload): Promise<{
     threadId: string | null;
@@ -457,8 +453,7 @@ export class TaskDispatcher {
     if (sessionCwd === null) {
       return { threadId: null, reason: '目标会话没有可校验的工作目录' };
     }
-    // The authorisation is checked again right before the turn starts, so a
-    // grant revoked while the session was being looked up cannot slip through.
+    // provider 无目录时无法证明续接目标，不能回退到默认目录新开会话。
     if (sessionCwd.length === 0) {
       return { threadId: null, reason: '目标会话没有可校验的工作目录' };
     }

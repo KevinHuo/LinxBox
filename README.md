@@ -1,7 +1,7 @@
 # LinxBox
 
-[![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.35%25-brightgreen)](desktop/README.md#测试覆盖率)
-[![Gateway coverage](https://img.shields.io/badge/Gateway%20coverage-92.22%25-brightgreen)](gateway/README.md#测试覆盖率)
+[![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.29%25-brightgreen)](desktop/README.md#测试覆盖率)
+[![Gateway coverage](https://img.shields.io/badge/Gateway%20coverage-93.08%25-brightgreen)](gateway/README.md#测试覆盖率)
 [![Firmware line coverage](https://img.shields.io/badge/Firmware%20line%20coverage-99.30%25-brightgreen)](firmware/README.md#测试覆盖率)
 
 **把 AI 编程会话带到手边。**
@@ -139,4 +139,4 @@ cd firmware
 
 ## 共享协议契约
 
-固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已提供 WSS/MCP 接入、绑定、会话目录、历史/正文查询和请求状态；Desktop 已接入线上 Gateway 并调用本机 Codex。真实设备、灵矽逐轮透传、线上凭据和完整语音闭环仍需在目标环境单独验收。
+固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已提供 WSS/MCP 接入、绑定、会话目录、历史/正文查询、[MCP 文字提案](gateway/docs/mcp.md)及[确认投递与执行状态恢复](gateway/docs/execution.md)；Desktop 已接入线上 Gateway 并调用本机 Codex。真实设备、灵矽逐轮透传、线上凭据和完整语音闭环仍需在目标环境单独验收。

@@ -115,7 +115,7 @@ export class CodexSession {
         planType: this.planType,
         error: null,
       };
-    } catch (error) {
+    } catch {
       this.reset();
       return {
         available: false,
@@ -124,7 +124,7 @@ export class CodexSession {
         userAgent: null,
         authMode: null,
         planType: null,
-        error: error instanceof Error ? error.message : '本机 Codex 启动失败',
+        error: '本机 Codex 启动失败',
       };
     }
   }
@@ -335,11 +335,17 @@ export class CodexSession {
           listener(event);
         }
       });
-      const result = await client.initialize();
-      this.userAgent = result.userAgent;
-      this.client = client;
-      this.connecting = null;
-      return client;
+      try {
+        const result = await client.initialize();
+        this.userAgent = result.userAgent;
+        this.client = client;
+        this.connecting = null;
+        return client;
+      } catch (error) {
+        // 握手失败时 client 尚未登记，reset 无法回收这个进程。
+        client.close();
+        throw error;
+      }
     })();
     try {
       return await this.connecting;

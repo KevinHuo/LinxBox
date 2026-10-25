@@ -16,7 +16,10 @@ type Query struct {
 	DeviceGeneration, DesktopGeneration            uint64
 	Payload                                        json.RawMessage
 	Offset                                         int64
+	StartedAt                                      time.Time
 	Deadline                                       time.Time
+	EndReason                                      string // 固定内部结果分类，仅用于联调，不携带对端文案。
+	DesktopMessageID                               string // 对端应答包 ID，仅用于日志关联。
 }
 
 type queryEntry struct {
@@ -65,20 +68,22 @@ func (r *QueryRouter) Begin(q Query) (Query, error) {
 		return Query{}, domain.ErrResourceExhausted("在途查询数达到上限")
 	}
 	q.ID = contracts.NewMessageID("qry_")
-	q.Deadline = time.Now().Add(r.timeout)
+	q.StartedAt = time.Now()
+	q.Deadline = q.StartedAt.Add(r.timeout)
 	q.Payload = append(json.RawMessage(nil), q.Payload...)
 	e := &queryEntry{query: q}
 	r.pending[q.ID] = e
 	r.byFirmware[firmwareKey(q)] = q.ID
 	r.counts[q.DeviceID]++
-	e.timer = time.AfterFunc(r.timeout, func() { r.Fail(q.ID, domain.ErrDependencyUnavailable("Desktop 查询超时")) })
+	e.timer = time.AfterFunc(r.timeout, func() { r.fail(q.ID, domain.ErrDependencyUnavailable("Desktop 查询超时"), "timeout") })
 	return q, nil
 }
 
 // Complete 只接收固定 Desktop 及代次的原操作应答。无效应答保留关联到超时。
 func (r *QueryRouter) Complete(desktopID string, generation uint64, raw []byte) error {
 	var envelope struct {
-		Payload struct {
+		MessageID string `json:"message_id"`
+		Payload   struct {
 			ReplyTo string           `json:"reply_to_message_id"`
 			OK      bool             `json:"ok"`
 			Data    json.RawMessage  `json:"data"`
@@ -95,9 +100,11 @@ func (r *QueryRouter) Complete(desktopID string, generation uint64, raw []byte) 
 		return domain.ErrNotFound("查询已结束或来源不匹配")
 	}
 	q := e.query
+	q.DesktopMessageID = envelope.MessageID
 	if !time.Now().Before(q.Deadline) {
 		r.removeLocked(q.ID)
 		r.mu.Unlock()
+		q.EndReason = "timeout"
 		r.reply(q, nil, domain.ErrDependencyUnavailable("Desktop 查询超时"))
 		return domain.ErrNotFound("查询已过期")
 	}
@@ -118,6 +125,7 @@ func (r *QueryRouter) Complete(desktopID string, generation uint64, raw []byte) 
 	}
 	r.removeLocked(envelope.Payload.ReplyTo)
 	r.mu.Unlock()
+	q.EndReason = "desktop_result"
 	if !envelope.Payload.OK {
 		r.reply(q, nil, domain.NewError(domain.Code(envelope.Payload.Error.Code), envelope.Payload.Error.Message))
 	} else {
@@ -143,6 +151,10 @@ func (r *QueryRouter) removeLocked(id string) {
 }
 
 func (r *QueryRouter) Fail(id string, err error) {
+	r.fail(id, err, "forward_failed")
+}
+
+func (r *QueryRouter) fail(id string, err error, reason string) {
 	r.mu.Lock()
 	e := r.pending[id]
 	if e == nil {
@@ -151,7 +163,9 @@ func (r *QueryRouter) Fail(id string, err error) {
 	}
 	r.removeLocked(id)
 	r.mu.Unlock()
-	r.reply(e.query, nil, err)
+	q := e.query
+	q.EndReason = reason
+	r.reply(q, nil, err)
 }
 
 // Disconnect 按连接代次回收关联；设备离线不向其新连接投递旧应答。
@@ -168,6 +182,7 @@ func (r *QueryRouter) Disconnect(device bool, id string, generation uint64) {
 	r.mu.Unlock()
 	if !device {
 		for _, q := range cancelled {
+			q.EndReason = "desktop_disconnected"
 			r.reply(q, nil, domain.ErrDependencyUnavailable("Desktop 已断开连接"))
 		}
 	}

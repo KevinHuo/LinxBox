@@ -105,6 +105,9 @@ func callMCP(t *testing.T, env *testEnv, session *mcp.ClientSession, args any, c
 func TestMCPSSEOriginalASRFlow(t *testing.T) {
 	env := newMCPEnv(t)
 	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	if reply := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !reply.OK {
+		t.Fatal("设备 hello 失败", reply)
+	}
 	dt := dialWS(t, env.baseWS+"/v1/clients/connect", "dt-token")
 	if r := dt.dtReq(t, "device.bind", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !r.OK {
 		t.Fatal(r)
@@ -154,8 +157,8 @@ func TestMCPSSEOriginalASRFlow(t *testing.T) {
 		callMCP(t, env, session, map[string]any{"text": text}, entry.code)
 		headers.set(entry.key, old)
 	}
-	if response := fw.fwReq(t, "request.confirm", map[string]any{"request_id": "req-1"}); response.OK || response.Code != "DEPENDENCY_UNAVAILABLE" {
-		t.Fatal("未实现调度却返回执行成功")
+	if response := fw.fwReq(t, "request.get", map[string]any{"request_id": "req-1"}); !response.OK {
+		t.Fatal("未确认草稿应可读取", response)
 	}
 	if response := fw.fwReq(t, "request.cancel", map[string]any{"request_id": "req-1"}); !response.OK {
 		t.Fatal(response)
@@ -184,7 +187,7 @@ func TestMCPHTTPGuards(t *testing.T) {
 		{"GET", "/mcp", "dev-token", "", "", 401},
 		{"GET", "/mcp", "dt-token", "", "", 401},
 		{"GET", "/mcp", "mcp-token", "https://example.com", "", 403},
-		{"DELETE", "/mcp", "mcp-token", "", "", 405},
+		{"DELETE", "/mcp", "mcp-token", "", "", 400},
 		{"GET", "/mcp/message", "mcp-token", "", "", 405},
 		{"POST", "/mcp/message", "mcp-token", "", "{}", 404},
 	} {
@@ -219,7 +222,15 @@ func TestMCPToolMissingContext(t *testing.T) {
 }
 
 func TestMCPSSESessionIsolationAndLimits(t *testing.T) {
-	env := newMCPEnv(t)
+	// 配置在建连前固定，避免活跃 SSE goroutine 与测试中的配置写入竞争。
+	env := newTestEnv(t, func(cfg *config.Config) {
+		cfg.Limits.MaxFrameBytes = 65536
+		cfg.Limits.MaxOnlineConnections = 1
+		cfg.Credentials.MCP = []config.MCPCredential{
+			{Token: "mcp-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "agent"},
+			{Token: "other-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "other"},
+		}
+	})
 	session, headers := newMCPClient(t, env)
 	_ = session
 	env.server.mcp.mu.Lock()
@@ -243,7 +254,6 @@ func TestMCPSSESessionIsolationAndLimits(t *testing.T) {
 		}
 	}
 	// 同设备的另一个智能体凭据也不能投递到已建立的 MCP 会话。
-	env.cfg.Credentials.MCP = append(env.cfg.Credentials.MCP, config.MCPCredential{Token: "other-token", DeviceID: "AA:BB:CC:DD:EE:01", AgentID: "other"})
 	r := httptest.NewRequest("POST", "/mcp/message?sessionid="+id, strings.NewReader("{}"))
 	r.Header.Set("Authorization", "Bearer other-token")
 	w := httptest.NewRecorder()
@@ -251,7 +261,6 @@ func TestMCPSSESessionIsolationAndLimits(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatal(w.Code)
 	}
-	env.cfg.Limits.MaxOnlineConnections = 1
 	req, err := http.NewRequestWithContext(t.Context(), "GET", env.baseHTTP+"/mcp", nil)
 	if err != nil {
 		t.Fatal(err)

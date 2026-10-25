@@ -51,7 +51,8 @@ export const GATEWAY_CONNECT_PATH = '/v1/clients/connect';
 
 /** Public error code used when a frame cannot be trusted. */
 const INVALID_FRAME = 'INVALID_ARGUMENT';
-const MAC_ADDRESS = /^(?:[0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2})$/;
+const MAC_ADDRESS =
+  /^(?:[0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2})$/;
 const DEVICE_ID = /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 const CONTRACT_ERROR_CODE = z.enum([
   'INVALID_ARGUMENT',
@@ -213,7 +214,12 @@ export function parseInboundFrame(
       frame: { ...value, type: 'task.cancel', payload: payload.data } as GatewayFrame,
     };
   }
-  if (value.type === 'project.upsert' || value.type === 'project.revoke' || value.type === 'messages.list' || value.type === 'message.content.get') {
+  if (
+    value.type === 'project.upsert' ||
+    value.type === 'project.revoke' ||
+    value.type === 'messages.list' ||
+    value.type === 'message.content.get'
+  ) {
     const schemas = {
       'project.upsert': projectUpsertSchema,
       'project.revoke': projectRevokeSchema,
@@ -222,9 +228,15 @@ export function parseInboundFrame(
     } as const;
     const payload = schemas[value.type].safeParse(value.payload);
     if (!payload.success) {
-      return { ok: false, error: publicError(INVALID_FRAME, `${value.type} 负载不合法`, value.message_id) };
+      return {
+        ok: false,
+        error: publicError(INVALID_FRAME, `${value.type} 负载不合法`, value.message_id),
+      };
     }
-    return { ok: true, frame: { ...value, type: value.type, payload: payload.data } as GatewayFrame };
+    return {
+      ok: true,
+      frame: { ...value, type: value.type, payload: payload.data } as GatewayFrame,
+    };
   }
   if (value.type === 'agent_sessions.sync.result') {
     const payload = agentSessionsSyncResultSchema.safeParse(value.payload);
@@ -250,9 +262,15 @@ export function parseInboundFrame(
   if (value.type === 'binding.result') {
     const payload = bindingResultSchema.safeParse(value.payload);
     if (!payload.success) {
-      return { ok: false, error: publicError(INVALID_FRAME, 'binding.result 负载不合法', value.message_id) };
+      return {
+        ok: false,
+        error: publicError(INVALID_FRAME, 'binding.result 负载不合法', value.message_id),
+      };
     }
-    return { ok: true, frame: { ...value, type: 'binding.result', payload: payload.data } as GatewayFrame };
+    return {
+      ok: true,
+      frame: { ...value, type: 'binding.result', payload: payload.data } as GatewayFrame,
+    };
   }
   return {
     ok: false,
@@ -378,12 +396,19 @@ export function buildHeartbeatFrame(input: {
 
 /** Build a correlated history query response. */
 export function buildQueryResultFrame(input: {
-  messageId: string; sequence: number; replyToMessageId: string;
-  data?: unknown; error?: { code: PublicErrorCode; message: string }; sentAt: string;
+  messageId: string;
+  sequence: number;
+  replyToMessageId: string;
+  data?: unknown;
+  error?: { code: PublicErrorCode; message: string };
+  sentAt: string;
 }): DesktopFrame<'query.result'> {
   return {
-    protocol_version: PROTOCOL_VERSION, message_id: input.messageId, sequence: input.sequence,
-    type: 'query.result', sent_at: input.sentAt,
+    protocol_version: PROTOCOL_VERSION,
+    message_id: input.messageId,
+    sequence: input.sequence,
+    type: 'query.result',
+    sent_at: input.sentAt,
     payload: input.error
       ? { reply_to_message_id: input.replyToMessageId, ok: false, error: input.error }
       : { reply_to_message_id: input.replyToMessageId, ok: true, data: input.data },
@@ -392,11 +417,18 @@ export function buildQueryResultFrame(input: {
 
 /** Build a notification that a final message is available. */
 export function buildMessageAvailableFrame(input: {
-  messageId: string; sequence: number; agentSessionId: string; availableMessageId: string; sentAt: string;
+  messageId: string;
+  sequence: number;
+  agentSessionId: string;
+  availableMessageId: string;
+  sentAt: string;
 }): DesktopFrame<'message.available'> {
   return {
-    protocol_version: PROTOCOL_VERSION, message_id: input.messageId, sequence: input.sequence,
-    type: 'message.available', sent_at: input.sentAt,
+    protocol_version: PROTOCOL_VERSION,
+    message_id: input.messageId,
+    sequence: input.sequence,
+    type: 'message.available',
+    sent_at: input.sentAt,
     payload: { agent_session_id: input.agentSessionId, message_id: input.availableMessageId },
   };
 }

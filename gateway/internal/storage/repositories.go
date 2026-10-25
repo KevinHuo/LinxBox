@@ -12,6 +12,7 @@ type Repositories struct {
 	db       *sql.DB
 	Bindings BindingRepo
 	Sessions SessionRepo
+	Devices  DeviceRepo
 }
 
 // NewRepositories 基于现有连接构造仓储。

@@ -8,6 +8,9 @@ import (
 // Code 是公共错误码，与共享契约 Error.code 枚举一致。
 type Code string
 
+// RequestRecoveryMessage 不能将查不到记录误解为原任务一定没有执行。
+const RequestRecoveryMessage = "当前 Gateway 未找到该请求记录；请停止轮询此 ID，若曾确认执行请先在 Desktop 核对原任务"
+
 const (
 	CodeInvalidArgument       Code = "INVALID_ARGUMENT"
 	CodeUnauthenticated       Code = "UNAUTHENTICATED"

@@ -11,6 +11,7 @@ import {
   readConnectionView,
   readDiagnostics,
   revokeProject,
+  recordTaskEvent,
   saveConnection,
   type ProjectRecord,
   type TaskRecord,
@@ -35,6 +36,21 @@ const task = (overrides: Partial<TaskRecord> = {}): TaskRecord => ({
 });
 
 describe('connection', () => {
+  it('分别隐藏空凭据和两个配置档案的真实 token', () => {
+    const state = createDesktopState();
+    state.connection = {
+      ...state.connection,
+      accessToken: '',
+      profiles: {
+        local: { gatewayUrl: 'ws://localhost', accessToken: null },
+        online: { gatewayUrl: 'wss://example.com', accessToken: '' },
+      },
+    };
+    expect(readConnectionView(state)).toMatchObject({
+      tokenHint: null,
+      profiles: { local: { tokenHint: null }, online: { tokenHint: null } },
+    });
+  });
   it('reports an unconfigured connection', () => {
     const state = createDesktopState();
     const view = readConnectionView(state);
@@ -162,6 +178,19 @@ describe('diagnostics', () => {
 });
 
 describe('findAuthorizedProject', () => {
+  it('支持以斜杠结尾的本机目录但不匹配兄弟目录', () => {
+    const project: ProjectRecord = {
+      projectId: 'slash',
+      displayName: '目录',
+      rootPath: '/tmp/app/',
+      capabilities: [],
+      grantVersion: 1,
+      enabled: true,
+    };
+    const state = createDesktopState({ projects: [project] });
+    expect(findAuthorizedProject(state, '/tmp/app/src')).toEqual(project);
+    expect(findAuthorizedProject(state, '/tmp/app-other')).toBeNull();
+  });
   const state = () =>
     createDesktopState({
       projects: [
@@ -206,5 +235,50 @@ describe('findAuthorizedProject', () => {
       ],
     });
     expect(findAuthorizedProject(revoked, '/Users/demo/app')).toBeNull();
+  });
+});
+
+describe('执行事件更新本机任务事实', () => {
+  const event = {
+    task_id: 'tsk_1',
+    state: 'approval_required',
+    stage: 'waiting',
+    summary: '需本机处理',
+    occurred_at: '2026-10-26T00:00:00Z',
+  };
+  it('首次事件不伪造改动、验证或项目身份', () => {
+    const state = createDesktopState();
+    recordTaskEvent(state, event);
+    expect(state.tasks.get('tsk_1')).toMatchObject({
+      title: 'tsk_1',
+      projectId: 'unknown',
+      intent: '',
+      needsAttention: true,
+      changes: [],
+      verification: [],
+      risks: [],
+      needsUserAction: null,
+      localDiff: null,
+    });
+    expect(getTask(state, 'tsk_1')?.summary).toBe('需本机处理');
+  });
+  it('后续进度保留已有详情，并根据真实状态清除审批提示', () => {
+    const previous = task({
+      changes: [{ path: 'a.ts', description: '修改' }],
+      verification: [{ command: 'test', outcome: 'passed', summary: '通过' }],
+      risks: [{ code: 'RISK', summary: '待核对' }],
+      needsUserAction: { summary: '原本需审批' },
+      localDiff: '本地差异',
+    });
+    const state = createDesktopState({ tasks: [previous] });
+    recordTaskEvent(state, { ...event, state: 'completed' });
+    expect(state.tasks.get('tsk_1')).toEqual({
+      ...previous,
+      state: 'completed',
+      stage: 'waiting',
+      summary: event.summary,
+      updatedAt: event.occurred_at,
+      needsAttention: false,
+    });
   });
 });

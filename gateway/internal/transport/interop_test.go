@@ -120,9 +120,12 @@ func pipeRead(t *testing.T, c *websocket.Conn, typ string) map[string]json.RawMe
 		}
 	}
 }
-func setupPipe(t *testing.T) (*Server, *websocket.Conn, *websocket.Conn) {
+func setupPipe(t *testing.T, loggers ...*slog.Logger) (*Server, *websocket.Conn, *websocket.Conn) {
 	t.Helper()
 	s := newPipeServer(t)
+	if len(loggers) > 0 {
+		s.logger = loggers[0]
+	}
 	fw := pipeDial(t, s, "/v1/devices/connect", "dev-token")
 	pipeWrite(t, fw, firmwareWire("device.hello", "hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}))
 	pipeRead(t, fw, "response")
@@ -251,6 +254,8 @@ func TestInteropQueryFailures(t *testing.T) {
 	t.Run("unbound", func(t *testing.T) {
 		s := newPipeServer(t)
 		fw := pipeDial(t, s, "/v1/devices/connect", "dev-token")
+		pipeWrite(t, fw, firmwareWire("device.hello", "hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}))
+		requirePipeResponse(t, s, fw, "device.hello", "hello", "")
 		pipeWrite(t, fw, firmwareWire("messages.list", "unbound", map[string]any{"agent_session_id": "sess-1"}))
 		requirePipeResponse(t, s, fw, "messages.list", "unbound", "PERMISSION_DENIED")
 	})

@@ -100,6 +100,8 @@ func TestDesktopNotYetOpenTypes(t *testing.T) {
 func TestServeFirmwareReconnectAtLimit(t *testing.T) {
 	env := newTestEnv(t, func(c *config.Config) { c.Limits.MaxOnlineConnections = 1 })
 	first := dialRawWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
+	pipeWrite(t, first, firmwareWire("device.hello", "hello-first", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}))
+	pipeRead(t, first, "response")
 	second := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
 	if reply := second.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !reply.OK {
 		t.Fatal("达到上限时同一设备重连应替换旧连接")
@@ -169,16 +171,16 @@ func TestDesktopAuthFailureKind(t *testing.T) {
 }
 
 func TestAuthErrorBranches(t *testing.T) {
-	// 设备凭据 MAC 不合法。
+	// 设备凭据仅认证账号，不要求配置 MAC。
 	cfg := testServerConfig(t)
 	cfg.Credentials.Devices = []config.DeviceCredential{
-		{Token: "bad-mac", DeviceID: "zz", Subject: "alice"},
+		{Token: "bad-mac", Subject: "alice"},
 	}
 	auth := NewAuthenticator(cfg)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Sec-WebSocket-Protocol", "linxbox.v1, linxbox-token.bad-mac")
-	if _, err := auth.Authenticate(PrincipalDevice, req); err == nil {
-		t.Fatal("非法 MAC 配置应报错")
+	if principal, err := auth.Authenticate(PrincipalDevice, req); err != nil || principal.DeviceID != "" || principal.Subject != "alice" {
+		t.Fatal("认证阶段不应预先确定 MAC", principal, err)
 	}
 	// 未知主体类型。
 	if _, err := auth.Authenticate(PrincipalKind(99), req); err == nil {
@@ -225,13 +227,13 @@ func TestFirmwareInvalidSchemaEnvelope(t *testing.T) {
 	}
 }
 
-func TestFirmwareHelloPairingDenied(t *testing.T) {
+func TestFirmwareHelloRegistersUnconfiguredMAC(t *testing.T) {
 	env := newTestEnv(t, nil)
 	dev := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
-	// alice 的凭据设备 1，但 hello 声明设备 2：配对规则拒绝 → 错误应答。
+	// 旧配置中的 MAC 不再约束实际 hello，可以动态登记另一台真实设备。
 	resp := dev.fwReq(t, "device.hello", map[string]any{"mac_address": "aa:bb:cc:dd:ee:02"})
-	if resp.OK {
-		t.Fatal("越权 hello 应失败")
+	if !resp.OK {
+		t.Fatal("应允许同账号设备上报未预配置 MAC", resp)
 	}
 }
 

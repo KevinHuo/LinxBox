@@ -70,7 +70,7 @@ func TestAuthenticator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.DeviceID != "AA:BB:CC:DD:EE:01" || p.Subject != "alice" {
+	if p.DeviceID != "" || p.Subject != "alice" {
 		t.Fatalf("设备主体错误: %+v", p)
 	}
 	// 设备：错误 token。

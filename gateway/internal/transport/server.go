@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -24,29 +25,33 @@ const frameReadMargin = 4 * 1024
 
 // Server 是单端口 HTTP/WSS 服务：健康检查、固件与 Desktop 入口共用监听端口。
 type Server struct {
-	cfg       *config.Config
-	logger    *slog.Logger
-	validator *contracts.Validator
-	auth      *Authenticator
-	conns     *lifecycle.Connections
-	binding   *service.BindingService
-	sessions  *service.SessionService
-	queries   *service.QueryRouter
-	requests  *service.RequestService
-	mcp       *mcpEndpoint
-	upgrader  websocket.Upgrader
-	ready     atomic.Bool
-	httpSrv   *http.Server
+	cfg          *config.Config
+	logger       *slog.Logger
+	validator    *contracts.Validator
+	auth         *Authenticator
+	conns        *lifecycle.Connections
+	binding      *service.BindingService
+	sessions     *service.SessionService
+	queries      *service.QueryRouter
+	requests     *service.RequestService
+	mcp          *mcpEndpoint
+	upgrader     websocket.Upgrader
+	ready        atomic.Bool
+	httpSrv      *http.Server
+	helloTimeout time.Duration
 }
 
 // NewServer 构造传输层服务；绑定与目录服务随后通过 SetServices 注入。
 func NewServer(cfg *config.Config, logger *slog.Logger, validator *contracts.Validator, auth *Authenticator, conns *lifecycle.Connections) *Server {
+	// 配置指纹不暴露路径，也不声称能识别同一路径下被替换/恢复的数据库内容。
+	logger = logger.With("gateway_instance_id", contracts.NewMessageID("gw_"), "database_config_id", databaseConfigID(cfg.Database.Path))
 	s := &Server{
-		cfg:       cfg,
-		logger:    logger,
-		validator: validator,
-		auth:      auth,
-		conns:     conns,
+		cfg:          cfg,
+		logger:       logger,
+		validator:    validator,
+		auth:         auth,
+		conns:        conns,
+		helloTimeout: deviceHelloTimeout,
 		upgrader: websocket.Upgrader{
 			Subprotocols: []string{"linxbox.v1"},
 			CheckOrigin:  func(*http.Request) bool { return true },
@@ -54,6 +59,7 @@ func NewServer(cfg *config.Config, logger *slog.Logger, validator *contracts.Val
 	}
 	s.queries = service.NewQueryRouter(validator, cfg.Timeouts.QueryTimeout.Std(), cfg.Limits.MaxPendingQueries, cfg.Limits.MaxDeviceQueries,
 		func(q service.Query, data json.RawMessage, err error) {
+			s.logQueryCompletion(q, data, err)
 			conn := conns.Device(q.DeviceID)
 			if conn != nil && conn.Generation() == q.DeviceGeneration {
 				s.respondFirmware(conn, q.Operation, q.FirmwareID, data, err)
@@ -99,6 +105,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
+		s.logger.Info("Gateway 开始监听", "event", "server.starting", "addr", s.cfg.Listen.Addr, "tls", s.cfg.Listen.TLSCert != "")
 		var err error
 		if s.cfg.Listen.TLSCert != "" {
 			err = s.httpSrv.ListenAndServeTLS(s.cfg.Listen.TLSCert, s.cfg.Listen.TLSKey)
@@ -111,9 +118,11 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	select {
 	case err := <-errCh:
+		s.logger.Error("Gateway 监听失败", "event", "server.listen_failed")
 		s.ready.Store(false)
 		return err
 	case <-ctx.Done():
+		s.logger.Info("Gateway 正在停止", "event", "server.stopping")
 		s.ready.Store(false)
 		s.CloseMCP()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeouts.ShutdownGrace.Std())
@@ -148,12 +157,30 @@ func (s *Server) CloseMCP() {
 
 // NotifyRequest 推送已提交请求快照；未连接设备用 request.get 恢复。
 func (s *Server) NotifyRequest(deviceID, event string, request contracts.Request) {
-	if conn := s.conns.Device(deviceID); conn != nil {
-		s.sendFirmwarePush(conn, event, struct {
-			ID      string            `json:"id"`
-			Type    string            `json:"type"`
-			Payload contracts.Request `json:"payload"`
-		}{contracts.NewMessageID("msg_"), event, request})
+	fields := []any{"direction", "Gateway→固件", "device_id", deviceID, "request_id", s.safeMCPID(request.RequestID), "agent_session_id", s.safeMCPID(request.AgentSessionID), "status", request.Status}
+	if request.Text != nil {
+		fields = append(fields, "text_bytes", len(*request.Text), "text_codepoints", utf8.RuneCountInString(*request.Text))
+	}
+	fields = append(fields, s.logValueFields("body", request)...)
+	if request.Error != nil {
+		message, redacted := publicErrorMessage(request.Error.Message)
+		fields = append(fields, "state_error_code", request.Error.Code, "state_error_message", message, "state_error_source", "gateway", "state_error_redacted", redacted)
+	}
+	conn := s.conns.Device(deviceID)
+	if conn == nil {
+		s.logger.Info("固件当前离线，请求快照已保存；重连后通过 request.get 恢复", append([]any{"event", "request.notification.deferred", "type", event, "notification_status", "device_offline"}, fields...)...)
+		return
+	}
+	if s.sendFirmwarePush(conn, event, struct {
+		ID      string            `json:"id"`
+		Type    string            `json:"type"`
+		Payload contracts.Request `json:"payload"`
+	}{contracts.NewMessageID("msg_"), event, request}, fields...) {
+		message := "Gateway → 固件：请求状态通知已入队（尚未确认设备收到）"
+		if event == "request.proposed" {
+			message = "Gateway → 固件：文字提案通知已入队，等待设备读取或确认"
+		}
+		s.logger.Info(message, append([]any{"event", "request.notification.enqueued", "type", event, "connection_id", conn.Generation(), "notification_status", "enqueued"}, fields...)...)
 	}
 }
 
@@ -177,16 +204,21 @@ func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) upgradeAndAuthenticate(w http.ResponseWriter, r *http.Request, kind PrincipalKind) (*websocket.Conn, Principal, bool) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.logger.Warn("WebSocket 升级失败：检查完整连接路径及 Upgrade 请求头", "event", "connection.upgrade_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr,
+			"error_message", "HTTP 请求未满足 WebSocket 升级条件", "error_hint", "使用完整 /v1/devices/connect 或 /v1/clients/connect 地址并进行 WebSocket 握手")
 		return nil, Principal{}, false
 	}
 	principal, err := s.auth.Authenticate(kind, r)
 	if err != nil {
-		s.logger.Warn("认证失败", "kind", kindName(kind), "err", err)
+		fields := []any{"event", "connection.auth_failed", "kind", kindName(kind), "remote_addr", r.RemoteAddr}
+		fields = append(fields, errorFields(err, "gateway")...)
+		s.logger.Warn("WebSocket 认证失败："+domain.MessageOf(err), fields...)
 		_ = conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(4401, "unauthenticated"), time.Now().Add(time.Second))
 		_ = conn.Close()
 		return nil, Principal{}, false
 	}
+	s.logger.Info("连接认证成功", "event", "connection.authenticated", "kind", kindName(kind), "subject", principal.Subject, "client_id", principal.DesktopID, "remote_addr", r.RemoteAddr)
 	return conn, principal, true
 }
 
@@ -246,24 +278,28 @@ func (s *Server) NotifyCatalogUpdated(deviceID string) {
 	s.sendFirmwarePush(conn, "agent_sessions.updated", msg)
 }
 
-func (s *Server) sendFirmwarePush(conn *lifecycle.Connection, typ string, msg any) {
+func (s *Server) sendFirmwarePush(conn *lifecycle.Connection, typ string, msg any, attrs ...any) bool {
+	fail := func(cause error) bool {
+		fields := []any{"event", "push.failed", "type", typ, "connection_id", conn.Generation(), "notification_status", "failed"}
+		fields = append(fields, errorFields(cause, "gateway")...)
+		s.logger.Warn("Gateway → 固件：通知发送失败："+domain.MessageOf(cause), append(fields, attrs...)...)
+		return false
+	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
-		s.logger.Error("推送编码失败", "type", typ, "err", err)
-		return
+		return fail(domain.ErrInternal("推送编码失败"))
 	}
 	if len(raw) > s.cfg.Limits.MaxFrameBytes {
-		s.logger.Warn("推送超过帧限制", "type", typ)
 		conn.Close()
-		return
+		return fail(domain.ErrResourceExhausted("推送超过帧限制"))
 	}
 	if err := s.validator.ValidateFirmwarePush(typ, raw); err != nil {
-		s.logger.Error("推送校验失败", "type", typ, "err", err)
-		return
+		return fail(domain.ErrInternal("推送不符合共享 Schema"))
 	}
 	if err := conn.Send(raw, s.conns.SendTimeout()); err != nil {
-		s.logger.Warn("推送发送失败", "type", typ, "err", err)
+		return fail(domain.ErrDependencyUnavailable("推送未入队：" + err.Error()))
 	}
+	return true
 }
 
 // toWireError 将业务错误映射为契约 Error。

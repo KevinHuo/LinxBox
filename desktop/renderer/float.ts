@@ -8,7 +8,7 @@
  * Dragging the ball is reported to the main process, which owns the real
  * window position and clamps it into the display work area.
  */
-import { getBridge, type ConnectionFacts } from './view-model.js';
+import { getBridge, parseDeviceFacts, type ConnectionFacts } from './view-model.js';
 
 const bridge = getBridge();
 
@@ -42,19 +42,6 @@ const state = {
 
 const qs = <T extends Element>(selector: string): T | null => document.querySelector<T>(selector);
 
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
-
-function showToast(message: string): void {
-  const toast = qs('#toast');
-  if (!toast) {
-    return;
-  }
-  toast.textContent = message;
-  toast.classList.add('is-visible');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2400);
-}
-
 /** Show or hide the expanded card. */
 function setOpen(open: boolean): void {
   state.open = open;
@@ -70,8 +57,10 @@ function formatDeviceDate(value: string | null): string {
 
 function readDeviceFacts(): void {
   try {
-    const value = JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null');
-    if (value && typeof value === 'object') state.device = value;
+    const value = parseDeviceFacts(
+      JSON.parse(window.localStorage.getItem(deviceStorageKey) ?? 'null'),
+    );
+    if (value !== null) state.device = value;
   } catch {
     // Ignore unavailable or malformed renderer storage.
   }

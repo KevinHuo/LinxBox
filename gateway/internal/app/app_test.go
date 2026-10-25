@@ -11,6 +11,7 @@ import (
 
 	"github.com/KevinHuo/LinxBox/gateway/internal/config"
 	"github.com/KevinHuo/LinxBox/gateway/internal/contracts"
+	"github.com/KevinHuo/LinxBox/gateway/internal/storage"
 )
 
 func writeValidConfig(t *testing.T) string {
@@ -115,5 +116,47 @@ func TestNewStorageFailure(t *testing.T) {
 	cfg.Database.Path = filepath.Join(t.TempDir(), "no-such-dir", "gw.db")
 	if _, err := New(cfg); err == nil {
 		t.Fatal("数据库打开失败应报错")
+	}
+}
+
+func TestNewAdoptsLegacyCredential(t *testing.T) {
+	cfg := validCfg(t)
+	db, err := storage.Open(cfg.Database.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DB().Exec(`INSERT INTO device_registrations VALUES('AA:BB:CC:DD:EE:01','alice','','2026-10-25T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	a, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	row, err := (storage.DeviceRepo{}).Get(t.Context(), a.db.DB(), "AA:BB:CC:DD:EE:01")
+	if err != nil || row.CredentialKey != config.DeviceCredentialKey("dev-token") {
+		t.Fatal("启动时应补齐旧绑定凭据关联", row, err)
+	}
+}
+
+func TestNewLegacyMigrationFailure(t *testing.T) {
+	cfg := validCfg(t)
+	db, err := storage.Open(cfg.Database.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.DB().Exec(`DROP TABLE device_registrations`); err != nil {
+		t.Fatal(err)
+	}
+	old := openDB
+	openDB = func(string) (*storage.DB, error) { return db, nil }
+	t.Cleanup(func() { openDB = old })
+	if _, err := New(cfg); err == nil {
+		t.Fatal("旧凭据迁移失败必须阻止启动")
+	}
+	if err := db.DB().Ping(); err == nil {
+		t.Fatal("初始化失败必须关闭数据库")
 	}
 }
