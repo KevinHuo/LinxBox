@@ -544,18 +544,23 @@ export class GatewayConnectionManager {
     try {
       for (const project of effectiveProjects) {
         if (!this.managedThreads.has(project.projectId)) {
-          let threadId = '';
+          let threadId: string | null = null;
           try {
-            threadId = await this.withTimeout(
+            const createdThreadId = await this.withTimeout(
               this.options.session.createSession(project.rootPath),
               2000,
-              '',
+              null,
             );
+            threadId = typeof createdThreadId === 'string' ? createdThreadId.trim() || null : null;
           } catch {
             // A project can still receive a new task when Codex has no
             // browsable session yet; thread creation happens when dispatching.
           }
-          this.managedThreads.set(project.projectId, threadId);
+          // An empty thread id is not a valid SessionRecord. Leave the
+          // project untracked so a later sync can retry creation.
+          if (threadId !== null) {
+            this.managedThreads.set(project.projectId, threadId);
+          }
         }
       }
       if (!this.connected || this.client !== client) {
@@ -603,7 +608,7 @@ export class GatewayConnectionManager {
       }
       for (const project of effectiveProjects) {
         const threadId = this.managedThreads.get(project.projectId);
-        if (threadId === undefined) {
+        if (threadId === undefined || threadId.trim() === '') {
           continue;
         }
         const agentSessionId = `codex_${project.projectId}`;

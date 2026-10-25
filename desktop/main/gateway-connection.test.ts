@@ -247,6 +247,26 @@ describe('GatewayConnectionManager', () => {
     expect(JSON.stringify(sync)).not.toContain('/tmp/work');
   });
 
+  it('does not publish a managed session when thread creation returns no id', async () => {
+    const { socket } = createManager({
+      listProjects: () => [
+        {
+          projectId: 'prj_1',
+          displayName: 'LinxBox',
+          rootPath: '/tmp/work',
+          enabled: true,
+        },
+      ],
+      session: createSessionStub({ createSession: () => Promise.resolve('') }),
+    });
+
+    socket.emit('open', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const sync = socket.frames().find((frame) => frame.type === 'agent_sessions.sync');
+    expect(sync?.payload['items']).toEqual([]);
+  });
+
   it('returns an empty message list when an idle managed session cannot list turns yet', async () => {
     const { socket } = createManager({
       listProjects: () => [
