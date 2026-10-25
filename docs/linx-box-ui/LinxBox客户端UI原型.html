@@ -630,6 +630,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 @media (min-width: 760px) {
   .pair-layout { grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr); }
   .home-grid { grid-template-columns: minmax(0, 1.2fr) minmax(250px, 0.8fr); }
+  .home-grid--device-only { grid-template-columns: 1fr; }
   .device-fig { flex-direction: row; justify-content: center; gap: 20px; text-align: left; }
   .device-fig figcaption { text-align: left; }
 }
@@ -748,28 +749,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
         <h1 id="home-title">已配对 · 设备在线</h1>
         <p class="lede">LinxBox 常驻后台运行中。关闭窗口不会断开连接，需要时从菜单栏或悬浮窗打开。</p>
       </div>
-      <div class="home-grid">
-        <div class="panel">
-          <div class="panel-head"><h2>最近任务</h2><span>来自设备的指令</span></div>
-          <ul class="task-list" aria-label="最近任务">
-            <li class="task-row tone-accent">
-              <i class="t-dot" aria-hidden="true"></i>
-              <div class="t-main"><strong>登录校验修复</strong><small>Codex · 工作电脑 · 第 2 轮</small></div>
-              <span class="t-status">运行中</span>
-            </li>
-            <li class="task-row tone-accent">
-              <i class="t-dot" aria-hidden="true"></i>
-              <div class="t-main"><strong>支付接口调整</strong><small>Claude Code · 工作电脑 · 第 1 轮</small></div>
-              <span class="t-status">等你回复</span>
-            </li>
-            <li class="task-row">
-              <i class="t-dot" aria-hidden="true"></i>
-              <div class="t-main"><strong>LinX 暖白界面</strong><small>Codex · 工作电脑 · 本轮结束</small></div>
-              <span class="t-status is-muted">本轮结束</span>
-            </li>
-          </ul>
-          <div class="note-line" style="margin-top:auto">新回复会以静默方式更新到悬浮窗，不弹窗打扰。</div>
-        </div>
+      <div class="home-grid home-grid--device-only">
         <div class="panel">
           <div class="panel-head"><h2>设备</h2><span>常驻</span></div>
           <div class="device-ok">

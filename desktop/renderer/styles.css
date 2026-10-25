@@ -442,6 +442,10 @@ a:focus-visible,
   align-items: start;
 }
 
+.home-grid--device-only {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
