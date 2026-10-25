@@ -189,6 +189,30 @@ export function listTasks(state: DesktopState, limit?: number): TaskSummaryView[
   return typeof limit === 'number' ? rows.slice(0, limit) : rows;
 }
 
+/** Upsert the minimal task fact received from the Gateway event stream. */
+export function recordTaskEvent(
+  state: DesktopState,
+  event: { task_id: string; state: string; stage: string; summary: string; occurred_at: string },
+): void {
+  const previous = state.tasks.get(event.task_id);
+  state.tasks.set(event.task_id, {
+    taskId: event.task_id,
+    title: previous?.title ?? event.task_id,
+    projectId: previous?.projectId ?? 'unknown',
+    state: event.state,
+    stage: event.stage,
+    intent: previous?.intent ?? '',
+    summary: event.summary,
+    updatedAt: event.occurred_at,
+    needsAttention: event.state === 'approval_required',
+    changes: previous?.changes ?? [],
+    verification: previous?.verification ?? [],
+    risks: previous?.risks ?? [],
+    needsUserAction: previous?.needsUserAction ?? null,
+    localDiff: previous?.localDiff ?? null,
+  });
+}
+
 /** Full local detail for one task. */
 export function getTask(state: DesktopState, taskId: string): TaskDetailView | null {
   const task = state.tasks.get(taskId);

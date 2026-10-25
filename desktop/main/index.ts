@@ -58,6 +58,7 @@ import {
   type AppearanceState,
   type FloatState,
 } from './preferences.js';
+import { recordTaskEvent } from './desktop-state.js';
 
 const logger = createLogger('desktop.main');
 
@@ -102,6 +103,9 @@ const gateway = new GatewayConnectionManager({
       state.lastError = status.lastError;
     }
     broadcastConnectionStatus(status);
+  },
+  onTaskEvent: (event) => {
+    recordTaskEvent(state, event.payload);
   },
 });
 

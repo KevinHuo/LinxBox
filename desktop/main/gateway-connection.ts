@@ -12,7 +12,7 @@
  * daemon layer, and the local project grants stay on this machine.
  */
 import { GatewayClient, type SocketFactory } from '../daemon/gateway-client/client.js';
-import { TaskDispatcher, type CodexRunner } from '../daemon/gateway-client/dispatcher.js';
+import { TaskDispatcher, type CodexRunner, type DispatchedTaskEvent } from '../daemon/gateway-client/dispatcher.js';
 import { homedir } from 'node:os';
 import {
   buildAgentSessionsSyncFrame,
@@ -58,6 +58,7 @@ export interface GatewayConnectionManagerOptions {
   readonly listProjects?: () => readonly PublishedProject[];
   /** Called whenever the connection status changes. */
   readonly onStatusChange?: (status: GatewayConnectionStatus) => void;
+  readonly onTaskEvent?: (event: DispatchedTaskEvent) => void;
   /** Desktop version reported in the hello frame. */
   readonly desktopVersion?: string;
   /**
@@ -169,6 +170,7 @@ export class GatewayConnectionManager {
       },
       runner: createCodexRunner(this.options.session),
       onEvent: (event) => {
+        this.options.onTaskEvent?.(event);
         client.send(
           buildTaskEventFrame({
             messageId: this.nextMessageId(),

@@ -86,7 +86,7 @@ function placeBoxSettings(): void {
   const settings = qs<HTMLElement>('[data-view="settings"]');
   if (!target || !settings) return;
   settings.querySelectorAll<HTMLElement>('.settings-block').forEach((block) => {
-    if (block.querySelector('#conn-url, #project-list')) target.append(block);
+    if (block.querySelector('#conn-url')) target.append(block);
   });
 }
 
@@ -219,34 +219,6 @@ function renderConnection(): void {
   }
 }
 
-/** Render the locally authorised projects on the settings view. */
-function renderProjects(): void {
-  const list = qs('#project-list');
-  if (!list) {
-    return;
-  }
-  if (state.projects.length === 0) {
-    list.innerHTML = '<li class="empty-row">尚未发现 Codex 项目</li>';
-    return;
-  }
-  list.innerHTML = state.projects
-    .map(
-      (project) => `
-      <li class="project-row${project.enabled ? '' : ' is-disabled'}">
-        <div class="project-main">
-          <strong>${escapeHtml(project.displayName)}</strong>
-          <small>${escapeHtml(project.rootPath)}</small>
-        </div>
-        <div class="project-caps">
-          ${project.capabilities
-            .map((capability) => `<span class="cap-tag">${escapeHtml(capability)}</span>`)
-            .join('')}
-        </div>
-      </li>`,
-    )
-    .join('');
-}
-
 /**
  * Authorise a local directory.
  *
@@ -294,7 +266,6 @@ function renderAll(): void {
   renderDevice();
   renderSettings();
   renderConnection();
-  renderProjects();
 }
 
 /** Apply the appearance theme to the document. */
