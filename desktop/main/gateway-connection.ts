@@ -185,11 +185,7 @@ export class GatewayConnectionManager {
           }),
         );
         if (event.type === 'task.completed' && event.payload.thread_id !== null) {
-          client.send(buildMessageAvailableFrame({
-            messageId: this.nextMessageId(), sequence: this.nextSequence(),
-            agentSessionId: `codex_${event.payload.thread_id}`,
-            availableMessageId: event.payload.event_id, sentAt: new Date().toISOString(),
-          }));
+          void this.publishAvailableMessage(client, event.payload.thread_id);
         }
         if (event.type !== 'task.started' && event.type !== 'task.progress') {
           void this.syncAgentSessions();
@@ -270,6 +266,24 @@ export class GatewayConnectionManager {
     this.dispatcher = dispatcher;
     client.connect();
     this.publishStatus();
+  }
+
+  private async publishAvailableMessage(client: GatewayClient, threadId: string): Promise<void> {
+    try {
+      const session = await this.options.session.readSession(threadId);
+      const message = session?.turns
+        .flatMap((turn) => turn.messages)
+        .reverse()
+        .find((item) => item.role === 'assistant' && item.id.length > 0);
+      if (message === undefined || this.client !== client || !this.connected) return;
+      client.send(buildMessageAvailableFrame({
+        messageId: this.nextMessageId(), sequence: this.nextSequence(),
+        agentSessionId: `codex_${threadId}`,
+        availableMessageId: message.id, sentAt: new Date().toISOString(),
+      }));
+    } catch {
+      // A transcript read failure must not fabricate a message ID.
+    }
   }
 
   private async handleHistoryQuery(frame: Extract<GatewayFrame, { type: 'messages.list' | 'message.content.get' }>): Promise<void> {
