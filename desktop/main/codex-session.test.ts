@@ -144,6 +144,27 @@ describe('CodexSession interrupt', () => {
 });
 
 describe('CodexSession session browsing', () => {
+  it('creates an idle session without starting a model turn', async () => {
+    const harness = createFakeProcess();
+    const session = new CodexSession({
+      binary: { path: '/opt/codex', version: '1' },
+      spawnFn: harness.spawnFn,
+    });
+    const probing = session.probe();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 1, result: initializeResult });
+    await probing;
+
+    const creating = session.createSession('/tmp/work');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    harness.child.emitMessage({ id: 2, result: { thread: { id: 'th_managed' } } });
+
+    await expect(creating).resolves.toBe('th_managed');
+    const methods = harness.child.sentMessages().map((message) => message['method']);
+    expect(methods).toEqual(['initialize', 'initialized', 'thread/start']);
+    session.close();
+  });
+
   it('lists the sessions the provider knows about', async () => {
     const harness = createFakeProcess();
     const session = new CodexSession({

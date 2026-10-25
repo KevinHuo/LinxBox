@@ -37,6 +37,7 @@ import {
   type DesktopFrame,
   type DesktopMessageType,
   type Disposition,
+  type AgentSessionCatalogItem,
   type GatewayFrame,
   type GatewayMessageType,
   type ProjectCapability,
@@ -50,14 +51,26 @@ export const GATEWAY_CONNECT_PATH = '/v1/clients/connect';
 
 /** Public error code used when a frame cannot be trusted. */
 const INVALID_FRAME = 'INVALID_ARGUMENT';
+const MAC_ADDRESS = /^(?:[0-9A-Fa-f]{12}|(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2})$/;
+const DEVICE_ID = /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/;
+const CONTRACT_ERROR_CODE = z.enum([
+  'INVALID_ARGUMENT',
+  'UNAUTHENTICATED',
+  'PERMISSION_DENIED',
+  'NOT_FOUND',
+  'CONFLICT',
+  'DEPENDENCY_UNAVAILABLE',
+  'RESOURCE_EXHAUSTED',
+  'INTERNAL',
+]);
 
-const envelopeSchema = z.looseObject({
+const envelopeSchema = z.strictObject({
   protocol_version: z.string(),
-  message_id: z.string().min(1),
+  message_id: z.string().min(1).max(128),
   sequence: z.number().int().nonnegative(),
   type: z.string().min(1),
-  sent_at: z.string().min(1),
-  expires_at: z.string().optional(),
+  sent_at: z.iso.datetime({ offset: true }),
+  expires_at: z.iso.datetime({ offset: true }).optional(),
   payload: z.unknown(),
 });
 
@@ -70,13 +83,84 @@ export const taskDispatchSchema = z.strictObject({
   prompt: z.string(),
   acceptance_criteria: z.array(z.string()),
   policy_version: z.string().min(1),
-  continuation: z.union([z.strictObject({ parent_task_id: z.string().min(1) }), z.null()]),
+  continuation: z.union([
+    z.strictObject({ parent_task_id: z.string().min(1) }),
+    z.strictObject({
+      agent_session_id: z.string().min(1),
+      thread_id: z.string().min(1),
+    }),
+    z.null(),
+  ]),
 });
 
 export const taskCancelSchema = z.strictObject({
   task_id: z.string().min(1),
   reason: z.string(),
 });
+
+const projectUpsertSchema = z.strictObject({
+  project_id: z.string().min(1).max(128),
+  display_name: z.string().min(1),
+  capabilities: z.array(z.enum(['read', 'write', 'test'])),
+  availability: z.enum(['online', 'offline']),
+  grant_version: z.number().int().nonnegative(),
+});
+const projectRevokeSchema = z.strictObject({
+  project_id: z.string().min(1).max(128),
+  grant_version: z.number().int().nonnegative(),
+  revoked_at: z.iso.datetime({ offset: true }),
+});
+const messagesListSchema = z.strictObject({
+  agent_session_id: z.string().min(1).max(128),
+  cursor: z.string().min(1).max(128).optional(),
+});
+const contentGetSchema = z.strictObject({
+  agent_session_id: z.string().min(1).max(128),
+  message_id: z.string().min(1).max(128),
+  offset: z.number().int().nonnegative().optional(),
+});
+
+const agentSessionsSyncResultSchema = z
+  .strictObject({
+    reply_to_message_id: z.string().min(1),
+    ok: z.literal(true),
+  })
+  .or(
+    z.strictObject({
+      reply_to_message_id: z.string().min(1),
+      ok: z.literal(false),
+      error: z.strictObject({
+        code: z.enum([
+          'INVALID_ARGUMENT',
+          'UNAUTHENTICATED',
+          'PERMISSION_DENIED',
+          'NOT_FOUND',
+          'CONFLICT',
+          'DEPENDENCY_UNAVAILABLE',
+          'RESOURCE_EXHAUSTED',
+          'INTERNAL',
+        ]),
+        message: z.string().min(1),
+      }),
+    }),
+  );
+
+const bindingResultSchema = z
+  .strictObject({
+    reply_to_message_id: z.string().min(1),
+    ok: z.literal(true),
+    data: z.strictObject({
+      device_id: z.string().regex(DEVICE_ID),
+      desktop_client_id: z.string().min(1),
+    }),
+  })
+  .or(
+    z.strictObject({
+      reply_to_message_id: z.string().min(1),
+      ok: z.literal(false),
+      error: z.strictObject({ code: CONTRACT_ERROR_CODE, message: z.string().min(1) }),
+    }),
+  );
 
 /**
  * Parse an inbound frame from the Gateway.
@@ -129,9 +213,70 @@ export function parseInboundFrame(
       frame: { ...value, type: 'task.cancel', payload: payload.data } as GatewayFrame,
     };
   }
+  if (value.type === 'project.upsert' || value.type === 'project.revoke' || value.type === 'messages.list' || value.type === 'message.content.get') {
+    const schemas = {
+      'project.upsert': projectUpsertSchema,
+      'project.revoke': projectRevokeSchema,
+      'messages.list': messagesListSchema,
+      'message.content.get': contentGetSchema,
+    } as const;
+    const payload = schemas[value.type].safeParse(value.payload);
+    if (!payload.success) {
+      return { ok: false, error: publicError(INVALID_FRAME, `${value.type} 负载不合法`, value.message_id) };
+    }
+    return { ok: true, frame: { ...value, type: value.type, payload: payload.data } as GatewayFrame };
+  }
+  if (value.type === 'agent_sessions.sync.result') {
+    const payload = agentSessionsSyncResultSchema.safeParse(value.payload);
+    if (!payload.success) {
+      return {
+        ok: false,
+        error: publicError(
+          INVALID_FRAME,
+          'agent_sessions.sync.result 负载不合法',
+          value.message_id,
+        ),
+      };
+    }
+    return {
+      ok: true,
+      frame: {
+        ...value,
+        type: 'agent_sessions.sync.result',
+        payload: payload.data,
+      } as GatewayFrame,
+    };
+  }
+  if (value.type === 'binding.result') {
+    const payload = bindingResultSchema.safeParse(value.payload);
+    if (!payload.success) {
+      return { ok: false, error: publicError(INVALID_FRAME, 'binding.result 负载不合法', value.message_id) };
+    }
+    return { ok: true, frame: { ...value, type: 'binding.result', payload: payload.data } as GatewayFrame };
+  }
   return {
     ok: false,
     error: publicError(INVALID_FRAME, `未知的 Gateway 消息类型：${value.type}`, value.message_id),
+  };
+}
+
+/** Build the contract-defined Desktop -> Gateway device binding request. */
+export function buildDeviceBindFrame(input: {
+  messageId: string;
+  sequence: number;
+  macAddress: string;
+  sentAt: string;
+}): DesktopFrame<'device.bind'> {
+  if (!MAC_ADDRESS.test(input.macAddress)) {
+    throw new Error('device.bind requires a valid MAC address');
+  }
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    message_id: input.messageId,
+    sequence: input.sequence,
+    type: 'device.bind',
+    sent_at: input.sentAt,
+    payload: { mac_address: input.macAddress },
   };
 }
 
@@ -228,6 +373,48 @@ export function buildHeartbeatFrame(input: {
       client_time: input.clientTime,
       ...(input.summary === undefined ? {} : { summary: input.summary }),
     },
+  };
+}
+
+/** Build a correlated history query response. */
+export function buildQueryResultFrame(input: {
+  messageId: string; sequence: number; replyToMessageId: string;
+  data?: unknown; error?: { code: PublicErrorCode; message: string }; sentAt: string;
+}): DesktopFrame<'query.result'> {
+  return {
+    protocol_version: PROTOCOL_VERSION, message_id: input.messageId, sequence: input.sequence,
+    type: 'query.result', sent_at: input.sentAt,
+    payload: input.error
+      ? { reply_to_message_id: input.replyToMessageId, ok: false, error: input.error }
+      : { reply_to_message_id: input.replyToMessageId, ok: true, data: input.data },
+  } as DesktopFrame<'query.result'>;
+}
+
+/** Build a notification that a final message is available. */
+export function buildMessageAvailableFrame(input: {
+  messageId: string; sequence: number; agentSessionId: string; availableMessageId: string; sentAt: string;
+}): DesktopFrame<'message.available'> {
+  return {
+    protocol_version: PROTOCOL_VERSION, message_id: input.messageId, sequence: input.sequence,
+    type: 'message.available', sent_at: input.sentAt,
+    payload: { agent_session_id: input.agentSessionId, message_id: input.availableMessageId },
+  };
+}
+
+/** Build a full replacement of the device-visible Codex session directory. */
+export function buildAgentSessionsSyncFrame(input: {
+  messageId: string;
+  sequence: number;
+  items: readonly AgentSessionCatalogItem[];
+  sentAt: string;
+}): DesktopFrame<'agent_sessions.sync'> {
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    message_id: input.messageId,
+    sequence: input.sequence,
+    type: 'agent_sessions.sync',
+    sent_at: input.sentAt,
+    payload: { items: input.items },
   };
 }
 

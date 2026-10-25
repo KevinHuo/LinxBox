@@ -114,27 +114,6 @@ export function saveConnection(
   return readConnectionView(state);
 }
 
-/**
- * Attempt a connection test.
- *
- * The outbound Gateway client is a later slice. The Desktop reports that
- * honestly instead of pretending a handshake succeeded.
- */
-export function testConnection(state: DesktopState): {
-  readonly ok: boolean;
-  readonly code: string;
-  readonly message: string;
-} {
-  if (!state.connection.configured) {
-    return { ok: false, code: 'NOT_FOUND', message: '尚未配置 Gateway 连接' };
-  }
-  return {
-    ok: false,
-    code: 'DEPENDENCY_UNAVAILABLE',
-    message: '出站 Gateway 客户端尚未实现（SPEC-0003 Slice 3）',
-  };
-}
-
 /** Project facts for the renderer. */
 export function listProjects(state: DesktopState): ProjectView[] {
   return [...state.projects.values()].map((project) => ({
@@ -208,6 +187,30 @@ export function listTasks(state: DesktopState, limit?: number): TaskSummaryView[
     }))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   return typeof limit === 'number' ? rows.slice(0, limit) : rows;
+}
+
+/** Upsert the minimal task fact received from the Gateway event stream. */
+export function recordTaskEvent(
+  state: DesktopState,
+  event: { task_id: string; state: string; stage: string; summary: string; occurred_at: string },
+): void {
+  const previous = state.tasks.get(event.task_id);
+  state.tasks.set(event.task_id, {
+    taskId: event.task_id,
+    title: previous?.title ?? event.task_id,
+    projectId: previous?.projectId ?? 'unknown',
+    state: event.state,
+    stage: event.stage,
+    intent: previous?.intent ?? '',
+    summary: event.summary,
+    updatedAt: event.occurred_at,
+    needsAttention: event.state === 'approval_required',
+    changes: previous?.changes ?? [],
+    verification: previous?.verification ?? [],
+    risks: previous?.risks ?? [],
+    needsUserAction: previous?.needsUserAction ?? null,
+    localDiff: previous?.localDiff ?? null,
+  });
 }
 
 /** Full local detail for one task. */

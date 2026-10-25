@@ -141,6 +141,12 @@ export class CodexSession {
     return this.status();
   }
 
+  /** Create an idle thread owned by this app-server process. */
+  async createSession(cwd: string): Promise<string> {
+    const client = await this.connect();
+    return client.startThread(cwd);
+  }
+
   /** List the projects the provider knows about. */
   async listProjects(): Promise<CodexProjectView[]> {
     const client = await this.connect();
@@ -230,19 +236,27 @@ export class CodexSession {
    * The working directory comes from the provider's own record of the
    * session, never from the caller.
    */
-  async continueSession(threadId: string, prompt: string): Promise<CodexTurnView> {
+  async continueSession(
+    threadId: string,
+    prompt: string,
+    knownCwd?: string,
+  ): Promise<CodexTurnView> {
     const client = await this.connect();
-    const session = await client.readSession(threadId);
-    if (session === null) {
-      throw new Error('会话不存在');
-    }
-    if (session.cwd === null) {
-      throw new Error('该会话没有工作目录，无法继续');
+    let cwd = knownCwd;
+    if (cwd === undefined) {
+      const session = await client.readSession(threadId);
+      if (session === null) {
+        throw new Error('会话不存在');
+      }
+      if (session.cwd === null) {
+        throw new Error('该会话没有工作目录，无法继续');
+      }
+      cwd = session.cwd;
     }
     await client.continueSession({
       threadId,
       prompt,
-      cwd: session.cwd,
+      cwd,
       clientMessageId: `linxbox-${Date.now().toString(36)}`,
     });
     return this.status();

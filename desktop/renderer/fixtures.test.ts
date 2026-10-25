@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { mockConnection, mockDiagnostics, mockProjects, mockTasks } from './fixtures.js';
-import { isActiveTask, projectLabel } from './view-model.js';
+import { isActiveTask, taskRows } from './view-model.js';
 
 describe('mock fixtures', () => {
   it('ships an unconfigured connection', () => {
@@ -12,8 +12,9 @@ describe('mock fixtures', () => {
 
   it('ships projects that resolve by id', () => {
     expect(mockProjects.length).toBeGreaterThan(0);
-    for (const project of mockProjects) {
-      expect(projectLabel(mockProjects, project.projectId)).toBe(project.displayName);
+    const rows = taskRows(mockTasks, mockProjects);
+    for (const row of rows) {
+      expect(row.detail.length).toBeGreaterThan(0);
     }
   });
 

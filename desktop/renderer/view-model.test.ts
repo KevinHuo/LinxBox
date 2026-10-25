@@ -2,20 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ACTIVE_TASK_STATES,
-  codexStatusLabel,
-  isCodexTurnRunning,
-  connectionStatus,
-  diagnosticsRows,
-  filterTasks,
-  findProjectForPath,
-  flattenSessionMessages,
-  formatRootPath,
-  formatSessionTime,
+  clampBallPosition,
+  deviceSubtitle,
   getBridge,
+  headPill,
+  homeHeadline,
   isActiveTask,
-  projectLabel,
-  projectStateLabel,
-  selectTaskId,
+  isGlobalView,
+  isValidMacAddress,
+  normalizeMacAddress,
+  pendingTaskCount,
+  railAppForView,
+  taskRows,
+  taskStateLabel,
   type ProjectFacts,
   type TaskFacts,
 } from './view-model.js';
@@ -55,127 +54,223 @@ describe('isActiveTask', () => {
   });
 });
 
-describe('filterTasks', () => {
-  const tasks = [
-    task({ taskId: 'a', state: 'running' }),
-    task({ taskId: 'b', state: 'succeeded' }),
-  ];
-
-  it('returns every task when the toggle is off', () => {
-    expect(filterTasks(tasks, false)).toHaveLength(2);
+describe('isValidMacAddress', () => {
+  it('accepts a colon separated address', () => {
+    expect(isValidMacAddress('A4:C1:38:5B:2A:9E')).toBe(true);
   });
 
-  it('returns only active tasks when the toggle is on', () => {
-    expect(filterTasks(tasks, true).map((row) => row.taskId)).toEqual(['a']);
+  it('accepts lower case input', () => {
+    expect(isValidMacAddress('a4:c1:38:5b:2a:9e')).toBe(true);
   });
 
-  it('does not mutate the input', () => {
-    const input = [...tasks];
-    filterTasks(input, true);
-    expect(input).toHaveLength(2);
-  });
-});
-
-describe('selectTaskId', () => {
-  const tasks = [task({ taskId: 'a' }), task({ taskId: 'b' })];
-
-  it('keeps a still-visible selection', () => {
-    expect(selectTaskId(tasks, 'b')).toBe('b');
+  it('tolerates surrounding whitespace', () => {
+    expect(isValidMacAddress('  A4:C1:38:5B:2A:9E  ')).toBe(true);
   });
 
-  it('falls back to the first row when the selection disappeared', () => {
-    expect(selectTaskId(tasks, 'missing')).toBe('a');
-  });
-
-  it('returns null for an empty list', () => {
-    expect(selectTaskId([], 'a')).toBeNull();
+  it('rejects a malformed address', () => {
+    expect(isValidMacAddress('A4:C1:38:5B:2A')).toBe(false);
+    expect(isValidMacAddress('A4-C1-38-5B-2A-9E')).toBe(false);
+    expect(isValidMacAddress('')).toBe(false);
+    expect(isValidMacAddress('ZZ:C1:38:5B:2A:9E')).toBe(false);
   });
 });
 
-describe('projectLabel', () => {
-  it('resolves the display name', () => {
-    expect(projectLabel([project()], 'prj_1')).toBe('商城前端');
-  });
-
-  it('falls back to the id for an unknown project', () => {
-    expect(projectLabel([project()], 'prj_missing')).toBe('prj_missing');
+describe('normalizeMacAddress', () => {
+  it('upper cases and trims the address', () => {
+    expect(normalizeMacAddress('  a4:c1:38:5b:2a:9e ')).toBe('A4:C1:38:5B:2A:9E');
   });
 });
 
-describe('connectionStatus', () => {
-  it('reports an online connection', () => {
-    const status = connectionStatus({
-      configured: true,
-      connected: true,
-      gatewayUrl: 'wss://example.com/ws',
-      tokenHint: '••••abcd',
-      computerName: 'mac',
-    });
-    expect(status.state).toBe('online');
-    expect(status.label).toContain('已连接');
-  });
-
+describe('headPill', () => {
   it('distinguishes configured from connected', () => {
-    const status = connectionStatus({
+    const pill = headPill({
       configured: true,
       connected: false,
       gatewayUrl: 'wss://example.com/ws',
       tokenHint: '••••abcd',
       computerName: 'mac',
     });
-    expect(status.state).toBe('offline');
-    expect(status.label).toContain('已配置');
+    expect(pill.on).toBe(false);
+    expect(pill.text).toContain('已配置');
   });
 
   it('reports an unconfigured client', () => {
-    const status = connectionStatus({
+    const pill = headPill({
       configured: false,
       connected: false,
       gatewayUrl: null,
       tokenHint: null,
       computerName: null,
     });
-    expect(status.state).toBe('offline');
-    expect(status.label).toContain('未连接');
+    expect(pill.on).toBe(false);
+    expect(pill.text).toContain('未配对');
   });
 });
 
-describe('formatRootPath', () => {
-  it('collapses the home directory', () => {
-    expect(formatRootPath('/Users/demo/Projects/storefront')).toBe('~/Projects/storefront');
+describe('homeHeadline', () => {
+  it('claims the device is online only while connected', () => {
+    expect(
+      homeHeadline({
+        configured: true,
+        connected: true,
+        gatewayUrl: 'wss://example.com/ws',
+        tokenHint: '••••abcd',
+        computerName: 'mac',
+      }),
+    ).toBe('已配对 · 设备在线');
   });
 
-  it('keeps only the last two segments of a deep path', () => {
-    expect(formatRootPath('/var/folders/xy/abc/storefront')).toBe('…/abc/storefront');
-  });
-
-  it('keeps a short path intact', () => {
-    expect(formatRootPath('/tmp/app')).toBe('/tmp/app');
+  it('does not claim a device is online while disconnected', () => {
+    expect(
+      homeHeadline({
+        configured: false,
+        connected: false,
+        gatewayUrl: null,
+        tokenHint: null,
+        computerName: null,
+      }),
+    ).toBe('尚未配对 · 等待设备');
   });
 });
 
-describe('projectStateLabel', () => {
-  it('labels an enabled project', () => {
-    expect(projectStateLabel(project())).toContain('可供灵矽使用');
+describe('deviceSubtitle', () => {
+  it('reports a live connection', () => {
+    expect(
+      deviceSubtitle({
+        configured: true,
+        connected: true,
+        gatewayUrl: null,
+        tokenHint: null,
+        computerName: 'mac',
+      }),
+    ).toBe('已连接 · 这台 Mac');
   });
 
-  it('labels a revoked project', () => {
-    expect(projectStateLabel(project({ enabled: false }))).toContain('已停用');
+  it('names the machine that runs the client', () => {
+    expect(
+      deviceSubtitle({
+        configured: true,
+        connected: false,
+        gatewayUrl: null,
+        tokenHint: null,
+        computerName: 'mac',
+      }),
+    ).toBe('尚未连接 · 这台 Mac');
   });
 });
 
-describe('diagnosticsRows', () => {
-  it('produces one row per local fact', () => {
-    const rows = diagnosticsRows({
-      desktopVersion: '0.1.0',
-      protocolVersions: ['1.0'],
-      databasePath: null,
-      connected: false,
-      lastError: null,
+describe('taskStateLabel', () => {
+  it('labels the in-flight states', () => {
+    expect(taskStateLabel('dispatched')).toBe('已下发');
+    expect(taskStateLabel('accepted')).toBe('已接受');
+    expect(taskStateLabel('running')).toBe('运行中');
+    expect(taskStateLabel('approval_required')).toBe('等你回复');
+    expect(taskStateLabel('cancel_requested')).toBe('正在取消');
+  });
+
+  it('labels the terminal states', () => {
+    expect(taskStateLabel('succeeded')).toBe('本轮结束');
+    expect(taskStateLabel('failed')).toBe('失败');
+    expect(taskStateLabel('interrupted')).toBe('已中断');
+    expect(taskStateLabel('rejected')).toBe('已拒绝');
+  });
+
+  it('falls back for an unknown state', () => {
+    expect(taskStateLabel('something_new')).toBe('进行中');
+  });
+});
+
+describe('taskRows', () => {
+  it('resolves the project name into the row detail', () => {
+    const rows = taskRows([task()], [project()]);
+    expect(rows[0]?.detail).toContain('商城前端');
+    expect(rows[0]?.detail).toContain('testing');
+  });
+
+  it('marks an unknown project instead of hiding it', () => {
+    const rows = taskRows([task()], []);
+    expect(rows[0]?.detail).toContain('未授权项目');
+  });
+
+  it('highlights running tasks and mutes finished ones', () => {
+    const rows = taskRows(
+      [task({ taskId: 'a', state: 'running' }), task({ taskId: 'b', state: 'succeeded' })],
+      [project()],
+    );
+    expect(rows[0]?.accent).toBe(true);
+    expect(rows[0]?.muted).toBe(false);
+    expect(rows[1]?.accent).toBe(false);
+    expect(rows[1]?.muted).toBe(true);
+  });
+
+  it('returns an empty list for no tasks', () => {
+    expect(taskRows([], [])).toEqual([]);
+  });
+});
+
+describe('pendingTaskCount', () => {
+  it('counts only the tasks still in flight', () => {
+    const tasks = [
+      task({ taskId: 'a', state: 'running' }),
+      task({ taskId: 'b', state: 'succeeded' }),
+      task({ taskId: 'c', state: 'dispatched' }),
+    ];
+    expect(pendingTaskCount(tasks)).toBe(2);
+  });
+
+  it('counts nothing when every task finished', () => {
+    expect(pendingTaskCount([task({ state: 'succeeded' })])).toBe(0);
+  });
+});
+
+describe('isGlobalView', () => {
+  it('treats the settings view as global', () => {
+    expect(isGlobalView('settings')).toBe(true);
+    expect(isGlobalView('pair')).toBe(false);
+    expect(isGlobalView('pairing')).toBe(false);
+    expect(isGlobalView('home')).toBe(false);
+  });
+});
+
+describe('railAppForView', () => {
+  it('points the settings view at the settings entry', () => {
+    expect(railAppForView('settings')).toBe('settings');
+  });
+
+  it('points every other view at the box entry', () => {
+    expect(railAppForView('pair')).toBe('box');
+    expect(railAppForView('pairing')).toBe('box');
+    expect(railAppForView('home')).toBe('box');
+  });
+});
+
+describe('clampBallPosition', () => {
+  it('keeps a position inside the bounds', () => {
+    expect(clampBallPosition({ x: 100, y: 120 }, { width: 800, height: 600 }, 62)).toEqual({
+      x: 100,
+      y: 120,
     });
-    expect(rows).toHaveLength(5);
-    expect(rows[2]?.value).toBe('尚未创建');
-    expect(rows[4]?.value).toBe('无');
+  });
+
+  it('clamps a negative position to the origin', () => {
+    expect(clampBallPosition({ x: -50, y: -30 }, { width: 800, height: 600 }, 62)).toEqual({
+      x: 0,
+      y: 0,
+    });
+  });
+
+  it('clamps a position past the far edge', () => {
+    expect(clampBallPosition({ x: 5000, y: 5000 }, { width: 800, height: 600 }, 62)).toEqual({
+      x: 738,
+      y: 538,
+    });
+  });
+
+  it('copes with a viewport smaller than the ball', () => {
+    expect(clampBallPosition({ x: 10, y: 10 }, { width: 40, height: 40 }, 62)).toEqual({
+      x: 0,
+      y: 0,
+    });
   });
 });
 
@@ -211,101 +306,5 @@ describe('getBridge', () => {
     } finally {
       Reflect.deleteProperty(globalThis, 'window');
     }
-  });
-});
-
-describe('codexStatusLabel', () => {
-  it('labels every provider status', () => {
-    expect(codexStatusLabel('idle')).toBe('空闲');
-    expect(codexStatusLabel('running')).toBe('执行中');
-    expect(codexStatusLabel('completed')).toBe('已完成');
-    expect(codexStatusLabel('failed')).toBe('失败');
-    expect(codexStatusLabel('interrupted')).toBe('已中断');
-  });
-});
-
-describe('isCodexTurnRunning', () => {
-  it('is true only while the turn is in flight', () => {
-    const base = {
-      threadId: null,
-      turnId: null,
-      progress: '',
-      finalText: '',
-      error: null,
-      startedAt: null,
-      completedAt: null,
-    };
-    expect(isCodexTurnRunning({ ...base, status: 'running' })).toBe(true);
-    expect(isCodexTurnRunning({ ...base, status: 'completed' })).toBe(false);
-    expect(isCodexTurnRunning({ ...base, status: 'idle' })).toBe(false);
-  });
-});
-
-describe('flattenSessionMessages', () => {
-  it('flattens every turn into one chronological list', () => {
-    const messages = flattenSessionMessages({
-      threadId: 'th_1',
-      title: '会话',
-      cwd: '/tmp/work',
-      turns: [
-        {
-          turnId: 'tn_1',
-          status: 'completed',
-          startedAt: null,
-          messages: [{ id: 'm1', role: 'user', text: '你好', phase: null }],
-        },
-        {
-          turnId: 'tn_2',
-          status: 'completed',
-          startedAt: null,
-          messages: [{ id: 'm2', role: 'assistant', text: '在的', phase: 'final_answer' }],
-        },
-      ],
-    });
-    expect(messages.map((message) => message.text)).toEqual(['你好', '在的']);
-  });
-
-  it('returns an empty list for a session without turns', () => {
-    const messages = flattenSessionMessages({
-      threadId: 'th_1',
-      title: '会话',
-      cwd: null,
-      turns: [],
-    });
-    expect(messages).toEqual([]);
-  });
-});
-
-describe('formatSessionTime', () => {
-  it('formats an ISO timestamp', () => {
-    expect(formatSessionTime('2026-10-24T09:26:34.000Z')).not.toBe('-');
-  });
-
-  it('keeps a value it cannot parse', () => {
-    expect(formatSessionTime('not-a-date')).toBe('not-a-date');
-  });
-
-  it('reports a missing timestamp', () => {
-    expect(formatSessionTime(null)).toBe('-');
-  });
-});
-
-describe('findProjectForPath', () => {
-  const projects = [{ projectId: 'p1', name: 'app', roots: ['/Users/demo/app'], position: 0 }];
-
-  it('matches the project root', () => {
-    expect(findProjectForPath(projects, '/Users/demo/app')?.projectId).toBe('p1');
-  });
-
-  it('matches a directory inside the project', () => {
-    expect(findProjectForPath(projects, '/Users/demo/app/src')?.projectId).toBe('p1');
-  });
-
-  it('does not match a sibling with a shared prefix', () => {
-    expect(findProjectForPath(projects, '/Users/demo/app-other')).toBeNull();
-  });
-
-  it('returns null for a missing directory', () => {
-    expect(findProjectForPath(projects, null)).toBeNull();
   });
 });

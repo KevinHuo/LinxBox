@@ -12,7 +12,6 @@ import {
   readDiagnostics,
   revokeProject,
   saveConnection,
-  testConnection,
   type ProjectRecord,
   type TaskRecord,
 } from './desktop-state.js';
@@ -54,24 +53,6 @@ describe('connection', () => {
     const view = readConnectionView(state);
     expect(view.tokenHint).toBe('••••••••oken');
     expect(JSON.stringify(view)).not.toContain('super-secret-token');
-  });
-
-  it('refuses a connection test when nothing is configured', () => {
-    const result = testConnection(createDesktopState());
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('NOT_FOUND');
-  });
-
-  it('reports the outbound client as not implemented instead of faking a handshake', () => {
-    const state = createDesktopState();
-    saveConnection(state, {
-      gatewayUrl: 'wss://example.com/ws',
-      accessToken: 'token',
-      computerName: 'demo mac',
-    });
-    const result = testConnection(state);
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('DEPENDENCY_UNAVAILABLE');
   });
 });
 

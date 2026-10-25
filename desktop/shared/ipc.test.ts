@@ -126,6 +126,50 @@ describe('parseIpcRequest', () => {
     expect(parseIpcRequest('tasks.list', { limit: 0 }).ok).toBe(false);
     expect(parseIpcRequest('tasks.list', { limit: 9999 }).ok).toBe(false);
   });
+
+  it('accepts a supported appearance theme', () => {
+    expect(parseIpcRequest('appearance.save', { theme: 'warm' }).ok).toBe(true);
+    expect(parseIpcRequest('appearance.save', { theme: 'dark' }).ok).toBe(true);
+  });
+
+  it('rejects an unknown appearance theme', () => {
+    const result = parseIpcRequest('appearance.save', { theme: 'neon' });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects an appearance save with an unknown field', () => {
+    const result = parseIpcRequest('appearance.save', { theme: 'warm', fontSize: 20 });
+    expect(result.ok).toBe(false);
+  });
+
+  it('accepts an empty payload for the appearance and float reads', () => {
+    expect(parseIpcRequest('appearance.read', {}).ok).toBe(true);
+    expect(parseIpcRequest('window.float.read', {}).ok).toBe(true);
+  });
+
+  it('accepts a float position with finite coordinates', () => {
+    expect(parseIpcRequest('window.float.move', { x: 10, y: 20 }).ok).toBe(true);
+  });
+
+  it('rejects a float position with a non-finite coordinate', () => {
+    expect(parseIpcRequest('window.float.move', { x: Number.NaN, y: 20 }).ok).toBe(false);
+    expect(parseIpcRequest('window.float.move', { x: 10, y: Number.POSITIVE_INFINITY }).ok).toBe(
+      false,
+    );
+  });
+
+  it('rejects a float position with a missing coordinate', () => {
+    expect(parseIpcRequest('window.float.move', { x: 10 }).ok).toBe(false);
+  });
+
+  it('accepts a boolean visibility flag', () => {
+    expect(parseIpcRequest('window.float.setVisible', { visible: true }).ok).toBe(true);
+    expect(parseIpcRequest('window.float.setVisible', { visible: false }).ok).toBe(true);
+  });
+
+  it('rejects a non-boolean visibility flag', () => {
+    expect(parseIpcRequest('window.float.setVisible', { visible: 'yes' }).ok).toBe(false);
+  });
 });
 
 describe('maskToken', () => {

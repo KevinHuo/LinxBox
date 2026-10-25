@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildAgentSessionsSyncFrame,
   buildAckFrame,
+  buildDeviceBindFrame,
   buildHelloFrame,
   buildHeartbeatFrame,
   buildTaskEventFrame,
@@ -29,6 +31,24 @@ const dispatchFrame = {
 };
 
 describe('parseInboundFrame', () => {
+  it('accepts a contract-compatible binding result and rejects unknown error codes', () => {
+    const valid = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'binding.result',
+      payload: {
+        reply_to_message_id: 'msg_bind',
+        ok: true,
+        data: { device_id: 'AA:BB:CC:DD:EE:FF', desktop_client_id: 'desktop-1' },
+      },
+    });
+    expect(valid.ok).toBe(true);
+    const invalid = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'binding.result',
+      payload: { reply_to_message_id: 'msg_bind', ok: false, error: { code: 'NOPE', message: 'x' } },
+    });
+    expect(invalid.ok).toBe(false);
+  });
   it('accepts a valid task.dispatch', () => {
     const result = parseInboundFrame(dispatchFrame);
     expect(result.ok).toBe(true);
@@ -45,6 +65,65 @@ describe('parseInboundFrame', () => {
       payload: { task_id: 'tsk_1', reason: 'user_requested' },
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('accepts contract-defined project and history request frames', () => {
+    expect(parseInboundFrame({
+      ...dispatchFrame,
+      type: 'project.upsert',
+      payload: {
+        project_id: 'prj_1', display_name: 'LinxBox', capabilities: ['read'],
+        availability: 'online', grant_version: 1,
+      },
+    }).ok).toBe(true);
+    expect(parseInboundFrame({
+      ...dispatchFrame,
+      type: 'messages.list',
+      payload: { agent_session_id: 'ses_1' },
+    }).ok).toBe(true);
+    expect(parseInboundFrame({
+      ...dispatchFrame,
+      type: 'message.content.get',
+      payload: { agent_session_id: 'ses_1', message_id: 'msg_1', offset: 0 },
+    }).ok).toBe(true);
+  });
+
+  it('accepts a device-selected existing Codex session continuation', () => {
+    const result = parseInboundFrame({
+      ...dispatchFrame,
+      payload: {
+        ...dispatchFrame.payload,
+        continuation: { agent_session_id: 'codex_th_1', thread_id: 'th_1' },
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts an agent session sync result', () => {
+    const result = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'agent_sessions.sync.result',
+      payload: { reply_to_message_id: 'sync_1', ok: true },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects the legacy PublicError shape in a session sync result', () => {
+    const result = parseInboundFrame({
+      ...dispatchFrame,
+      type: 'agent_sessions.sync.result',
+      payload: {
+        reply_to_message_id: 'sync_1',
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENT',
+          message: '目录非法',
+          retryable: false,
+          request_id: 'sync_1',
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
   });
 
   it('rejects a frame that is not an object', () => {
@@ -102,6 +181,14 @@ describe('parseInboundFrame', () => {
 });
 
 describe('outbound frame builders', () => {
+  it('builds device.bind and rejects malformed MAC addresses', () => {
+    expect(buildDeviceBindFrame({
+      messageId: 'msg_bind', sequence: 1, macAddress: 'AA:BB:CC:DD:EE:FF', sentAt: '2026-10-24T01:00:00Z',
+    }).payload.mac_address).toBe('AA:BB:CC:DD:EE:FF');
+    expect(() => buildDeviceBindFrame({
+      messageId: 'msg_bind', sequence: 1, macAddress: 'not-a-mac', sentAt: '2026-10-24T01:00:00Z',
+    })).toThrow();
+  });
   it('builds a hello frame with the negotiated protocol version', () => {
     const frame = buildHelloFrame({
       messageId: 'msg_1',
@@ -195,6 +282,29 @@ describe('outbound frame builders', () => {
     });
     expect(frame.type).toBe('task.completed');
     expect(frame.payload.event_sequence).toBe(1);
+  });
+
+  it('builds a full Codex session directory sync without local paths', () => {
+    const frame = buildAgentSessionsSyncFrame({
+      messageId: 'sync_1',
+      sequence: 4,
+      sentAt: '2026-10-25T00:00:00Z',
+      items: [
+        {
+          agent_session_id: 'codex_th_1',
+          thread_id: 'th_1',
+          project_id: 'prj_1',
+          project_name: 'LinxBox',
+          agent: 'codex',
+          title: '修复问题',
+          status: 'idle',
+          summary: '修复问题',
+        },
+      ],
+    });
+    expect(frame.type).toBe('agent_sessions.sync');
+    expect(frame.payload.items[0]?.thread_id).toBe('th_1');
+    expect(JSON.stringify(frame)).not.toContain('/Users/');
   });
 });
 

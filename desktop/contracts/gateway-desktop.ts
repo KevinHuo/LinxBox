@@ -1,15 +1,9 @@
 /**
- * Gateway/Desktop `1.0` wire contract — draft slice of SPEC-0001.
+ * Gateway/Desktop `1.0` wire types used by the Desktop runtime.
  *
- * Provenance: transcribed from the `Gateway/Desktop 1.0` section of the MVP
- * contract baseline drafted in SPEC-0003 (`docs/contracts/gateway-desktop.md`
- * on the `feat/9-desktop-client` branch). That baseline is not on the default
- * branch yet, so this file is the local, reviewable copy that the Desktop
- * implementation compiles against.
- *
- * Status: `Proposed`. This slice is NOT the authoritative contract. When
- * SPEC-0001 lands the shared schema and fixtures, this file must be replaced
- * by an import of that schema rather than kept as a second source of truth.
+ * The authoritative field contract is `contracts/desktop-gateway.schema.json`.
+ * Keep these compile-time types aligned with that Schema until type generation
+ * is introduced; contract tests guard the legacy interfaces against drift.
  */
 import type { TaskResult } from './task-result.js';
 
@@ -30,8 +24,12 @@ export type ProjectCapability = (typeof PROJECT_CAPABILITIES)[number];
 export const GATEWAY_MESSAGE_TYPES = [
   'task.dispatch',
   'task.cancel',
+  'binding.result',
+  'agent_sessions.sync.result',
   'project.upsert',
   'project.revoke',
+  'messages.list',
+  'message.content.get',
 ] as const;
 
 export type GatewayMessageType = (typeof GATEWAY_MESSAGE_TYPES)[number];
@@ -40,6 +38,7 @@ export type GatewayMessageType = (typeof GATEWAY_MESSAGE_TYPES)[number];
 export const DESKTOP_MESSAGE_TYPES = [
   'client.hello',
   'client.heartbeat',
+  'device.bind',
   'task.ack',
   'task.started',
   'task.progress',
@@ -48,9 +47,9 @@ export const DESKTOP_MESSAGE_TYPES = [
   'task.failed',
   'task.cancelled',
   'task.interrupted',
-  'presentation.upsert',
-  'presentation.revoke',
-  'command.receipt',
+  'agent_sessions.sync',
+  'message.available',
+  'query.result',
 ] as const;
 
 export type DesktopMessageType = (typeof DESKTOP_MESSAGE_TYPES)[number];
@@ -100,6 +99,17 @@ export interface ClientHeartbeatPayload {
   readonly summary?: string;
 }
 
+export interface DeviceBindPayload {
+  readonly mac_address: string;
+}
+
+export interface BindingResultPayload {
+  readonly reply_to_message_id: string;
+  readonly ok: boolean;
+  readonly data?: { readonly device_id: string; readonly desktop_client_id: string };
+  readonly error?: ContractError;
+}
+
 /** `project.upsert` payload. Absolute paths never appear in this protocol. */
 export interface ProjectUpsertPayload {
   readonly project_id: string;
@@ -116,6 +126,45 @@ export interface ProjectRevokePayload {
   readonly revoked_at: string;
 }
 
+export interface MessagesListPayload {
+  readonly agent_session_id: string;
+  readonly cursor?: string;
+}
+
+export interface ContentGetPayload {
+  readonly agent_session_id: string;
+  readonly message_id: string;
+  readonly offset?: number;
+}
+
+export interface MessageMeta {
+  readonly message_id: string;
+  readonly role: 'user' | 'assistant';
+  readonly summary: string;
+}
+
+export interface MessagePage {
+  readonly items: readonly MessageMeta[];
+  readonly next_cursor: string | null;
+}
+
+export interface ContentChunk {
+  readonly text: string;
+  readonly next_offset: number | null;
+}
+
+export interface MessageAvailablePayload {
+  readonly agent_session_id: string;
+  readonly message_id: string;
+}
+
+export interface QueryResultPayload {
+  readonly reply_to_message_id: string;
+  readonly ok: boolean;
+  readonly data?: MessagePage | ContentChunk;
+  readonly error?: ContractError;
+}
+
 /** `task.dispatch` payload. */
 export interface TaskDispatchPayload {
   readonly task_id: string;
@@ -125,7 +174,53 @@ export interface TaskDispatchPayload {
   readonly prompt: string;
   readonly acceptance_criteria: readonly string[];
   readonly policy_version: string;
-  readonly continuation: { readonly parent_task_id: string } | null;
+  readonly continuation:
+    | { readonly parent_task_id: string }
+    | { readonly agent_session_id: string; readonly thread_id: string }
+    | null;
+}
+
+/** A locally discovered Codex conversation that may be selected by a device. */
+export interface AgentSessionCatalogItem {
+  readonly agent_session_id: string;
+  readonly thread_id: string;
+  readonly project_id: string;
+  readonly project_name: string;
+  readonly agent: 'codex';
+  readonly title: string;
+  readonly status: 'idle' | 'running' | 'completed' | 'failed' | 'unknown';
+  readonly summary: string;
+}
+
+/** Full replacement of the sessions this Desktop currently exposes. */
+export interface AgentSessionsSyncPayload {
+  readonly items: readonly AgentSessionCatalogItem[];
+}
+
+/** Gateway acknowledgement for one full session-directory sync. */
+export interface AgentSessionsSyncResultPayload {
+  readonly reply_to_message_id: string;
+  readonly ok: true;
+}
+
+export interface AgentSessionsSyncErrorPayload {
+  readonly reply_to_message_id: string;
+  readonly ok: false;
+  readonly error: ContractError;
+}
+
+/** Minimal error used by the new shared-contract operations. */
+export interface ContractError {
+  readonly code:
+    | 'INVALID_ARGUMENT'
+    | 'UNAUTHENTICATED'
+    | 'PERMISSION_DENIED'
+    | 'NOT_FOUND'
+    | 'CONFLICT'
+    | 'DEPENDENCY_UNAVAILABLE'
+    | 'RESOURCE_EXHAUSTED'
+    | 'INTERNAL';
+  readonly message: string;
 }
 
 /** `task.cancel` payload. A cancel request is not proof of a terminal state. */
@@ -177,13 +272,18 @@ export interface TaskEventPayload {
 export interface GatewayPayloadByType {
   'task.dispatch': TaskDispatchPayload;
   'task.cancel': TaskCancelPayload;
+  'agent_sessions.sync.result': AgentSessionsSyncResultPayload | AgentSessionsSyncErrorPayload;
+  'binding.result': BindingResultPayload;
   'project.upsert': ProjectUpsertPayload;
   'project.revoke': ProjectRevokePayload;
+  'messages.list': MessagesListPayload;
+  'message.content.get': ContentGetPayload;
 }
 
 export interface DesktopPayloadByType {
   'client.hello': ClientHelloPayload;
   'client.heartbeat': ClientHeartbeatPayload;
+  'device.bind': DeviceBindPayload;
   'task.ack': TaskAckPayload;
   'task.started': TaskEventPayload;
   'task.progress': TaskEventPayload;
@@ -192,9 +292,9 @@ export interface DesktopPayloadByType {
   'task.failed': TaskEventPayload;
   'task.cancelled': TaskEventPayload;
   'task.interrupted': TaskEventPayload;
-  'presentation.upsert': Record<string, unknown>;
-  'presentation.revoke': Record<string, unknown>;
-  'command.receipt': Record<string, unknown>;
+  'agent_sessions.sync': AgentSessionsSyncPayload;
+  'message.available': MessageAvailablePayload;
+  'query.result': QueryResultPayload;
 }
 
 /**

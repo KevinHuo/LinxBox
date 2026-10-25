@@ -1,0 +1,1150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<title>LinxBox 客户端 UI 原型</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23F7F2E8'/%3E%3Cpath d='M21 21l22 22M43 21L21 43' stroke='%23D94F28' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E" />
+<style>
+/* ============================================================
+   LinxBox 客户端 UI 原型
+   设计语言提取自 firmware/main/linx_ui.c（LinX 硬件端暖白风格）
+   ============================================================ */
+:root {
+  color-scheme: light;
+  /* —— 硬件端设计 token（取自 linx_ui.c）—— */
+  --paper: #F7F2E8;        /* COLOR_PAPER 暖白纸底 */
+  --paper-deep: #EFE9DC;   /* 面板 / 卡片底 */
+  --ink: #292722;          /* COLOR_INK 接近墨黑 */
+  --muted: #746B5F;        /* COLOR_MUTED 暖灰 */
+  --line: #D8D0C3;         /* COLOR_LINE 分隔线 */
+  --line-soft: #E6DFD2;
+  --accent: #D94F28;       /* COLOR_ACCENT 朱橙 */
+  --accent-deep: #AD391C;  /* COLOR_ACCENT_TEXT 深朱橙 */
+  --selected: #F8E0CF;     /* COLOR_SELECTED 浅橙选中 */
+  --white: #FFFFFF;
+  --shadow: rgba(41, 39, 34, 0.12);
+  --font: "PingFang SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", -apple-system, sans-serif;
+  --mono: "SF Mono", Menlo, Consolas, monospace;
+  --radius: 12px;
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font: 15px/1.6 var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 520px at 82% -6%, rgba(217, 79, 40, 0.07), transparent 62%),
+    radial-gradient(900px 460px at 8% 108%, rgba(116, 107, 95, 0.09), transparent 60%),
+    linear-gradient(var(--paper), #F0EADD);
+}
+button { font: inherit; color: inherit; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+::selection { background: var(--selected); }
+
+/* 桌面底衬（示意常驻桌面环境） */
+.desktop {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  padding: 34px 18px 110px;
+  display: grid;
+  place-items: center;
+}
+.desktop::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(41, 39, 34, 0.10) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(700px 480px at 50% 38%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(700px 480px at 50% 38%, #000 30%, transparent 100%);
+}
+.watermark {
+  position: fixed;
+  z-index: 0;
+  bottom: -30px;
+  left: 24px;
+  color: rgba(41, 39, 34, 0.05);
+  font-size: clamp(90px, 14vw, 190px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ============ macOS 窗口 ============ */
+.window {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 100%);
+  height: calc(100vh - 140px);
+  min-height: 420px;
+  max-height: 940px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 30px 80px var(--shadow), 0 3px 10px rgba(41, 39, 34, 0.08);
+  overflow: hidden;
+}
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 46px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(var(--white), var(--paper-deep));
+  user-select: none;
+}
+.traffic { display: flex; gap: 8px; }
+.traffic i { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(41,39,34,0.14); }
+.traffic i:nth-child(1) { background: #E98B6F; }
+.traffic i:nth-child(2) { background: #E2C879; }
+.traffic i:nth-child(3) { background: #9CC48A; }
+.window-title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.window-title b { color: var(--ink); font-weight: 600; }
+.window-title small { color: var(--muted); }
+
+/* ============ 应用头部 ============ */
+.app-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 26px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  flex: none;
+}
+.brand-name { display: grid; gap: 1px; min-width: 0; }
+.brand-name strong { font-size: 17px; font-weight: 700; line-height: 1.25; }
+.brand-name span {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.head-actions { display: flex; align-items: center; gap: 10px; }
+
+/* 状态胶囊（沿用固件 pill：浅橙底 + 深朱橙字） */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--selected);
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.pill.is-off { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.pill.is-off .dot { background: var(--line); }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--selected); }
+.icon-btn svg { width: 17px; height: 17px; }
+
+/* ============ 视图 ============ */
+.view { display: none; padding: 26px 26px 18px; }
+.view.is-active { display: block; animation: view-in 300ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes view-in { from { opacity: 0; transform: translateY(6px); } }
+
+.hero { max-width: 620px; }
+.hero h1 { margin: 0 0 10px; font-size: clamp(26px, 3.6vw, 34px); font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; }
+.hero p.lede { margin: 0; color: var(--muted); font-size: 14px; max-width: 56ch; }
+
+/* —— 配对区 —— */
+.pair-layout { display: grid; grid-template-columns: 1fr; gap: 22px; margin-top: 24px; }
+.device-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.device-card::after {
+  content: "";
+  position: absolute;
+  right: -40px;
+  top: -40px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(217, 79, 40, 0.10), transparent 70%);
+  pointer-events: none;
+}
+.device-fig { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.device-fig svg { width: min(220px, 62%); height: auto; }
+.device-fig figcaption { font-size: 13px; line-height: 1.8; color: var(--muted); text-align: center; }
+.steps {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0;
+  counter-reset: none;
+}
+.steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 11px 0; position: relative; }
+.steps li + li::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: -6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--line);
+}
+.step-no {
+  display: grid;
+  place-items: center;
+  width: 33px;
+  height: 33px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--muted);
+  font: 700 12px var(--mono);
+  z-index: 1;
+}
+.step-txt strong { display: block; font-size: 15px; font-weight: 700; line-height: 1.5; }
+.step-txt span { font-size: 12.5px; color: var(--muted); }
+
+/* —— 设备 MAC 地址 —— */
+.code-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  text-align: center;
+}
+.code-card > p { margin: 0 0 14px; font-size: 12px; color: var(--muted); }
+.mac-field input {
+  width: 100%;
+  height: 50px;
+  padding: 0 14px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 17px/1 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.mac-field input::placeholder { color: var(--line); font-weight: 500; letter-spacing: 0.02em; }
+.mac-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217, 79, 40, 0.12); }
+
+/* —— 按钮 —— */
+.btn {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--white);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { border-color: var(--accent); background: var(--accent); color: #FFF7F0; }
+.btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+.btn-quiet { background: var(--paper-deep); }
+.btn-danger { border-color: transparent; background: transparent; color: var(--accent-deep); }
+.btn-danger:hover { background: var(--selected); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.btn-row.center { justify-content: center; }
+
+/* —— 配对中：波形（沿用固件 render_voice 的六根波形）—— */
+.wave { display: flex; align-items: center; justify-content: center; gap: 9px; height: 64px; margin: 6px 0 4px; }
+.wave i { width: 7px; border-radius: 4px; background: var(--accent); animation: wave 0.9s ease-in-out infinite; }
+.wave i:nth-child(1) { height: 16px; animation-delay: 0s; }
+.wave i:nth-child(2) { height: 34px; animation-delay: 0.13s; }
+.wave i:nth-child(3) { height: 24px; animation-delay: 0.26s; }
+.wave i:nth-child(4) { height: 46px; animation-delay: 0.39s; }
+.wave i:nth-child(5) { height: 22px; animation-delay: 0.52s; }
+.wave i:nth-child(6) { height: 12px; animation-delay: 0.65s; }
+@keyframes wave { 0%, 100% { transform: scaleY(0.45); } 50% { transform: scaleY(1); } }
+.pairing-note { text-align: center; color: var(--muted); font-size: 13px; }
+
+/* —— 已配对主页 —— */
+.home-grid { display: grid; grid-template-columns: 1fr; gap: 22px; margin-top: 24px; }
+.panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  padding: 20px;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.panel-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.panel-head span { font-size: 12px; color: var(--muted); }
+.device-ok { display: flex; gap: 16px; align-items: center; }
+.device-ok svg { width: 64px; height: 64px; flex: none; }
+.device-ok .ok-txt strong { display: block; font-size: 17px; font-weight: 700; }
+.device-ok .ok-txt span { font-size: 12.5px; color: var(--muted); }
+.kv { margin: 14px 0 0; padding: 0; list-style: none; }
+.kv li { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-top: 1px solid var(--line-soft); font-size: 13px; }
+.kv li span { color: var(--muted); }
+.kv li b { font-weight: 600; }
+
+.task-list { margin: 0; padding: 0; list-style: none; }
+.task-row {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.task-row:first-child { border-top: 0; }
+.task-row .t-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.task-row.tone-accent .t-dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(217, 79, 40, 0.10); }
+.task-row .t-main { min-width: 0; }
+.task-row .t-main strong { display: block; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-row .t-main small { font-size: 12px; color: var(--muted); }
+.task-row .t-status { font-size: 12px; color: var(--accent-deep); font-weight: 600; white-space: nowrap; }
+.task-row .t-status.is-muted { color: var(--muted); }
+
+.note-line {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--accent);
+  background: var(--selected);
+  color: var(--accent-deep);
+  font-size: 12.5px;
+  border-radius: 0 9px 9px 0;
+}
+
+/* —— 设置 —— */
+.settings-list { margin-top: 6px; padding: 0; list-style: none; border-top: 1px solid var(--line-soft); }
+.settings-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 58px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.settings-list .s-txt strong { display: block; font-size: 15px; font-weight: 600; }
+.settings-list .s-txt span { font-size: 12px; color: var(--muted); }
+.switch { display: inline-flex; align-items: center; width: 46px; height: 26px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-deep); cursor: pointer; transition: background 160ms ease, border-color 160ms ease; }
+.switch::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform 160ms ease, background 160ms ease; }
+.switch.is-on { background: var(--accent); border-color: var(--accent); }
+.switch.is-on::after { background: var(--white); transform: translateX(20px); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-deep); padding: 3px; gap: 3px; }
+.seg-btn { padding: 6px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.is-active { background: var(--white); color: var(--accent-deep); box-shadow: 0 1px 4px rgba(41, 39, 34, 0.10); }
+.row-btn { border: 1px solid var(--line); border-radius: 9px; background: var(--white); padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+.row-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
+
+/* —— 底栏提示（沿用固件 footer）—— */
+.app-foot {
+  padding: 12px 26px 18px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.app-foot b { color: var(--ink); font-weight: 600; }
+
+/* ============ 外层 Linx AI 应用栏 ============ */
+.win-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.app-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-deep);
+}
+.rail-brand { display: none; }
+.rail-nav { display: flex; gap: 6px; flex: 1; }
+.rail-label { display: none; }
+.rail-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+.rail-item:hover { color: var(--ink); background: var(--white); border-color: var(--line); }
+.rail-item.is-active { color: var(--accent-deep); background: var(--selected); border-color: var(--line); }
+.app-main { display: flex; flex-direction: column; min-width: 0; flex: 1; min-height: 0; }
+.app-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.app-foot { flex: none; }
+.rail-foot { display: none; }
+
+@media (min-width: 760px) {
+  .win-body { flex-direction: row; align-items: stretch; }
+  .app-rail {
+    flex-direction: column;
+    align-items: stretch;
+    width: 196px;
+    flex: none;
+    padding: 20px 14px;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+  .rail-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 8px 16px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .rail-mark {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--white);
+    flex: none;
+  }
+  .rail-brand strong { display: block; font-size: 15px; line-height: 1.3; }
+  .rail-brand small { font-size: 10.5px; color: var(--muted); }
+  .rail-nav { flex-direction: column; }
+  .rail-label { display: block; margin: 0 12px 6px; color: var(--muted); font-size: 10.5px; letter-spacing: 0.08em; }
+  .rail-item { padding: 11px 12px; }
+  .rail-foot {
+    display: grid;
+    gap: 3px;
+    margin-top: auto;
+    padding: 16px 8px 2px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 10.5px;
+  }
+}
+
+/* ============ 悬浮窗 ============ */
+.float-ball {
+  position: fixed;
+  z-index: 60;
+  right: 28px;
+  bottom: 30px;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(41, 39, 34, 0.22);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.float-ball:hover { box-shadow: 0 18px 42px rgba(41, 39, 34, 0.28); }
+.float-ball:active { cursor: grabbing; }
+.float-ball svg { width: 24px; height: 24px; }
+.float-ball .f-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--white);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.float-ball.is-paused .f-dot { background: var(--line); }
+.float-card {
+  position: fixed;
+  z-index: 61;
+  right: 22px;
+  bottom: 94px;
+  width: min(320px, calc(100vw - 36px));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 24px 60px rgba(41, 39, 34, 0.24);
+  padding: 16px;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transform-origin: bottom right;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.float-card.is-open { opacity: 1; transform: none; pointer-events: auto; }
+.fc-head { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.fc-head .brand-mark { width: 30px; height: 30px; border-radius: 8px; }
+.fc-head .brand-mark svg { width: 17px; height: 17px; }
+.fc-head strong { font-size: 14px; }
+.fc-head span { display: block; font-size: 11px; color: var(--muted); }
+.fc-body { padding: 12px 0; display: grid; gap: 9px; }
+.fc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.fc-row span { color: var(--muted); }
+.fc-row b { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.fc-row b i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.fc-actions { display: grid; gap: 8px; }
+.fc-actions .btn { min-height: 38px; font-size: 13px; }
+.fc-app-wrap { position: relative; padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.fc-app {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.fc-app span { color: var(--muted); }
+.fc-app b { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.fc-app b svg { width: 14px; height: 14px; color: var(--muted); transition: transform 160ms ease; }
+.fc-app[aria-expanded="true"] b svg { transform: rotate(180deg); }
+.fc-app-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 5;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(41, 39, 34, 0.16);
+  display: none;
+}
+.fc-app-list.is-open { display: block; }
+.fc-app-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.fc-app-list button:hover { background: var(--paper-deep); }
+.fc-app-list button.is-selected { background: var(--selected); color: var(--accent-deep); }
+.fc-app-list button i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.fc-app-list button em { font-style: normal; margin-left: auto; font-size: 11px; color: var(--muted); }
+
+/* ============ Toast ============ */
+.toast {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%) translateY(14px);
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease, transform 200ms ease;
+  box-shadow: 0 14px 34px rgba(41, 39, 34, 0.3);
+}
+.toast.is-visible { opacity: 1; transform: translateX(-50%); }
+
+@media (min-width: 760px) {
+  .pair-layout { grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr); }
+  .home-grid { grid-template-columns: minmax(0, 1.2fr) minmax(250px, 0.8fr); }
+  .device-fig { flex-direction: row; justify-content: center; gap: 20px; text-align: left; }
+  .device-fig figcaption { text-align: left; }
+}
+@media (max-width: 640px) {
+  .desktop { padding: 12px 8px 120px; }
+  .window { border-radius: 12px; }
+  .app-head { padding: 14px 16px 12px; }
+  .view { padding: 18px 16px 14px; }
+  .app-foot { padding: 12px 16px 16px; }
+  .brand-name span { display: none; }
+  .titlebar .window-title small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="watermark" aria-hidden="true">LinxBox</div>
+
+  <!-- ============ macOS 窗口 ============ -->
+  <section class="window" role="region" aria-label="LinxBox 主窗口">
+    <div class="titlebar">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="window-title"><b>Linx AI</b> <small>· 桌面客户端</small></div>
+      <div style="width:52px" aria-hidden="true"></div>
+    </div>
+
+    <!-- 外层：Linx AI 应用栏；内层：LinxBox（当前应用） -->
+    <div class="win-body">
+      <aside class="app-rail" aria-label="Linx AI 应用列表">
+        <div class="rail-brand">
+          <span class="rail-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18"><rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28"/><path d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><path d="M11.9 7.2a7 7 0 0 1 0 9.6" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8"/></svg>
+          </span>
+          <div><strong>Linx AI</strong><small>桌面客户端</small></div>
+        </div>
+        <nav class="rail-nav" aria-label="应用列表">
+          <p class="rail-label">应用</p>
+          <button class="rail-item is-active" type="button" data-app="box" aria-current="page">Linx Box</button>
+          <button class="rail-item" type="button" data-app="settings">设置</button>
+        </nav>
+        <div class="rail-foot">
+          <span>Linx AI · 0.2</span>
+        </div>
+      </aside>
+
+      <div class="app-main">
+    <!-- 应用头部 -->
+    <header class="app-head">
+      <div class="brand">
+        <div class="brand-name">
+          <strong id="head-brand">Linx Box</strong>
+          <span id="head-crumb">Linx AI / LinxBox · 常驻后台</span>
+        </div>
+      </div>
+      <div class="head-actions">
+        <span class="pill" id="head-pill"><i class="dot" aria-hidden="true"></i><span id="head-pill-txt">未配对 · 等待设备</span></span>
+      </div>
+    </header>
+
+    <div class="app-scroll">
+    <!-- ===== 视图：未配对（默认） ===== -->
+    <section class="view is-active" data-view="pair" aria-labelledby="pair-title">
+      <div class="hero">
+        <h1 id="pair-title">把 Linx 设备与这台 Mac 配对</h1>
+        <p class="lede">配对后，Linx 设备与这台 Mac 建立安全连接。设备上的指令会同步到电脑，由你授权的 Agent 执行，任务状态与回复再同步回设备。Linx Box 常驻后台，不打断你的工作。</p>
+      </div>
+      <div class="pair-layout">
+        <div class="device-card">
+          <ol class="steps">
+            <li>
+              <span class="step-no" aria-hidden="true">01</span>
+              <div class="step-txt"><strong>查看 MAC 地址</strong><span>在 Linx 设备上打开「设置 · 关于」，查看设备 MAC 地址</span></div>
+            </li>
+            <li>
+              <span class="step-no" aria-hidden="true">02</span>
+              <div class="step-txt"><strong>填写 MAC 地址</strong><span>在这台 Mac 上输入设备信息中的 MAC 地址</span></div>
+            </li>
+            <li>
+              <span class="step-no" aria-hidden="true">03</span>
+              <div class="step-txt"><strong>完成配对</strong><span>建立连接，LinxBox 开始常驻</span></div>
+            </li>
+          </ol>
+        </div>
+
+        <div class="code-card">
+          <p>设备 MAC 地址 · 在 Linx 设备上查看</p>
+          <div class="mac-field">
+            <input id="mac-input" type="text" autocomplete="off" spellcheck="false" maxlength="17" placeholder="如 A4:C1:38:5B:2A:9E" aria-label="设备 MAC 地址" />
+          </div>
+          <button class="btn btn-primary" id="btn-start" type="button" style="width:100%">开始配对</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：配对中 ===== -->
+    <section class="view" data-view="pairing" aria-labelledby="pairing-title">
+      <div class="hero" style="text-align:center;max-width:none">
+        <h1 id="pairing-title" style="font-size:clamp(24px,3.2vw,30px)">正在连接设备</h1>
+        <p class="lede" style="margin:6px auto 0">正在通过 MAC 地址与设备建立安全连接…</p>
+      </div>
+      <div class="code-card" style="max-width:430px;margin:22px auto 0">
+        <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <p class="pairing-note" id="pairing-note">正在向设备发起连接 · 请稍候…</p>
+        <div class="btn-row center" style="margin-top:14px">
+          <button class="btn btn-quiet" id="btn-cancel" type="button">取消配对</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：已配对主页 ===== -->
+    <section class="view" data-view="home" aria-labelledby="home-title">
+      <div class="hero">
+        <h1 id="home-title">已配对 · 设备在线</h1>
+        <p class="lede">LinxBox 常驻后台运行中。关闭窗口不会断开连接，需要时从菜单栏或悬浮窗打开。</p>
+      </div>
+      <div class="home-grid">
+        <div class="panel">
+          <div class="panel-head"><h2>最近任务</h2><span>来自设备的指令</span></div>
+          <ul class="task-list" aria-label="最近任务">
+            <li class="task-row tone-accent">
+              <i class="t-dot" aria-hidden="true"></i>
+              <div class="t-main"><strong>登录校验修复</strong><small>Codex · 工作电脑 · 第 2 轮</small></div>
+              <span class="t-status">运行中</span>
+            </li>
+            <li class="task-row tone-accent">
+              <i class="t-dot" aria-hidden="true"></i>
+              <div class="t-main"><strong>支付接口调整</strong><small>Claude Code · 工作电脑 · 第 1 轮</small></div>
+              <span class="t-status">等你回复</span>
+            </li>
+            <li class="task-row">
+              <i class="t-dot" aria-hidden="true"></i>
+              <div class="t-main"><strong>LinX 暖白界面</strong><small>Codex · 工作电脑 · 本轮结束</small></div>
+              <span class="t-status is-muted">本轮结束</span>
+            </li>
+          </ul>
+          <div class="note-line" style="margin-top:auto">新回复会以静默方式更新到悬浮窗，不弹窗打扰。</div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>设备</h2><span>常驻</span></div>
+          <div class="device-ok">
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <circle cx="32" cy="32" r="30" fill="#F8E0CF"/>
+              <path d="M20 33l8 8 16-18" fill="none" stroke="#D94F28" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="ok-txt">
+              <strong>Linx 设备</strong>
+              <span>已连接 · 这台 Mac</span>
+            </div>
+          </div>
+          <ul class="kv">
+            <li><span>配对时间</span><b>刚刚</b></li>
+            <li><span>设备 MAC</span><b id="home-mac">—</b></li>
+            <li><span>最近同步</span><b>30 秒前</b></li>
+            <li><span>待执行指令</span><b>0 条</b></li>
+          </ul>
+          <div class="btn-row" style="margin-top:auto;padding-top:16px">
+            <button class="btn btn-danger" id="btn-unpair" type="button">退出配对</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：全局设置（Linx AI） ===== -->
+    <section class="view" data-view="settings" aria-labelledby="settings-title">
+      <div class="hero">
+        <h1 id="settings-title">设置</h1>
+        <p class="lede">Linx AI · 全局设置，作用于整个桌面客户端。</p>
+      </div>
+      <ul class="settings-list">
+        <li>
+          <div class="s-txt"><strong>外观</strong><span>跟随设备端暖白风格</span></div>
+          <div class="seg" role="group" aria-label="外观">
+            <button class="seg-btn is-active" type="button" data-theme="warm">暖白</button>
+            <button class="seg-btn" type="button" data-theme="dark">深色</button>
+          </div>
+        </li>
+        <li>
+          <div class="s-txt"><strong>开机自启</strong><span>登录这台 Mac 时自动启动 Linx AI</span></div>
+          <button class="switch is-on" type="button" role="switch" aria-checked="true" data-switch="startup" aria-label="开机自启"></button>
+        </li>
+        <li>
+          <div class="s-txt"><strong>悬浮窗</strong><span>桌面显示常驻小球，展示设备状态</span></div>
+          <button class="switch is-on" type="button" role="switch" aria-checked="true" data-switch="float" aria-label="悬浮窗"></button>
+        </li>
+      </ul>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn btn-quiet" type="button" data-back="main">返回</button>
+      </div>
+    </section>
+
+    </div><!-- /app-scroll -->
+
+    <!-- 底栏提示（沿用固件 footer 语汇） -->
+    <footer class="app-foot" id="app-foot">
+      <span><b>配对成功后</b> · LinxBox 常驻后台</span>
+      <span><b>悬浮窗</b> · 随时查看设备状态</span>
+      <span><b>关闭窗口</b> · 不会断开连接</span>
+    </footer>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ============ 悬浮窗 ============ -->
+<aside class="float-card" id="float-card" aria-label="Linx AI 悬浮窗">
+  <div class="fc-head">
+    <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17"><rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28"/><path d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><path d="M11.9 7.2a7 7 0 0 1 0 9.6" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8"/></svg></span>
+    <div><strong>Linx AI</strong><span>桌面客户端 · 常驻后台</span></div>
+  </div>
+  <div class="fc-body">
+    <div class="fc-app-wrap">
+      <button class="fc-app" id="fc-app" type="button" aria-expanded="false" aria-controls="fc-app-list">
+        <span>当前应用</span>
+        <b>Linx Box · 运行中<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></b>
+      </button>
+      <ul class="fc-app-list" id="fc-app-list" aria-label="选择应用">
+        <li>
+          <button type="button" data-app="box" class="is-selected"><i aria-hidden="true"></i>Linx Box <em>运行中</em></button>
+        </li>
+      </ul>
+    </div>
+    <div class="fc-row"><span>设备</span><b><i aria-hidden="true"></i>Linx 设备 · 在线</b></div>
+    <div class="fc-row"><span>最近动态</span><b id="fc-last">登录校验修复 · 运行中</b></div>
+    <div class="fc-row"><span>待执行指令</span><b>0 条</b></div>
+  </div>
+  <div class="fc-actions">
+    <button class="btn btn-primary" id="btn-open-main" type="button">打开主界面</button>
+    <button class="btn btn-quiet" id="btn-pause" type="button">暂停提醒</button>
+  </div>
+</aside>
+<button class="float-ball" id="float-ball" type="button" aria-label="Linx AI 悬浮窗" aria-expanded="false">
+  <span class="f-dot" aria-hidden="true"></span>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28"/><path d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><path d="M11.9 7.2a7 7 0 0 1 0 9.6" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8"/></svg>
+</button>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = {
+    view: "pair",            // pair | pairing | home | settings
+    paired: false,
+    deviceMac: null,
+    floatOpen: false,
+    paused: false,
+    pairingTimer: null,
+    unpairArmed: false,
+    switches: { startup: true, float: true }
+  };
+
+  var views = document.querySelectorAll(".view");
+  var headPill = document.getElementById("head-pill");
+  var headPillTxt = document.getElementById("head-pill-txt");
+  var appHead = document.querySelector(".app-head");
+  var appFoot = document.getElementById("app-foot");
+  var floatCard = document.getElementById("float-card");
+  var floatBall = document.getElementById("float-ball");
+  var toastEl = document.getElementById("toast");
+  var toastTimer = null;
+
+  var VIEW_NAMES = ["pair", "pairing", "home", "settings"];
+
+  function viewFromHash() {
+    var h = (location.hash || "").replace(/^#/, "");
+    return VIEW_NAMES.indexOf(h) >= 0 ? h : "pair";
+  }
+
+  /* 外层 Linx AI 应用栏：选中态跟随当前应用 */
+  function syncRail() {
+    var target = state.view === "settings" ? "settings" : "box";
+    document.querySelectorAll(".rail-item").forEach(function (btn) {
+      btn.classList.toggle("is-active", btn.dataset.app === target);
+      if (btn.dataset.app === target) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
+    });
+  }
+
+  /* ---------- 视图切换 ---------- */
+  function go(view) {
+    state.view = view;
+    views.forEach(function (el) {
+      el.classList.toggle("is-active", el.dataset.view === view);
+    });
+    updatePill();
+    syncRail();
+    syncHead();
+    if (location.hash !== "#" + view) {
+      try { history.replaceState(null, "", "#" + view); } catch (e) { location.hash = view; }
+    }
+    var scroller = document.querySelector(".app-scroll");
+    if (scroller) scroller.scrollTop = 0;
+  }
+
+  function updatePill() {
+    var paired = state.view === "home" || state.paired;
+    headPill.classList.toggle("is-off", !paired);
+    headPillTxt.textContent = paired ? "已配对 · 设备在线" : "未配对 · 等待设备";
+    headPill.setAttribute("aria-label", paired ? "已配对，设备在线" : "未配对");
+  }
+
+  /* 全局设置页：隐藏应用头部与设备状态（标题在内容区已有），保留窗口标题栏 */
+  function syncHead() {
+    var isGlobal = state.view === "settings";
+    appHead.style.display = isGlobal ? "none" : "";
+    headPill.style.display = isGlobal ? "none" : "";
+    appFoot.style.display = isGlobal ? "none" : "";
+  }
+
+  /* ---------- Toast ---------- */
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("is-visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toastEl.classList.remove("is-visible");
+    }, 2400);
+  }
+
+  /* ---------- 配对流程 ---------- */
+  function startPair() {
+    var input = document.getElementById("mac-input");
+    var mac = (input.value || "").trim().toUpperCase();
+    if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac)) {
+      toast("请输入正确的 MAC 地址，如 A4:C1:38:5B:2A:9E");
+      input.focus();
+      return;
+    }
+    state.deviceMac = mac;
+    var note = document.getElementById("pairing-note");
+    if (note) note.textContent = "已向 " + mac + " 发起连接 · 正在建立安全连接";
+    go("pairing");
+    state.pairingTimer = setTimeout(function () {
+      state.paired = true;
+      var homeMac = document.getElementById("home-mac");
+      if (homeMac) homeMac.textContent = state.deviceMac;
+      go("home");
+      toast("配对成功 · Linx 设备已连接这台 Mac");
+    }, 5200);
+  }
+  function cancelPair() {
+    clearTimeout(state.pairingTimer);
+    state.paired = false;
+    go("pair");
+    toast("已取消配对");
+  }
+  function unpair() {
+    if (!state.unpairArmed) {
+      state.unpairArmed = true;
+      toast("再次点击确认退出配对");
+      setTimeout(function () { state.unpairArmed = false; }, 2600);
+      return;
+    }
+    state.unpairArmed = false;
+    clearTimeout(state.pairingTimer);
+    state.paired = false;
+    state.deviceMac = null;
+    var homeMac = document.getElementById("home-mac");
+    if (homeMac) homeMac.textContent = "—";
+    go("pair");
+    toast("已退出配对 · 设备不再连接这台 Mac");
+  }
+
+  /* ---------- 悬浮窗 ---------- */
+  function setFloat(open) {
+    state.floatOpen = open;
+    floatCard.classList.toggle("is-open", open);
+    floatBall.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function openMain() {
+    setFloat(false);
+    go(state.paired ? "home" : "pair");
+  }
+
+  function togglePause() {
+    state.paused = !state.paused;
+    var btn = document.getElementById("btn-pause");
+    btn.textContent = state.paused ? "恢复提醒" : "暂停提醒";
+    floatBall.classList.toggle("is-paused", state.paused);
+    document.getElementById("fc-last").textContent = state.paused
+      ? "已暂停 · 不再提醒动态"
+      : "登录校验修复 · 运行中";
+    toast(state.paused ? "已暂停提醒 · 设备动态不再弹出" : "已恢复提醒");
+  }
+
+  /* 悬浮球拖拽（指针事件，区分点击与拖动） */
+  (function initDrag() {
+    var moved = false, startX = 0, startY = 0, baseX = 0, baseY = 0;
+    floatBall.addEventListener("pointerdown", function (e) {
+      moved = false;
+      startX = e.clientX; startY = e.clientY;
+      var r = floatBall.getBoundingClientRect();
+      baseX = r.left; baseY = r.top;
+      floatBall.setPointerCapture(e.pointerId);
+    });
+    floatBall.addEventListener("pointermove", function (e) {
+      if (!floatBall.hasPointerCapture(e.pointerId)) return;
+      var dx = e.clientX - startX, dy = e.clientY - startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      if (!moved) return;
+      var x = Math.min(Math.max(baseX + dx, 8), window.innerWidth - 62);
+      var y = Math.min(Math.max(baseY + dy, 8), window.innerHeight - 62);
+      floatBall.style.left = x + "px";
+      floatBall.style.top = y + "px";
+      floatBall.style.right = "auto";
+      floatBall.style.bottom = "auto";
+    });
+    floatBall.addEventListener("pointerup", function () {
+      if (!moved) setFloat(!state.floatOpen);
+    });
+  })();
+
+  /* ---------- 设置开关 ---------- */
+  document.querySelectorAll("[data-switch]").forEach(function (sw) {
+    sw.addEventListener("click", function () {
+      var key = sw.dataset.switch;
+      state.switches[key] = !state.switches[key];
+      sw.classList.toggle("is-on", state.switches[key]);
+      sw.setAttribute("aria-checked", state.switches[key] ? "true" : "false");
+      toast(key === "startup" ? (state.switches[key] ? "已开启开机自启" : "已关闭开机自启")
+          : (state.switches[key] ? "已开启悬浮窗" : "已关闭悬浮窗"));
+    });
+  });
+
+  /* ---------- 事件绑定 ---------- */
+  document.getElementById("btn-start").addEventListener("click", startPair);
+  document.getElementById("btn-cancel").addEventListener("click", cancelPair);
+  document.getElementById("btn-unpair").addEventListener("click", unpair);
+  document.getElementById("btn-open-main").addEventListener("click", openMain);
+  document.getElementById("btn-pause").addEventListener("click", togglePause);
+
+  /* 悬浮卡：应用选择器 */
+  var fcApp = document.getElementById("fc-app");
+  var fcAppList = document.getElementById("fc-app-list");
+  function fcAppClose() {
+    fcAppList.classList.remove("is-open");
+    fcApp.setAttribute("aria-expanded", "false");
+  }
+  fcApp.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var open = fcAppList.classList.toggle("is-open");
+    fcApp.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  fcAppList.querySelectorAll("button[data-app]").forEach(function (item) {
+    item.addEventListener("click", function (e) {
+      e.stopPropagation();
+      fcAppList.querySelectorAll("button[data-app]").forEach(function (b) { b.classList.remove("is-selected"); });
+      item.classList.add("is-selected");
+      fcApp.querySelector("b").childNodes[0].nodeValue = item.textContent.replace(/\s*运行中\s*$/, "") + " · 运行中";
+      fcAppClose();
+    });
+  });
+  document.addEventListener("click", function () {
+    if (fcAppList.classList.contains("is-open")) fcAppClose();
+  });
+
+  /* MAC 地址输入：自动转大写 */
+  var macInput = document.getElementById("mac-input");
+  if (macInput) {
+    macInput.addEventListener("input", function () {
+      macInput.value = macInput.value.toUpperCase();
+    });
+    macInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") startPair();
+    });
+  }
+
+  /* 设置页返回（回到 Linx Box 主界面） */
+  document.querySelectorAll("[data-back='main']").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      go(state.paired ? "home" : "pair");
+    });
+  });
+
+  /* 全局设置：外观切换 */
+  document.querySelectorAll(".seg-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".seg-btn").forEach(function (b) { b.classList.remove("is-active"); });
+      btn.classList.add("is-active");
+      toast(btn.dataset.theme === "warm" ? "外观 · 暖白（跟随设备端）" : "外观 · 深色（演示）");
+    });
+  });
+
+  /* 外层 Linx AI 应用栏切换 */
+  document.querySelectorAll(".rail-item").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var app = btn.dataset.app;
+      if (app === "box") {
+        go(state.paired ? "home" : "pair");
+      } else {
+        go("settings");
+      }
+    });
+  });
+
+  /* 配对中按 Esc 取消 */
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      if (state.view === "pairing") cancelPair();
+      else if (state.floatOpen) setFloat(false);
+    }
+  });
+
+  /* 支持深链视图与浏览器前进后退 */
+  window.addEventListener("hashchange", function () {
+    go(viewFromHash());
+  });
+
+  go(viewFromHash());
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,350 @@
+/* ============================================================
+   灵矽 AI 悬浮窗
+   面板尺寸与 main/security.ts 的 FLOAT_PANEL_* 保持一致
+   ============================================================ */
+:root {
+  color-scheme: light;
+  --paper: #f7f2e8;
+  --paper-deep: #efe9dc;
+  --ink: #292722;
+  --muted: #746b5f;
+  --line: #d8d0c3;
+  --line-soft: #e6dfd2;
+  --accent: #d94f28;
+  --accent-deep: #ad391c;
+  --selected: #f8e0cf;
+  --white: #ffffff;
+  --shadow: rgb(41 39 34 / 16%);
+  --font:
+    'PingFang SC', 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', -apple-system,
+    sans-serif;
+  --mono: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font: 14px/1.55 var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* —— 展开卡片 —— */
+.float-card {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  /* The card is sized by its content. The ball sits in the bottom-right
+     corner of the panel, so the panel is tall enough to hold both. */
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 10px 30px var(--shadow);
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  pointer-events: none;
+  overflow: hidden;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.float-card.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.fc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+
+.fc-head div {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.fc-head strong {
+  font-size: 14px;
+}
+
+.fc-head span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.fc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The rows must stay readable: the body grows past the panel instead of
+     squashing them, so the card never hides a status row. */
+  flex: 0 0 auto;
+  padding: 12px 15px;
+  overflow-y: auto;
+}
+
+.fc-app-wrap {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.fc-app {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--white);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.fc-app span {
+  color: var(--muted);
+}
+
+.fc-app b {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+}
+
+.fc-app svg {
+  width: 15px;
+  height: 15px;
+}
+
+.fc-app-list {
+  display: none;
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--white);
+  box-shadow: 0 8px 22px var(--shadow);
+}
+
+.fc-app-list.is-open {
+  display: block;
+}
+
+.fc-app-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+
+.fc-app-list button:hover {
+  background: var(--line-soft);
+}
+
+.fc-app-list button.is-selected {
+  background: var(--selected);
+  font-weight: 600;
+}
+
+.fc-app-list i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.fc-app-list em {
+  margin-left: auto;
+  font-style: normal;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+
+.fc-row:last-child {
+  border-bottom: none;
+}
+
+.fc-row > span {
+  color: var(--muted);
+}
+
+.fc-row b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.fc-row b i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.fc-row b i.is-on {
+  background: var(--accent);
+}
+
+.fc-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 15px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.btn {
+  padding: 9px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--white);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+
+.btn-quiet {
+  background: transparent;
+}
+
+/* —— 常驻小球 —— */
+.float-ball {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.float-ball:active {
+  cursor: grabbing;
+}
+
+.float-ball svg {
+  width: 46px;
+  height: 46px;
+  filter: drop-shadow(0 3px 8px var(--shadow));
+}
+
+.f-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.float-ball.is-paused .f-dot {
+  background: var(--muted);
+}
+
+/* —— Toast —— */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translate(-50%, 10px);
+  padding: 9px 16px;
+  border-radius: 9px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

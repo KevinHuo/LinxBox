@@ -12,12 +12,16 @@ import { z } from 'zod';
 
 export {
   IPC_CHANNELS,
+  IPC_EVENT_CHANNELS,
+  IPC_EVENT_CHANNEL_LIST,
   IPC_METHODS,
   IPC_NAMESPACE,
   IPC_VERSION,
   channelFor,
   isAllowedChannel,
+  isAllowedEventChannel,
   type IpcChannel,
+  type IpcEventChannel,
   type IpcMethod,
 } from './ipc-channels.js';
 
@@ -38,6 +42,8 @@ const connectionSaveSchema = z
     computerName: z.string().min(1).max(128),
   })
   .strict();
+
+const deviceBindSchema = z.object({ macAddress: z.string().min(1).max(32) }).strict();
 
 /**
  * The project root is deliberately absent.
@@ -128,12 +134,51 @@ const codexConversationReadSchema = z
   })
   .strict();
 
+/**
+ * Appearance preference.
+ *
+ * The theme is a local presentation choice. It never leaves the machine and
+ * never changes what the Desktop executes.
+ */
+export const appearanceThemeSchema = z.enum(['warm', 'dark']);
+
+/** The appearance themes the Desktop offers. */
+export type AppearanceTheme = z.infer<typeof appearanceThemeSchema>;
+
+/**
+ * The floating window position.
+ *
+ * The renderer reports where the user dropped the ball. The main process
+ * clamps it to the display work area before applying it.
+ */
+const floatMoveSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+  })
+  .strict();
+
+const floatSetVisibleSchema = z
+  .object({
+    visible: z.boolean(),
+  })
+  .strict();
+
+const appearanceSaveSchema = z
+  .object({
+    theme: appearanceThemeSchema,
+  })
+  .strict();
+
 export type ConnectionSaveInput = z.infer<typeof connectionSaveSchema>;
 export type ProjectGrantInput = z.infer<typeof projectGrantSchema>;
 export type ProjectRevokeInput = z.infer<typeof projectRevokeSchema>;
 export type TaskGetInput = z.infer<typeof taskGetSchema>;
 export type TaskCancelInput = z.infer<typeof taskCancelSchema>;
 export type TaskListInput = z.infer<typeof taskListSchema>;
+export type AppearanceSaveInput = z.infer<typeof appearanceSaveSchema>;
+export type FloatMoveInput = z.infer<typeof floatMoveSchema>;
+export type FloatSetVisibleInput = z.infer<typeof floatSetVisibleSchema>;
 
 export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.probe': codexProbeSchema,
@@ -147,6 +192,7 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'codex.conversation.read': codexConversationReadSchema,
   'connection.read': emptyPayloadSchema,
   'connection.save': connectionSaveSchema,
+  'device.bind': deviceBindSchema,
   'connection.test': emptyPayloadSchema,
   'projects.list': emptyPayloadSchema,
   'projects.grant': projectGrantSchema,
@@ -155,6 +201,12 @@ export const IPC_REQUEST_SCHEMAS: Readonly<Record<IpcMethod, z.ZodType>> = {
   'tasks.get': taskGetSchema,
   'tasks.cancel': taskCancelSchema,
   'diagnostics.read': emptyPayloadSchema,
+  'appearance.read': emptyPayloadSchema,
+  'appearance.save': appearanceSaveSchema,
+  'window.float.read': emptyPayloadSchema,
+  'window.float.setVisible': floatSetVisibleSchema,
+  'window.float.move': floatMoveSchema,
+  'window.main.focus': emptyPayloadSchema,
 };
 
 /* ------------------------------------------------------------------ */
@@ -174,6 +226,22 @@ export interface ConnectionView {
   readonly tokenHint: string | null;
   readonly computerName: string | null;
 }
+
+/**
+ * The live part of the connection state.
+ *
+ * The main process reports what the Gateway client actually knows: whether the
+ * socket is up, and the last error it hit.
+ */
+export interface GatewayStatusView {
+  readonly configured: boolean;
+  readonly connected: boolean;
+  readonly lastError: string | null;
+  readonly lastActivityAt: string | null;
+}
+
+/** The connection facts and the live status together. */
+export interface ConnectionStateView extends ConnectionView, GatewayStatusView {}
 
 /**
  * A locally authorised project.
@@ -338,6 +406,27 @@ export interface CodexTurnView {
   readonly error: string | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
+}
+
+/**
+ * Appearance preference shown by the renderer.
+ *
+ * `warm` follows the hardware-side palette; `dark` is the desktop dark theme.
+ * Both are presentation only.
+ */
+export interface AppearanceView {
+  readonly theme: AppearanceTheme;
+}
+
+/**
+ * Floating window facts.
+ *
+ * The position is reported in screen coordinates so the renderer can place the
+ * ball before the first paint. It is `null` until the user moves the ball.
+ */
+export interface FloatWindowView {
+  readonly visible: boolean;
+  readonly position: { readonly x: number; readonly y: number } | null;
 }
 
 /* ------------------------------------------------------------------ */

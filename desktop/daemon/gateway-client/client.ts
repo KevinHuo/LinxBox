@@ -142,8 +142,8 @@ export class GatewayClient {
 
     socket.addEventListener('open', () => {
       this.attempts = 0;
-      this.emit({ type: 'connected' });
       this.sendHello();
+      this.emit({ type: 'connected' });
       this.startHeartbeat();
     });
 

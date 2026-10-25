@@ -30,6 +30,12 @@ describe('preload bridge', () => {
     await api.getTask({ taskId: 'tsk_1' });
     await api.cancelTask({ taskId: 'tsk_1' });
     await api.readDiagnostics();
+    await api.readAppearance();
+    await api.saveAppearance({ theme: 'dark' });
+    await api.readFloatWindow();
+    await api.setFloatWindowVisible({ visible: true });
+    await api.moveFloatWindow({ x: 10, y: 20 });
+    await api.focusMainWindow();
 
     expect(calls.map((call) => call.channel)).toEqual([
       'linxbox.v1.codex.probe',
@@ -51,6 +57,12 @@ describe('preload bridge', () => {
       'linxbox.v1.tasks.get',
       'linxbox.v1.tasks.cancel',
       'linxbox.v1.diagnostics.read',
+      'linxbox.v1.appearance.read',
+      'linxbox.v1.appearance.save',
+      'linxbox.v1.window.float.read',
+      'linxbox.v1.window.float.setVisible',
+      'linxbox.v1.window.float.move',
+      'linxbox.v1.window.main.focus',
     ]);
   });
 
@@ -59,19 +71,28 @@ describe('preload bridge', () => {
     expect(Object.keys(api).sort()).toEqual(
       [
         'cancelTask',
+        'bindDevice',
         'continueCodexSession',
         'getTask',
         'interruptCodexTurn',
         'listCodexProjects',
         'listCodexSessions',
+        'moveFloatWindow',
+        'focusMainWindow',
+        'onConnectionChanged',
+        'onTaskChanged',
+        'readAppearance',
         'readCodexConversation',
         'probeCodex',
         'readCodexSession',
         'readCodexTurn',
+        'readConnection',
+        'readFloatWindow',
         'grantProject',
         'listProjects',
         'listTasks',
-        'readConnection',
+        'saveAppearance',
+        'setFloatWindowVisible',
         'startCodexTurn',
         'readDiagnostics',
         'revokeProject',
@@ -85,7 +106,35 @@ describe('preload bridge', () => {
 
   it('covers every allowlisted method', () => {
     const api = createLinxboxApi(() => Promise.resolve(null));
-    expect(Object.keys(api)).toHaveLength(IPC_METHODS.length);
+    // The event subscription is not an invocable method, so the bridge holds
+    // one method more than the invocable channel list.
+    expect(Object.keys(api)).toHaveLength(IPC_METHODS.length + 2);
+  });
+
+  it('subscribes to the connection event on the named channel', () => {
+    const calls: { channel: string }[] = [];
+    const api = createLinxboxApi(
+      () => Promise.resolve(null),
+      (channel) => {
+        calls.push({ channel });
+        return () => {};
+      },
+    );
+    api.onConnectionChanged(() => {});
+    expect(calls[0]?.channel).toBe('linxbox.v1.connection.changed');
+  });
+
+  it('does not subscribe to an arbitrary channel', () => {
+    const calls: { channel: string }[] = [];
+    const api = createLinxboxApi(
+      () => Promise.resolve(null),
+      (channel) => {
+        calls.push({ channel });
+        return () => {};
+      },
+    );
+    api.onConnectionChanged(() => {});
+    expect(calls).toHaveLength(1);
   });
 
   it('sends an empty payload for read-only methods', async () => {

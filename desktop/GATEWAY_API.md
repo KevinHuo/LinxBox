@@ -81,14 +81,16 @@ WebSocket close code `4401` 关闭连接。
 
 ### 4.1 当前运行链路支持情况
 
-| `type`           | 类型中已声明 | 当前 WSS client 接收 | 当前行为                                                             |
-| ---------------- | ------------ | -------------------- | -------------------------------------------------------------------- |
-| `task.dispatch`  | 是           | **是**               | 校验后交给 `TaskDispatcher`，启动本机 Codex turn                     |
-| `task.cancel`    | 是           | **是**               | 当前只返回 `accepted` disposition，尚未真正 interrupt Codex          |
-| `project.upsert` | 是           | 否                   | 另一套严格 validator 可解析，但当前 `GatewayClient` 会当未知类型拒绝 |
-| `project.revoke` | 是           | 否                   | 另一套严格 validator 可解析，但当前 `GatewayClient` 会当未知类型拒绝 |
+| `type`                       | 类型中已声明 | 当前 WSS client 接收 | 当前行为                                                             |
+| ---------------------------- | ------------ | -------------------- | -------------------------------------------------------------------- |
+| `task.dispatch`              | 是           | **是**               | 校验后交给 `TaskDispatcher`，启动本机 Codex turn                     |
+| `task.cancel`                | 是           | **是**               | 当前只返回 `accepted` disposition，尚未真正 interrupt Codex          |
+| `agent_sessions.sync.result` | 是           | **是**               | 回答 Desktop 发出的会话目录全量同步；不进入任务 dispatcher           |
+| `project.upsert`             | 是           | 否                   | 另一套严格 validator 可解析，但当前 `GatewayClient` 会当未知类型拒绝 |
+| `project.revoke`             | 是           | 否                   | 另一套严格 validator 可解析，但当前 `GatewayClient` 会当未知类型拒绝 |
 
-Gateway 当前联调时只应下发 `task.dispatch` 和 `task.cancel`。
+Gateway 当前联调时可下发 `task.dispatch`、`task.cancel`，并回答
+`agent_sessions.sync.result`。
 
 ### 4.2 `task.dispatch`
 
@@ -216,13 +218,13 @@ payload：
 | `task.interrupted`       | 是         | **E2E wiring**    | provider 无法证明成功时产生                                 |
 | `task.cancelled`         | 是         | 尚未产生          | 类型与构造器存在                                            |
 | `task.approval_required` | 是         | 尚未产生          | 类型与构造器存在                                            |
+| `agent_sessions.sync`    | 是         | **Electron main** | 全量发布已授权项目内的 Codex 会话目录，不含本机绝对路径     |
 | `presentation.upsert`    | 仅类型声明 | 否                | 未接入                                                      |
 | `presentation.revoke`    | 仅类型声明 | 否                | 未接入                                                      |
 | `command.receipt`        | 仅类型声明 | 否                | 未接入                                                      |
 
-这里的“E2E wiring”指 `scripts/e2e-wss-codex.mjs` 已将 dispatcher 输出发送到 mock Gateway；
-当前 Electron `main/index.ts` 尚未实例化 `GatewayClient` 和 `TaskDispatcher`，因此不能把这些消息描述为
-已在桌面应用真实运行。
+Electron main 当前已实例化 `GatewayClient` 和 `TaskDispatcher`。真实云端 Gateway、固件侧目录读取与
+MCP 路由仍未实现；`agent_sessions.sync` 目前只与本机 mock Gateway 完成联调。
 
 ### 5.2 `client.hello`
 

@@ -20,11 +20,25 @@ Gateway，也没有创建业务数据库。这些本地结果不能描述为生�
 desktop/
 ├── contracts/        契约草稿切片（SPEC-0001 占位，待迁出）
 ├── daemon/           Gateway/Codex adapter 与领域层：delivery / policy / projector / registry / schema
-├── main/             Electron 主进程：安全策略、IPC allowlist、本地状态
+├── main/             Electron 主进程：安全策略、IPC allowlist、本地状态、悬浮窗与外观偏好
 ├── preload/          预加载桥接：固定方法集，无通用 invoke
-├── renderer/         渲染层：展示模型 + 一次性用户意图
+├── renderer/         渲染层：主窗口与悬浮窗的展示模型 + 一次性用户意图
 └── shared/           IPC 契约与脱敏日志
 ```
+
+## 界面结构
+
+客户端采用「灵矽 AI 应用栏 + 灵矽 Box 应用」两层结构，配色沿用固件端暖白色板（`firmware/main/linx_ui.c` 的 `COLOR_*`）。
+
+主窗口三个视图：
+
+| 视图       | 内容                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| 未配对     | 三步配对引导与设备 MAC 输入；配对协议评审前只做界面入口                                   |
+| 已配对主页 | 最近任务列表与设备面板（连接状态、配对时间、MAC、最近同步）                               |
+| 全局设置   | 灵矽连接（Gateway 地址与 token）、本地项目授权、外观（暖白 / 深色）、开机自启、悬浮窗开关 |
+
+悬浮窗是独立的透明置顶 `BrowserWindow`：右下角常驻小球，点击展开状态卡片，拖拽可移动位置。位置由主进程持有并限制在显示器工作区内。
 
 ## 环境要求
 
@@ -62,12 +76,12 @@ pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statem
 
 | 指标       | 覆盖率 |
 | ---------- | -----: |
-| Statements | 98.35% |
-| Branches   | 93.48% |
-| Functions  | 98.55% |
-| Lines      | 98.33% |
+| Statements | 97.10% |
+| Branches   | 91.67% |
+| Functions  | 98.42% |
+| Lines      | 97.25% |
 
-最近验证：2026-10-24，24 个测试文件通过、1 个跳过；485 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+最近验证：2026-10-25，29 个测试文件通过、1 个跳过；586 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
 
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 
@@ -112,6 +126,8 @@ node node_modules/.pnpm/electron@*/node_modules/electron/install.js
 - 领域纯函数层：delivery 去重与 disposition、任务状态转换、grant/realpath/R0-R3 授权、三级结果投影、项目注册表、入站帧校验、SQLite schema 与迁移
 - **真实 Codex 接入**：`codex-adapter` 用 stdio JSON-RPC 驱动本机 Codex app-server（initialize / thread start-resume / turn start-interrupt / 事件映射 / 崩溃收敛），不读 Codex 私有数据库
 - **真实 Gateway 链路**：出站 WSS 客户端 + `task.dispatch` 调度 + mock Gateway 联调脚本
+- **WSS 指令不重复授权**：Electron 收到 Gateway 的 `task.dispatch` 后直接交给本机 Codex；Electron 的本地项目目录授权不是执行前置条件。已发布会话沿用 Codex 自己记录的工作目录，普通新任务使用 Desktop 默认工作目录。
+- **会话目录联调**：Electron 把已授权项目内的 Codex 会话以 `agent_sessions.sync` 全量同步给 mock Gateway，控制台按会话下达续接任务
 - **本机会话浏览**：读 Codex 的会话列表与聊天记录（`thread/list` / `thread/read`），**本地读取、不调用模型，没有额度也能用**
 
 未实现（属于后续 Slice）：
@@ -215,6 +231,90 @@ pnpm mock:gateway        # 单独跑 mock Gateway，供 Electron 客户端联调
 `disposition` 取 `accepted | duplicate | expired | rejected`；`accepted` 只表示"已落盘并通过
 初检"，不等于 started 或 succeeded。同一个 `message_id` 重放返回 `duplicate`，绝不创建第二个
 turn。
+
+### 可视化 Mock Gateway 控制台
+
+`pnpm mock:gateway` 只能把帧打印到终端。要"看得见收到的消息"并"手动下达指令"，用带控制台的版本：
+
+```bash
+pnpm mock:console          # 默认 8787 端口
+pnpm mock:console -- --port 9000 --token my-token
+```
+
+同一个端口上开两个端点：
+
+| 端点                                     | 用途                                          |
+| ---------------------------------------- | --------------------------------------------- |
+| `ws://127.0.0.1:8787/v1/clients/connect` | Desktop 的出站连接（与真实 Gateway 同一路径） |
+| `http://127.0.0.1:8787/`                 | 浏览器控制台                                  |
+
+控制台能做三件事：
+
+- **看消息流**：实时显示 Desktop 发来的每一帧（`client.hello` / `client.heartbeat` / `task.ack` /
+  任务事件），点任意一条看完整 JSON。方向用箭头标记：↓ 橙底是 Desktop → 云端，↑ 灰底是云端 →
+  Desktop。
+- **下达指令**：Electron 授权目录后会同步该目录下的 Codex 会话；在控制台选择会话、填写 prompt 并点
+  「下达 task.dispatch」，mock 根据本地发布的会话映射自动填写 `project_id` 与续接上下文。Desktop 的 ack
+  与任务事件随即回到消息流。
+- **取消任务**：填 `task_id` 下达 `task.cancel`。
+
+实时推送走 SSE（`/events`），因为控制台只需要服务端单向推给浏览器。
+
+配套的联调脚本会启动真实 Desktop 侧（`GatewayClient` + `TaskDispatcher` + 本机 Codex
+app-server）并连上控制台：
+
+```bash
+pnpm build
+pnpm mock:console        # 终端 A：起控制台
+pnpm e2e:mock-console    # 终端 B：起 Desktop 侧，浏览器打开 http://127.0.0.1:8787/
+```
+
+先在 Electron 设置页授权一个包含既有 Codex 会话的目录。控制台收到 `agent_sessions.sync` 后会出现会话
+选择框；选中会话并点「下达 task.dispatch」，左侧消息流会依次出现 `task.started`、`task.ack
+(disposition=accepted)`，最终由本机 Codex 给出结果。Desktop 忙时再下发一条会得到
+`disposition=rejected`，这是真实的单任务串行约束，不是模拟。
+
+> 这个服务只用于本机联调：没有鉴权、只监听 `127.0.0.1`、不落盘，不是生产实现。
+
+### 客户端怎么连上 mock Gateway
+
+客户端是**主动发起**连接的（Desktop 只拨号，从不监听端口）。在客户端「设置 → 灵矽连接」里填三项，点「保存并连接」：
+
+| 字段           | 填什么                                                 |
+| -------------- | ------------------------------------------------------ |
+| Gateway 地址   | `ws://127.0.0.1:8787/v1/clients/connect`               |
+| access_token   | `demo-client-token`（与 mock 服务启动时的 token 一致） |
+| 这台电脑的名称 | 任意，例如「工作电脑」                                 |
+
+地址只填到端口即可：客户端会自动补上 `/v1/clients/connect`。token 通过 **WebSocket 子协议**
+（`linxbox-token.<token>`）发送，不写进 URL、不进日志、不进任何帧的 payload。
+
+保存后：
+
+- 设置页右上角显示「已连接」，主窗口右上角徽章变成「已配对 · 设备在线」；
+- mock 控制台的左侧消息流立刻出现 ↓ `client.hello`，随后是心跳；
+- 在控制台点「下达 task.dispatch」，客户端会真的去跑本机 Codex，ack 与任务事件回到消息流。
+
+连接配置会存到应用自己的 user-data 目录（`connection.json`，权限 0600），**下次启动自动恢复并重连**，
+不用再填一遍。token 留空表示沿用已存的那个。
+
+状态是**推送**的：主进程在连接状态变化时主动通知渲染层，不用等轮询。
+
+**连不上时先看三处**：设置页的「最近错误」、客户端日志（`pnpm dev` 的输出）、mock 服务端日志
+（`pnpm mock:console` 的输出）。token 不一致时服务端会以 4401 关闭连接。
+
+### 授权本地项目
+
+远程任务要能在本机执行，得先在这台 Mac 上授权一个目录：**设置 → 本地项目 → 授权目录**，在系统
+目录选择器里选一个文件夹。没授权时，远程下发的任务会被本地授权检查拒绝（`disposition=rejected`，
+「项目未授权」）。
+
+> 目录只能由主进程的系统选择器给出，渲染层无法传入路径——这是安全边界，自动化脚本无法代替这一步。
+> 授权后 Electron 会枚举该目录下的既有 Codex 会话，并把不含绝对路径的会话目录同步给 mock Gateway。
+> 控制台只能选择这份目录里的会话，不再要求人工复制 `project_id`；未由本机发布的 `thread_id` 会被拒绝。
+
+项目授权当前仍是进程内状态，Electron 重启后需要重新授权目录。真实云端 Gateway、固件列表读取和灵矽
+MCP 路由仍属于 Issue #14 的后续实现；这里验证的是同一消息语义下的本机 mock 闭环。
 
 ### 本机接入的安全边界
 
