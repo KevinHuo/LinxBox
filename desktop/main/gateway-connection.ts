@@ -294,20 +294,26 @@ export class GatewayConnectionManager {
   }
 
   private async publishAvailableMessage(client: GatewayClient, threadId: string): Promise<void> {
-    try {
-      const session = await this.options.session.readSession(threadId);
-      const message = session?.turns
-        .flatMap((turn) => turn.messages)
-        .reverse()
-        .find((item) => item.role === 'assistant' && item.id.length > 0);
-      if (message === undefined || this.client !== client || !this.connected) return;
-      client.send(buildMessageAvailableFrame({
-        messageId: this.nextMessageId(), sequence: this.nextSequence(),
-        agentSessionId: `codex_${threadId}`,
-        availableMessageId: message.id, sentAt: new Date().toISOString(),
-      }));
-    } catch {
-      // A transcript read failure must not fabricate a message ID.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+      try {
+        const session = await this.options.session.readSession(threadId);
+        const message = session?.turns
+          .flatMap((turn) => turn.messages)
+          .reverse()
+          .find((item) => item.role === 'assistant' && item.id.length > 0);
+        if (message === undefined) continue;
+        if (this.client !== client || !this.connected) return;
+        client.send(buildMessageAvailableFrame({
+          messageId: this.nextMessageId(), sequence: this.nextSequence(),
+          agentSessionId: `codex_${threadId}`,
+          availableMessageId: message.id, sentAt: new Date().toISOString(),
+        }));
+        return;
+      } catch {
+        // Retry briefly because the provider may persist the final transcript
+        // just after emitting its terminal event.
+      }
     }
   }
 
