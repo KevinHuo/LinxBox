@@ -94,4 +94,4 @@ app = (ROOT / "main/main.c").read_text()
 for forbidden in ("bsp_audio_init(", "bsp_battery_init(", "esp_wifi_init(", "nimble_port_init("):
     assert forbidden not in app, f"UI entrypoint directly initializes slow hardware: {forbidden}"
 print(f"LinX resources: PASS ({len(points)} glyphs × 7 CJK variants; 95 ASCII × 28px bold; "
-      "exact metrics/cmaps/source hashes; 9 RGB565 views; deferred radio/audio startup)")
+      "exact metrics/cmaps/source hashes; 9 retained RGB565 fixtures; deferred radio/audio startup)")

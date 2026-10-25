@@ -149,6 +149,10 @@ int esp_http_client_get_status_code(esp_http_client_handle_t client);
 esp_err_t esp_http_client_cleanup(esp_http_client_handle_t client);
 
 typedef struct test_transport *esp_transport_handle_t;
+typedef struct test_tls_error *esp_tls_error_handle_t;
+esp_tls_error_handle_t esp_transport_get_error_handle(esp_transport_handle_t transport);
+int esp_transport_get_errno(esp_transport_handle_t transport);
+esp_err_t esp_tls_get_and_clear_last_error(esp_tls_error_handle_t error, int *code, int *flags);
 typedef enum {WS_TRANSPORT_OPCODES_CONT = 0, WS_TRANSPORT_OPCODES_TEXT = 1,
     WS_TRANSPORT_OPCODES_BINARY = 2, WS_TRANSPORT_OPCODES_CLOSE = 8,
     WS_TRANSPORT_OPCODES_PING = 9, WS_TRANSPORT_OPCODES_PONG = 10,
@@ -171,7 +175,9 @@ bool esp_transport_ws_get_fin_flag(esp_transport_handle_t transport);
 typedef int esp_log_level_t;
 #define ESP_LOG_NONE 0
 #define ESP_LOGI(...) ((void)0)
+#ifndef ESP_LOGW
 #define ESP_LOGW(...) ((void)0)
+#endif
 esp_log_level_t esp_log_level_get(const char *tag);
 void esp_log_level_set(const char *tag, esp_log_level_t level);
 

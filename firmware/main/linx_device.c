@@ -17,6 +17,7 @@
 #include "esp_random.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
+#include "esp_tls.h"
 #include "esp_transport_ssl.h"
 #include "esp_transport_ws.h"
 #include "esp_wifi.h"
@@ -37,6 +38,7 @@
 #define SETUP_TIMEOUT_MS 300000
 #define SETUP_SUCCESS_MS 3000
 #define RESPONSE_TIMEOUT_MS 30000
+#define IDLE_TIMEOUT_MS 30000
 #define SEND_TIMEOUT_MS 1000
 #define READ_TIMEOUT_MS 20
 #define FRAME_TIMEOUT_MS 1000
@@ -51,6 +53,17 @@ static atomic_uint active_generation;
 static atomic_bool active;
 static atomic_bool listening;
 static atomic_bool finish_pending;
+/* 软取消与硬释放都不能被随后的 PREPARE 快照覆盖。 */
+static atomic_bool discard_transport;
+static atomic_bool cancel_turn_pending;
+static portMUX_TYPE command_state_lock = portMUX_INITIALIZER_UNLOCKED;
+typedef struct {
+    linx_voice_command_t command;
+    uint32_t generation;
+    linx_reply_context_t context;
+} voice_target_t;
+/* 只保留最新目标，不含密码；预热中的同目标请求可直接接管原握手。 */
+static voice_target_t requested_target;
 static portMUX_TYPE wifi_state_lock = portMUX_INITIALIZER_UNLOCKED;
 ESP_EVENT_DEFINE_BASE(LINX_WIFI_SYNC_EVENT);
 
@@ -102,6 +115,17 @@ typedef struct {
     bool hello;
     bool speaking;
     bool waiting;
+    bool submitted;
+    bool completed;
+    bool turn_active;
+    bool voice;
+    bool preparing;
+    bool draining;
+    bool drain_stopped;
+    linx_voice_command_t requested_command;
+    uint32_t handled_generation;
+    linx_reply_context_t context;
+    int64_t idle_deadline;
     unsigned frame_opcode;
     bool frame_fin;
     size_t frame_size;
@@ -110,6 +134,8 @@ typedef struct {
 
 /* SDK 停服失败时只保留这一个待收尾对象，不会另启服务。 */
 static voice_session_t *pending_cleanup;
+/* Wi-Fi 事件回调始终指向这个稳定对象，语音传输可独立释放。 */
+static voice_session_t *retained;
 
 static void clear_sensitive(void *data, size_t size)
 {
@@ -120,6 +146,30 @@ static void clear_sensitive(void *data, size_t size)
 static bool current(uint32_t generation)
 {
     return atomic_load(&active) && atomic_load(&active_generation) == generation;
+}
+
+static bool same_context(const linx_reply_context_t *left, const linx_reply_context_t *right)
+{
+    return left->scene_id == right->scene_id && left->task_id == right->task_id &&
+           left->source_turn_id == right->source_turn_id && left->image_id == right->image_id;
+}
+
+/* 连接生命期独立于页面代号；代号只限制事件发布及本条采集/播放。 */
+static bool session_current(voice_session_t *session)
+{
+    if (!session->voice) return current(session->generation);
+    if (atomic_load(&discard_transport)) return false;
+    if (session->preparing) {
+        taskENTER_CRITICAL(&command_state_lock);
+        voice_target_t target = requested_target;
+        taskEXIT_CRITICAL(&command_state_lock);
+        if (target.command != LINX_VOICE_PREPARE && target.command != LINX_VOICE_START) return false;
+        if (target.generation == atomic_load(&active_generation) && same_context(&session->context, &target.context)) {
+            session->generation = target.generation;
+            session->requested_command = target.command;
+        }
+    }
+    return true;
 }
 
 static void publish(uint32_t generation, linx_voice_state_t state, linx_voice_error_t error,
@@ -252,7 +302,7 @@ static linx_voice_error_t wifi_prepare(voice_session_t *session, bool require_id
 
 static linx_voice_error_t wifi_radio_start(voice_session_t *session)
 {
-    if (!current(session->generation)) return LINX_VOICE_OK;
+    if (!session_current(session)) return LINX_VOICE_OK;
     esp_err_t result = esp_wifi_start();
     if (result != ESP_OK) return sdk_error(result, LINX_VOICE_WIFI_FAILED);
     session->wifi_started = true;
@@ -261,7 +311,7 @@ static linx_voice_error_t wifi_radio_start(voice_session_t *session)
 
 static linx_voice_error_t wifi_connect_wait(voice_session_t *session)
 {
-    if (!current(session->generation)) return LINX_VOICE_OK;
+    if (!session_current(session)) return LINX_VOICE_OK;
     atomic_store(&session->connect_pending, true);
     esp_err_t result = esp_wifi_connect();
     if (result != ESP_OK) {
@@ -270,7 +320,7 @@ static linx_voice_error_t wifi_connect_wait(voice_session_t *session)
     }
     int64_t deadline = esp_timer_get_time() + READY_TIMEOUT_MS * 1000LL;
     if (session->setup_deadline && deadline > session->setup_deadline) deadline = session->setup_deadline;
-    while (current(session->generation) && !atomic_load(&session->connected)) {
+    while (session_current(session) && !atomic_load(&session->connected)) {
         if (atomic_load(&session->disconnected)) return LINX_VOICE_WIFI_FAILED;
         if (esp_timer_get_time() >= deadline) return LINX_VOICE_TIMEOUT;
         vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
@@ -327,11 +377,11 @@ static linx_voice_error_t wifi_scan_collect(voice_session_t *session, linx_voice
     if (scanned != ESP_OK) return sdk_error(scanned, LINX_VOICE_WIFI_FAILED);
     session->scan_started = true;
     int64_t deadline = esp_timer_get_time() + SCAN_TIMEOUT_MS * 1000LL;
-    while (current(session->generation) && !atomic_load(&session->scan_done)) {
+    while (session_current(session) && !atomic_load(&session->scan_done)) {
         if (esp_timer_get_time() >= deadline) return LINX_VOICE_TIMEOUT;
         vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
     }
-    if (!current(session->generation)) return LINX_VOICE_OK;
+    if (!session_current(session)) return LINX_VOICE_OK;
     if (atomic_load(&session->scan_failed)) return LINX_VOICE_WIFI_FAILED;
     wifi_ap_record_t records[SCAN_RECORD_CAPACITY] = {0};
     uint16_t count = SCAN_RECORD_CAPACITY;
@@ -375,10 +425,10 @@ static linx_voice_error_t wifi_scan(voice_session_t *session)
 {
     linx_voice_error_t result = wifi_prepare(session, false);
     if (result == LINX_VOICE_OK) result = wifi_radio_start(session);
-    if (result != LINX_VOICE_OK || !current(session->generation)) return result;
+    if (result != LINX_VOICE_OK || !session_current(session)) return result;
     linx_voice_event_t event;
     result = wifi_scan_collect(session, &event);
-    if (result == LINX_VOICE_OK && current(session->generation)) xQueueOverwrite(events, &event);
+    if (result == LINX_VOICE_OK && session_current(session)) xQueueOverwrite(events, &event);
     return result;
 }
 
@@ -404,11 +454,11 @@ static linx_voice_error_t wifi_quiesce(voice_session_t *session)
         return sdk_error(disconnected, LINX_VOICE_WIFI_FAILED);
     int64_t deadline = esp_timer_get_time() + CONNECT_TIMEOUT_MS * 1000LL;
     if (session->setup_deadline && deadline > session->setup_deadline) deadline = session->setup_deadline;
-    while (disconnected == ESP_OK && await_disconnect && atomic_load(&session->disconnect_count) == before && current(session->generation)) {
+    while (disconnected == ESP_OK && await_disconnect && atomic_load(&session->disconnect_count) == before && session_current(session)) {
         if (esp_timer_get_time() >= deadline) return LINX_VOICE_TIMEOUT;
         vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
     }
-    if (!current(session->generation)) return LINX_VOICE_OK;
+    if (!session_current(session)) return LINX_VOICE_OK;
     taskENTER_CRITICAL(&wifi_state_lock);
     ++session->drain_number;
     atomic_store(&session->event_drained, false);
@@ -416,7 +466,7 @@ static linx_voice_error_t wifi_quiesce(voice_session_t *session)
     esp_err_t posted = esp_event_post(LINX_WIFI_SYNC_EVENT, (int32_t)session->drain_number,
                                      &session->generation, sizeof(session->generation), 0);
     if (posted != ESP_OK) return sdk_error(posted, LINX_VOICE_WIFI_FAILED);
-    while (!atomic_load(&session->event_drained) && current(session->generation)) {
+    while (!atomic_load(&session->event_drained) && session_current(session)) {
         if (esp_timer_get_time() >= deadline) return LINX_VOICE_TIMEOUT;
         vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
     }
@@ -438,7 +488,7 @@ static linx_voice_error_t wifi_trial(voice_session_t *session, const linx_voice_
     if (configured != ESP_OK) return sdk_error(configured, LINX_VOICE_WIFI_FAILED);
     if (session->wifi_started) {
         result = wifi_quiesce(session);
-        if (result != LINX_VOICE_OK || !current(session->generation)) return result;
+        if (result != LINX_VOICE_OK || !session_current(session)) return result;
     }
     /* 每次重试都重新等待本次关联和 IP；不接受上一次网络的残留事件。 */
     taskENTER_CRITICAL(&wifi_state_lock);
@@ -455,19 +505,19 @@ static linx_voice_error_t wifi_trial(voice_session_t *session, const linx_voice_
     if (configured == ESP_OK && !session->wifi_started) result = wifi_radio_start(session);
     else if (configured != ESP_OK) result = sdk_error(configured, LINX_VOICE_WIFI_FAILED);
     if (result == LINX_VOICE_OK) result = wifi_connect_wait(session);
-    if (result == LINX_VOICE_OK && current(session->generation)) {
+    if (result == LINX_VOICE_OK && session_current(session)) {
         result = wifi_quiesce(session);
-        if (result == LINX_VOICE_OK && current(session->generation)) {
+        if (result == LINX_VOICE_OK && session_current(session)) {
             /* SDK 同值 set_config 会跳过 NVS：先在 RAM 恢复原值，制造真实配置变化。 */
             configured = esp_wifi_set_config(WIFI_IF_STA, previous);
             if (configured != ESP_OK) result = sdk_error(configured, LINX_VOICE_WIFI_FAILED);
         }
     }
-    if (result == LINX_VOICE_OK && current(session->generation)) {
+    if (result == LINX_VOICE_OK && session_current(session)) {
         configured = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
-        if (configured == ESP_OK && current(session->generation))
+        if (configured == ESP_OK && session_current(session))
             configured = esp_wifi_set_config(WIFI_IF_STA, &candidate);
-        if (configured != ESP_OK || !current(session->generation)) {
+        if (configured != ESP_OK || !session_current(session)) {
             esp_err_t restored = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
             if (restored == ESP_OK) restored = esp_wifi_set_config(WIFI_IF_STA, previous);
             result = sdk_error(restored != ESP_OK ? restored : configured, LINX_VOICE_WIFI_FAILED);
@@ -491,7 +541,7 @@ static linx_voice_error_t wifi_save(voice_session_t *session, const linx_voice_r
     esp_err_t configured = esp_wifi_get_config(WIFI_IF_STA, &previous);
     if (configured != ESP_OK) result = sdk_error(configured, LINX_VOICE_WIFI_FAILED);
     else result = wifi_trial(session, request, &previous);
-    if (result == LINX_VOICE_OK && current(session->generation))
+    if (result == LINX_VOICE_OK && session_current(session))
         publish(session->generation, LINX_VOICE_WIFI_SAVED, LINX_VOICE_OK, NULL);
     clear_sensitive(&previous, sizeof(previous));
     return result;
@@ -510,8 +560,8 @@ static linx_voice_error_t wifi_setup(voice_session_t *session)
     }
     if (result == LINX_VOICE_OK) result = wifi_radio_start(session);
     linx_voice_event_t event = {.generation = session->generation};
-    if (result == LINX_VOICE_OK && current(session->generation)) result = wifi_scan_collect(session, &event);
-    if (result != LINX_VOICE_OK || !current(session->generation)) goto done;
+    if (result == LINX_VOICE_OK && session_current(session)) result = wifi_scan_collect(session, &event);
+    if (result != LINX_VOICE_OK || !session_current(session)) goto done;
     if (esp_netif_get_handle_from_ifkey("WIFI_AP_DEF")) { result = LINX_VOICE_WIFI_FAILED; goto done; }
     esp_netif_config_t ap_config = ESP_NETIF_DEFAULT_WIFI_AP();
     session->ap_netif = esp_netif_new(&ap_config);
@@ -541,12 +591,12 @@ static linx_voice_error_t wifi_setup(voice_session_t *session)
     clear_sensitive(random, sizeof(random));
     if (configured != ESP_OK) { result = sdk_error(configured, LINX_VOICE_WIFI_FAILED); goto done; }
     result = wifi_radio_start(session);
-    if (result != LINX_VOICE_OK || !current(session->generation)) goto done;
+    if (result != LINX_VOICE_OK || !session_current(session)) goto done;
     configured = linx_wifi_portal_start(&session->portal, event.wifi_networks, event.wifi_count);
     if (configured != ESP_OK) { result = sdk_error(configured, LINX_VOICE_WIFI_FAILED); goto done; }
     event.state = LINX_VOICE_WIFI_PORTAL;
-    if (current(session->generation)) xQueueOverwrite(events, &event);
-    while (current(session->generation)) {
+    if (session_current(session)) xQueueOverwrite(events, &event);
+    while (session_current(session)) {
         if (esp_timer_get_time() >= session->setup_deadline) { result = LINX_VOICE_TIMEOUT; break; }
         linx_voice_request_t candidate = {.generation = session->generation};
         if (!linx_wifi_portal_poll(session->portal, &candidate.wifi_network, candidate.wifi_password)) {
@@ -560,14 +610,14 @@ static linx_voice_error_t wifi_setup(voice_session_t *session)
         if (result != LINX_VOICE_OK) {
             linx_wifi_portal_status(session->portal, LINX_WIFI_PORTAL_ERROR);
             event.error = result;
-            if (current(session->generation)) xQueueOverwrite(events, &event);
+            if (session_current(session)) xQueueOverwrite(events, &event);
             continue;
         }
-        if (!current(session->generation)) break;
+        if (!session_current(session)) break;
         linx_wifi_portal_status(session->portal, LINX_WIFI_PORTAL_SAVED);
         int64_t response_deadline = esp_timer_get_time() + SETUP_SUCCESS_MS * 1000LL;
         if (response_deadline > session->setup_deadline) response_deadline = session->setup_deadline;
-        while (current(session->generation) && esp_timer_get_time() < response_deadline)
+        while (session_current(session) && esp_timer_get_time() < response_deadline)
             vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
         publish(session->generation, LINX_VOICE_WIFI_SAVED, LINX_VOICE_OK, NULL);
         break;
@@ -595,7 +645,7 @@ static linx_voice_error_t trusted_time(voice_session_t *session)
     int64_t started = esp_timer_get_time();
     int64_t deadline = started + TIME_SYNC_TIMEOUT_MS * 1000LL;
     ESP_LOGI("linx_time", "Waiting for SNTP (%d ms)", TIME_SYNC_TIMEOUT_MS);
-    while (current(session->generation) && time(NULL) < 1704067200) {
+    while (session_current(session) && time(NULL) < 1704067200) {
         if (atomic_load(&session->disconnected)) return LINX_VOICE_WIFI_FAILED;
         if (esp_timer_get_time() >= deadline) {
             ESP_LOGW("linx_time", "SNTP timed out");
@@ -603,7 +653,7 @@ static linx_voice_error_t trusted_time(voice_session_t *session)
         }
         vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
     }
-    if (current(session->generation))
+    if (session_current(session))
         ESP_LOGI("linx_time", "SNTP synchronized (%lld ms)", (long long)((esp_timer_get_time() - started) / 1000));
     return LINX_VOICE_OK;
 }
@@ -611,7 +661,7 @@ static linx_voice_error_t trusted_time(voice_session_t *session)
 static esp_err_t http_event(esp_http_client_event_t *event)
 {
     voice_session_t *session = event->user_data;
-    if (!current(session->generation)) return ESP_FAIL;
+    if (!session_current(session)) return ESP_FAIL;
     if (event->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
     if (event->data_len < 0 || (size_t)event->data_len > LINX_MESSAGE_CAPACITY - session->http_used) {
         session->http_overflow = true;
@@ -649,7 +699,7 @@ static linx_voice_error_t gateway(voice_session_t *session)
     if (result == ESP_OK) result = esp_http_client_set_header(client, "Client-Id", session->client_id);
     if (result == ESP_OK) result = esp_http_client_set_header(client, "User-Agent", CLIENT_AGENT);
     if (result == ESP_OK) result = esp_http_client_set_post_field(client, session->scratch, (int)strlen(session->scratch));
-    if (result == ESP_OK && current(session->generation)) result = esp_http_client_perform(client);
+    if (result == ESP_OK && session_current(session)) result = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
     /* HTTPS 与 WebSocket 的 TLS 内存不同时驻留。令牌只留在当前会话内存。 */
     esp_http_client_cleanup(client);
@@ -663,13 +713,32 @@ static linx_voice_error_t gateway(voice_session_t *session)
     return LINX_VOICE_OK;
 }
 
+/* 只记录边界与数字错误；不恢复 SDK 握手日志，也不输出外部消息内容。 */
+static linx_voice_error_t transport_failure(voice_session_t *session, const char *operation,
+                                          int result, unsigned opcode, int payload_size, int close_code)
+{
+    const char *phase = !session->hello ? "hello" : session->draining ? "draining" :
+                        session->waiting ? "waiting" : session->speaking ? "playing" :
+                        session->turn_active ? "recording" : "idle";
+    int tls_code = 0, tls_flags = 0;
+    esp_tls_error_handle_t errors = esp_transport_get_error_handle(session->ws);
+    int esp_code = errors ? esp_tls_get_and_clear_last_error(errors, &tls_code, &tls_flags) : ESP_FAIL;
+    int socket_errno = esp_transport_get_errno(session->ws);
+    ESP_LOGW("linx_voice", "transport_failure operation=%s phase=%s ret=%d opcode=%u payload=%d errno=%d esp=%d tls=%d flags=%d close=%d",
+             operation, phase, result, opcode, payload_size, socket_errno, esp_code, tls_code, tls_flags, close_code);
+    return LINX_VOICE_NETWORK_FAILED;
+}
+
 static linx_voice_error_t send_frame(voice_session_t *session, unsigned opcode, void *data, size_t size)
 {
-    if (!current(session->generation)) return LINX_VOICE_OK;
+    if (!session_current(session) ||
+        (session->turn_active && !session->draining && opcode != WS_TRANSPORT_OPCODES_PONG &&
+         !current(session->generation))) return LINX_VOICE_OK;
     /* ESP-IDF 会原地 mask，data 必须是可写 RAM，不能传常量或再次复用旧消息。 */
     int sent = esp_transport_ws_send_raw(session->ws, (ws_transport_opcodes_t)(opcode | WS_TRANSPORT_OPCODES_FIN),
                                          data, (int)size, SEND_TIMEOUT_MS);
-    return sent == (int)size ? LINX_VOICE_OK : LINX_VOICE_NETWORK_FAILED;
+    return sent == (int)size ? LINX_VOICE_OK
+        : transport_failure(session, "send", sent, opcode, (int)size, -1);
 }
 
 static linx_voice_error_t listen_start(voice_session_t *session)
@@ -681,6 +750,7 @@ static linx_voice_error_t listen_start(voice_session_t *session)
     if (result == LINX_VOICE_OK && current(session->generation)) {
         session->waiting = false;
         session->speaking = false;
+        ESP_LOGI("linx_voice", "capture=on");
         atomic_store(&listening, true);
         publish(session->generation, LINX_VOICE_LISTENING, LINX_VOICE_OK, NULL);
     }
@@ -710,7 +780,7 @@ static linx_voice_error_t websocket_start(voice_session_t *session, const linx_r
     memset(session->scratch, 0, sizeof(session->scratch));
     memset(session->gateway.token, 0, sizeof(session->gateway.token));
     if (result != ESP_OK) return sdk_error(result, LINX_VOICE_NETWORK_FAILED);
-    if (!current(session->generation)) return LINX_VOICE_OK;
+    if (!session_current(session)) return LINX_VOICE_OK;
     if (esp_transport_connect(session->ws, endpoint.host, endpoint.port, CONNECT_TIMEOUT_MS) < 0)
         return LINX_VOICE_NETWORK_FAILED;
     if (!linx_build_hello(session->scratch, sizeof(session->scratch), context)) return LINX_VOICE_PROTOCOL_FAILED;
@@ -756,34 +826,29 @@ static linx_voice_error_t play_packet(voice_session_t *session)
     return result == ESP_OK ? LINX_VOICE_OK : sdk_error(result, LINX_VOICE_AUDIO_FAILED);
 }
 
-static linx_voice_error_t resume_listening(voice_session_t *session, bool aborted)
+static linx_voice_error_t finish_playback(voice_session_t *session, bool aborted)
 {
-    if (aborted) {
-        esp_err_t stopped = bsp_audio_sleep();
-        if (stopped != ESP_OK) return sdk_error(stopped, LINX_VOICE_AUDIO_FAILED);
-        session->audio_awake = false;
-        linx_voice_error_t result = audio_start(session);
-        if (result != LINX_VOICE_OK) return result;
-    } else {
-        /* 固定上游 TX 为 6×240 采样，16 kHz 最多约90 ms，留120 ms播完尾音。 */
-        for (unsigned i = 0; i < 6U; ++i) {
-            if (!current(session->generation)) return LINX_VOICE_OK;
-            vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
-        }
-    }
-    /* RX 同样为6×240采样；丢弃5×320采样，避免上传播放期间滞留的声音。 */
-    for (unsigned i = 0; i < 5U; ++i) {
+    /* 被中止的回复没有完整播完，不能当作本条指令的完成回执。 */
+    if (aborted) return LINX_VOICE_PROTOCOL_FAILED;
+    /* 固定上游 TX 为 6×240 采样，16 kHz 最多约90 ms，留120 ms播完尾音。 */
+    for (unsigned i = 0; i < 6U; ++i) {
         if (!current(session->generation)) return LINX_VOICE_OK;
-        esp_err_t result = bsp_audio_read(session->microphone, sizeof(session->microphone));
-        if (result != ESP_OK) return sdk_error(result, LINX_VOICE_AUDIO_FAILED);
+        if (atomic_load(&session->disconnected)) return LINX_VOICE_WIFI_FAILED;
+        vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
     }
     if (!current(session->generation)) return LINX_VOICE_OK;
-    return listen_start(session);
+    if (atomic_load(&session->disconnected)) return LINX_VOICE_WIFI_FAILED;
+    session->speaking = false;
+    session->completed = true;
+    return LINX_VOICE_OK;
 }
 
 static linx_voice_error_t message(voice_session_t *session)
 {
-    if (session->receiver.kind == WS_TRANSPORT_OPCODES_BINARY) return play_packet(session);
+    if (atomic_load(&cancel_turn_pending) && session->turn_active && !session->drain_stopped)
+        session->draining = true;
+    if (session->receiver.kind == WS_TRANSPORT_OPCODES_BINARY)
+        return session->draining || atomic_load(&cancel_turn_pending) ? LINX_VOICE_OK : play_packet(session);
     linx_message_t parsed;
     if (!linx_parse_message((char *)session->receiver.data, session->receiver.used, &parsed))
         return LINX_VOICE_PROTOCOL_FAILED;
@@ -792,21 +857,23 @@ static linx_voice_error_t message(voice_session_t *session)
         session->hello = true;
         session->audio = parsed.audio;
         memcpy(session->session_id, parsed.session_id, sizeof(session->session_id));
-        linx_voice_error_t result = audio_start(session);
-        if (result != LINX_VOICE_OK) return result;
-        if (parsed.audio == LINX_AUDIO_OPUS) {
-            esp_opus_dec_cfg_t config = {.sample_rate = 16000, .channel = 1,
-                                        .frame_duration = ESP_OPUS_DEC_FRAME_DURATION_120_MS,
-                                        .self_delimited = false};
-            esp_audio_err_t opened = esp_opus_dec_open(&config, sizeof(config), &session->decoder);
-            if (opened != ESP_AUDIO_ERR_OK)
-                return opened == ESP_AUDIO_ERR_MEM_LACK ? LINX_VOICE_NO_MEMORY : LINX_VOICE_AUDIO_FAILED;
-        }
-        return listen_start(session);
+        return LINX_VOICE_OK;
     }
     if (parsed.kind == LINX_HELLO) return LINX_VOICE_PROTOCOL_FAILED;
     if (parsed.session_id[0] && strcmp(parsed.session_id, session->session_id)) return LINX_VOICE_PROTOCOL_FAILED;
+    if (session->draining || atomic_load(&cancel_turn_pending)) {
+        if (parsed.kind == LINX_TTS_STOP) {
+            session->draining = false;
+            session->drain_stopped = true;
+            ESP_LOGI("linx_voice", "drain=complete barrier=tts_stop");
+        }
+        return LINX_VOICE_OK;
+    }
+    /* 无取消屏障的主动语音不能成为新一条指令的回复。 */
+    if (!session->turn_active && parsed.kind != LINX_IGNORE) return LINX_VOICE_PROTOCOL_FAILED;
     if (parsed.kind == LINX_TTS_START) {
+        /* 未结束上传前的主动问候不是本条指令的回复，不允许据此结束页面。 */
+        if (!session->submitted || session->speaking) return LINX_VOICE_PROTOCOL_FAILED;
         atomic_store(&listening, false);
         atomic_store(&finish_pending, false);
         session->waiting = false;
@@ -815,7 +882,8 @@ static linx_voice_error_t message(voice_session_t *session)
         publish(session->generation, LINX_VOICE_SPEAKING, LINX_VOICE_OK, NULL);
     } else if (parsed.kind == LINX_TTS_STOP) {
         if (!session->speaking) return LINX_VOICE_PROTOCOL_FAILED;
-        return resume_listening(session, parsed.aborted);
+        session->drain_stopped = true;
+        return finish_playback(session, parsed.aborted);
     }
     return LINX_VOICE_OK;
 }
@@ -824,19 +892,25 @@ static linx_voice_error_t receive(voice_session_t *session)
 {
     /* 短轮询保证录音帧节奏；已开始的帧允许正常 TCP 分段间隔。 */
     int ready = esp_transport_poll_read(session->ws, atomic_load(&listening) ? 0 : READ_TIMEOUT_MS);
-    if (ready < 0) return LINX_VOICE_NETWORK_FAILED;
+    if (ready < 0)
+        return transport_failure(session, "poll_read", ready, (unsigned)esp_transport_ws_get_read_opcode(session->ws),
+                                 esp_transport_ws_get_read_payload_len(session->ws), -1);
     if (ready == 0) return LINX_VOICE_OK;
     int size = esp_transport_read(session->ws, session->scratch, LINX_MESSAGE_CAPACITY, FRAME_TIMEOUT_MS);
-    if (size < 0) return LINX_VOICE_NETWORK_FAILED;
-    if (!current(session->generation)) return LINX_VOICE_OK;
     unsigned opcode = (unsigned)esp_transport_ws_get_read_opcode(session->ws);
-    if (size == 0 && opcode == WS_TRANSPORT_OPCODES_NONE) return LINX_VOICE_NETWORK_FAILED;
     int payload_size = esp_transport_ws_get_read_payload_len(session->ws);
+    if (size < 0) return transport_failure(session, "read", size, opcode, payload_size, -1);
+    if (!session_current(session)) return LINX_VOICE_OK;
+    if (size == 0 && opcode == WS_TRANSPORT_OPCODES_NONE)
+        return transport_failure(session, "read", size, opcode, payload_size, -1);
     if (payload_size < 0) return LINX_VOICE_PROTOCOL_FAILED;
     if ((opcode == WS_TRANSPORT_OPCODES_PING || opcode == WS_TRANSPORT_OPCODES_PONG) && payload_size > 125)
         return LINX_VOICE_PROTOCOL_FAILED;
-    if (size == 0 && payload_size > 0) return LINX_VOICE_NETWORK_FAILED;
-    if (opcode == WS_TRANSPORT_OPCODES_CLOSE) return LINX_VOICE_NETWORK_FAILED;
+    if (size == 0 && payload_size > 0) return transport_failure(session, "read", size, opcode, payload_size, -1);
+    if (opcode == WS_TRANSPORT_OPCODES_CLOSE) {
+        int code = size >= 2 ? ((unsigned char)session->scratch[0] << 8) | (unsigned char)session->scratch[1] : -1;
+        return transport_failure(session, "close", size, opcode, payload_size, code);
+    }
     if (opcode == WS_TRANSPORT_OPCODES_PING || opcode == WS_TRANSPORT_OPCODES_PONG) {
         bool complete;
         if (!linx_receive(&session->receiver, opcode, esp_transport_ws_get_fin_flag(session->ws),
@@ -872,12 +946,14 @@ static linx_voice_error_t conversation(voice_session_t *session)
         if (atomic_load(&listening)) {
             if (atomic_exchange(&finish_pending, false)) {
                 atomic_store(&listening, false);
+                ESP_LOGI("linx_voice", "capture=off");
                 if (!linx_build_listen(session->scratch, sizeof(session->scratch), session->session_id, false))
                     return LINX_VOICE_PROTOCOL_FAILED;
                 linx_voice_error_t result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT,
                                                       session->scratch, strlen(session->scratch));
                 if (result != LINX_VOICE_OK) return result;
                 session->waiting = true;
+                session->submitted = true;
                 session->last_activity = esp_timer_get_time();
                 publish(session->generation, LINX_VOICE_WAITING, LINX_VOICE_OK, NULL);
             } else {
@@ -890,12 +966,56 @@ static linx_voice_error_t conversation(voice_session_t *session)
         }
         linx_voice_error_t result = receive(session);
         if (result != LINX_VOICE_OK) return result;
+        if (session->completed) return LINX_VOICE_OK;
         int64_t elapsed = esp_timer_get_time() - session->last_activity;
         if ((!session->hello && elapsed >= READY_TIMEOUT_MS * 1000LL) ||
             ((session->waiting || session->speaking) && elapsed >= RESPONSE_TIMEOUT_MS * 1000LL))
             return LINX_VOICE_TIMEOUT;
     }
     return LINX_VOICE_OK;
+}
+
+/* 仅释放语音；STA 与其事件回调保留，任何异常都不会重传录音。 */
+static linx_voice_error_t transport_reset(voice_session_t *session)
+{
+    linx_voice_error_t result = LINX_VOICE_OK;
+    if (session->ws) {
+        if (session->hello && session->turn_active && !session->completed &&
+            linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
+            esp_transport_ws_send_raw(session->ws, WS_TRANSPORT_OPCODES_TEXT | WS_TRANSPORT_OPCODES_FIN,
+                                      session->scratch, (int)strlen(session->scratch), READ_TIMEOUT_MS);
+        esp_transport_close(session->ws);
+        esp_transport_destroy(session->ws);
+        session->ws = NULL;
+    }
+    if (session->ssl) esp_transport_destroy(session->ssl);
+    session->ssl = NULL;
+    if (session->ws_log_muted) esp_log_level_set("transport_ws", session->ws_log_level);
+    session->ws_log_muted = false;
+    if (session->decoder) esp_opus_dec_close(session->decoder);
+    session->decoder = NULL;
+    if (session->audio_awake) {
+        esp_err_t slept = bsp_audio_sleep();
+        session->audio_awake = slept != ESP_OK;
+        if (slept != ESP_OK) result = LINX_VOICE_AUDIO_FAILED;
+        ESP_LOGI("linx_voice", "capture=off audio_sleep_ok=%d", slept == ESP_OK);
+    }
+    if (session->own_sntp) esp_sntp_stop();
+    session->own_sntp = false;
+    clear_sensitive(&session->gateway, sizeof(session->gateway));
+    clear_sensitive(&session->receiver, sizeof(session->receiver));
+    clear_sensitive(session->session_id, sizeof(session->session_id));
+    clear_sensitive(session->scratch, sizeof(session->scratch));
+    clear_sensitive(session->pcm, sizeof(session->pcm));
+    clear_sensitive(session->microphone, sizeof(session->microphone));
+    clear_sensitive(session->control, sizeof(session->control));
+    session->control_used = session->http_used = session->frame_size = 0;
+    session->http_overflow = session->hello = session->speaking = session->waiting = false;
+    session->submitted = session->completed = session->turn_active = session->frame_fin = false;
+    session->preparing = session->draining = session->drain_stopped = false;
+    session->frame_opcode = 0;
+    session->last_activity = session->idle_deadline = 0;
+    return result;
 }
 
 static linx_voice_error_t cleanup(voice_session_t *session)
@@ -916,19 +1036,13 @@ static linx_voice_error_t cleanup(voice_session_t *session)
         session->portal = NULL;
     }
     pending_cleanup = NULL;
-    /* 退出不等待服务端回复，不重连，也不会重传用户上一轮的录音。 */
-    if (session->ws) {
-        if (session->hello && linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
-            esp_transport_ws_send_raw(session->ws, WS_TRANSPORT_OPCODES_TEXT | WS_TRANSPORT_OPCODES_FIN,
-                                      session->scratch, (int)strlen(session->scratch), READ_TIMEOUT_MS);
-        esp_transport_close(session->ws);
-        esp_transport_destroy(session->ws);
+    if (retained == session) retained = NULL;
+    result = transport_reset(session);
+    if (session->audio_awake) {
+        /* 音频停服未确认时保留唯一所有者，配网也不能越过这个屏障。 */
+        pending_cleanup = session;
+        return result;
     }
-    if (session->ssl) esp_transport_destroy(session->ssl);
-    if (session->ws_log_muted) esp_log_level_set("transport_ws", session->ws_log_level);
-    if (session->decoder) esp_opus_dec_close(session->decoder);
-    if (session->audio_awake && bsp_audio_sleep() != ESP_OK) result = LINX_VOICE_AUDIO_FAILED;
-    if (session->own_sntp) esp_sntp_stop();
     if (session->wifi_handler) esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, session->wifi_handler);
     if (session->ip_handler) esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, session->ip_handler);
     if (session->sync_handler) esp_event_handler_instance_unregister(LINX_WIFI_SYNC_EVENT, ESP_EVENT_ANY_ID, session->sync_handler);
@@ -946,42 +1060,249 @@ static linx_voice_error_t cleanup(voice_session_t *session)
     return result;
 }
 
+
+static linx_voice_error_t handshake(voice_session_t *session)
+{
+    while (session_current(session) && !session->hello) {
+        if (atomic_load(&session->disconnected)) return LINX_VOICE_WIFI_FAILED;
+        linx_voice_error_t result = receive(session);
+        if (result != LINX_VOICE_OK) return result;
+        if (!session->hello && esp_timer_get_time() - session->last_activity >= READY_TIMEOUT_MS * 1000LL)
+            return LINX_VOICE_TIMEOUT;
+    }
+    return LINX_VOICE_OK;
+}
+
+/* 唤醒麦克风前先排空可见控制帧；迟到的语音/字幕让缓存失效。 */
+static linx_voice_error_t idle_validate(voice_session_t *session)
+{
+    for (unsigned i = 0; i < 16U; ++i) {
+        int ready = esp_transport_poll_read(session->ws, 0);
+        if (ready < 0)
+            return transport_failure(session, "poll_read", ready, (unsigned)esp_transport_ws_get_read_opcode(session->ws),
+                                     esp_transport_ws_get_read_payload_len(session->ws), -1);
+        if (ready == 0)
+            return session->receiver.frame_active || session->receiver.control_remaining ||
+                   (session->receiver.kind && !session->receiver.frame_fin)
+                ? LINX_VOICE_PROTOCOL_FAILED : LINX_VOICE_OK;
+        linx_voice_error_t result = receive(session);
+        if (result != LINX_VOICE_OK) return result;
+    }
+    return LINX_VOICE_PROTOCOL_FAILED;
+}
+
+static linx_voice_error_t turn_start(voice_session_t *session)
+{
+    linx_voice_error_t result = audio_start(session);
+    if (result != LINX_VOICE_OK) return result;
+    if (session->audio == LINX_AUDIO_OPUS) {
+        esp_opus_dec_cfg_t config = {.sample_rate = 16000, .channel = 1,
+                                    .frame_duration = ESP_OPUS_DEC_FRAME_DURATION_120_MS,
+                                    .self_delimited = false};
+        esp_audio_err_t opened = esp_opus_dec_open(&config, sizeof(config), &session->decoder);
+        if (opened != ESP_AUDIO_ERR_OK)
+            return opened == ESP_AUDIO_ERR_MEM_LACK ? LINX_VOICE_NO_MEMORY : LINX_VOICE_AUDIO_FAILED;
+    }
+    session->completed = session->submitted = session->draining = session->drain_stopped = false;
+    session->turn_active = true;
+    session->idle_deadline = 0;
+    return listen_start(session);
+}
+
+static linx_voice_error_t turn_sleep(voice_session_t *session)
+{
+    linx_voice_error_t result = LINX_VOICE_OK;
+    if (session->decoder) esp_opus_dec_close(session->decoder);
+    session->decoder = NULL;
+    if (session->audio_awake) {
+        esp_err_t slept = bsp_audio_sleep();
+        session->audio_awake = slept != ESP_OK;
+        if (slept != ESP_OK) result = LINX_VOICE_AUDIO_FAILED;
+    }
+    session->turn_active = session->submitted = session->waiting = session->speaking = false;
+    clear_sensitive(session->pcm, sizeof(session->pcm));
+    clear_sensitive(session->microphone, sizeof(session->microphone));
+    ESP_LOGI("linx_voice", "capture=off audio_sleep_ok=%d", !session->audio_awake);
+    return result;
+}
+
+static void renew_idle(voice_session_t *session)
+{
+    session->idle_deadline = esp_timer_get_time() + IDLE_TIMEOUT_MS * 1000LL;
+    ESP_LOGI("linx_voice", "voice_lease=renewed ms=%d", IDLE_TIMEOUT_MS);
+}
+
+static linx_voice_error_t cancel_turn(voice_session_t *session)
+{
+    bool interrupted = session->turn_active && !session->completed;
+    linx_voice_error_t result = LINX_VOICE_OK;
+    if (interrupted && !session->drain_stopped && session->hello) {
+        session->draining = true;
+        if (!linx_build_abort(session->scratch, sizeof(session->scratch), session->session_id))
+            result = LINX_VOICE_PROTOCOL_FAILED;
+        else result = send_frame(session, WS_TRANSPORT_OPCODES_TEXT, session->scratch, strlen(session->scratch));
+    }
+    linx_voice_error_t slept = turn_sleep(session);
+    if (result == LINX_VOICE_OK) result = slept;
+    if (session->hello) renew_idle(session);
+    ESP_LOGI("linx_voice", "cancel=soft transport_kept=%d draining=%d", session->ws != NULL, session->draining);
+    return result;
+}
+
+static linx_voice_error_t wait_drain(voice_session_t *session)
+{
+    publish(session->generation, LINX_VOICE_DRAINING, LINX_VOICE_OK, NULL);
+    int64_t deadline = esp_timer_get_time() + RESPONSE_TIMEOUT_MS * 1000LL;
+    while (current(session->generation) && session->draining && !atomic_load(&discard_transport)) {
+        if (atomic_load(&session->disconnected)) return LINX_VOICE_WIFI_FAILED;
+        if (esp_timer_get_time() >= deadline || esp_timer_get_time() >= session->idle_deadline)
+            return LINX_VOICE_TIMEOUT;
+        linx_voice_error_t result = receive(session);
+        if (result != LINX_VOICE_OK) return result;
+    }
+    return LINX_VOICE_OK;
+}
+
 static void run(const linx_voice_request_t *request)
 {
-    voice_session_t *session = calloc(1, sizeof(*session));
+    bool voice = request->command == LINX_VOICE_START || request->command == LINX_VOICE_PREPARE;
+    if (retained && (!voice || atomic_load(&retained->disconnected) || !atomic_load(&retained->connected))) {
+        linx_voice_error_t cleaned = cleanup(retained);
+        if (cleaned != LINX_VOICE_OK) {
+            publish(request->generation, LINX_VOICE_ERROR, cleaned, NULL);
+            return;
+        }
+    }
+    voice_session_t *session = retained;
     if (!session) {
-        publish(request->generation, LINX_VOICE_ERROR, LINX_VOICE_NO_MEMORY, NULL);
-        return;
+        session = calloc(1, sizeof(*session));
+        if (!session) {
+            publish(request->generation, LINX_VOICE_ERROR, LINX_VOICE_NO_MEMORY, NULL);
+            return;
+        }
     }
     session->generation = request->generation;
-    linx_voice_error_t result;
+    session->requested_command = request->command;
+    session->voice = voice;
+    bool discard = atomic_exchange(&discard_transport, false);
+    bool same_target = same_context(&session->context, &request->context);
+    bool reused = voice && session->hello && !session->turn_active && !session->audio_awake && !discard && same_target &&
+                  esp_timer_get_time() < session->idle_deadline;
+    linx_voice_error_t result = LINX_VOICE_OK;
+    if (reused && !session->draining && idle_validate(session) != LINX_VOICE_OK) reused = false;
+    if (voice && !reused) result = transport_reset(session);
+    if (voice) {
+        retained = session;
+        session->context = request->context;
+        session->preparing = !reused;
+        if (!reused) publish(session->generation, LINX_VOICE_CONNECTING, LINX_VOICE_OK, NULL);
+        int64_t phase_start = esp_timer_get_time();
+        bool wifi_reused = atomic_load(&session->connected);
+        if (result == LINX_VOICE_OK && !wifi_reused) result = wifi_start(session);
+        ESP_LOGI("linx_voice", "phase=wifi ms=%lld reused=%d",
+                 (long long)((esp_timer_get_time() - phase_start) / 1000), wifi_reused);
+        if (!reused && result == LINX_VOICE_OK && session_current(session)) result = trusted_time(session);
+        if (session->own_sntp) esp_sntp_stop();
+        session->own_sntp = false;
+        phase_start = esp_timer_get_time();
+        if (!reused && result == LINX_VOICE_OK && session_current(session)) result = gateway(session);
+        ESP_LOGI("linx_voice", "phase=gateway ms=%lld reused=%d",
+                 (long long)((esp_timer_get_time() - phase_start) / 1000), reused);
+        phase_start = esp_timer_get_time();
+        if (!reused && result == LINX_VOICE_OK && session_current(session) && !session->gateway.activation_code[0])
+            result = websocket_start(session, &session->context);
+        if (!reused && result == LINX_VOICE_OK && session_current(session) && !session->gateway.activation_code[0])
+            result = handshake(session);
+        ESP_LOGI("linx_voice", "phase=voice_ready ms=%lld reused=%d",
+                 (long long)((esp_timer_get_time() - phase_start) / 1000), reused);
+        (void)phase_start;
+        /* 这里完成最后一次同目标接管，之后本条采集严格检查页面代号。 */
+        session_current(session);
+        session->preparing = false;
+        if (!reused && session->hello) renew_idle(session);
+        if (atomic_exchange(&cancel_turn_pending, false)) {
+            linx_voice_error_t cancelled = cancel_turn(session);
+            if (result == LINX_VOICE_OK) result = cancelled;
+        }
+        linx_voice_command_t command = session->requested_command;
+        if (result == LINX_VOICE_OK && current(session->generation) && session->hello) {
+            if (command == LINX_VOICE_PREPARE) {
+                publish(session->generation, session->draining ? LINX_VOICE_DRAINING : LINX_VOICE_READY, LINX_VOICE_OK, NULL);
+            } else {
+                /* 明确的新 START 续期；只有真正开始采集才暂停空闲倒计时。 */
+                renew_idle(session);
+                if (session->draining) result = wait_drain(session);
+                if (result == LINX_VOICE_OK && current(session->generation) && !session->draining &&
+                    !atomic_load(&discard_transport)) {
+                    publish(session->generation, LINX_VOICE_PREPARING, LINX_VOICE_OK, NULL);
+                    result = turn_start(session);
+                    if (result == LINX_VOICE_OK && current(session->generation)) result = conversation(session);
+                }
+            }
+        }
+        if (current(session->generation)) {
+            atomic_store(&listening, false);
+            atomic_store(&finish_pending, false);
+        }
+        bool completed = command == LINX_VOICE_START && session->completed && current(session->generation);
+        if (result == LINX_VOICE_OK && completed) result = turn_sleep(session);
+        bool cancelled = atomic_exchange(&cancel_turn_pending, false);
+        bool hard = atomic_exchange(&discard_transport, false);
+        if (result == LINX_VOICE_OK && (cancelled || (session->turn_active && !current(session->generation))) && !hard)
+            result = cancel_turn(session);
+        /* 收尾未到 stop 的超时只报告，不偷偷关闭仍在租期内的连接。 */
+        bool waiting_timeout = result == LINX_VOICE_TIMEOUT && session->draining;
+        if ((result != LINX_VOICE_OK && !waiting_timeout) || session->turn_active || !session->hello || hard) {
+            linx_voice_error_t cleaned = transport_reset(session);
+            if (result == LINX_VOICE_OK) result = cleaned;
+        }
+        uint32_t generation = session->generation;
+        session->handled_generation = generation;
+        if (atomic_load(&session->disconnected) || !atomic_load(&session->connected)) {
+            linx_voice_error_t cleaned = cleanup(session);
+            if (result == LINX_VOICE_OK) result = cleaned;
+        } else if (completed && result == LINX_VOICE_OK) renew_idle(session);
+        if (result != LINX_VOICE_OK) publish(generation, LINX_VOICE_ERROR, result, NULL);
+        else if (completed) publish(generation, LINX_VOICE_FINISHED, LINX_VOICE_OK, NULL);
+        return;
+    }
     if (request->command == LINX_VOICE_WIFI_SCAN) {
         publish(session->generation, LINX_VOICE_WIFI_SCANNING, LINX_VOICE_OK, NULL);
         result = wifi_scan(session);
     } else if (request->command == LINX_VOICE_WIFI_SETUP) {
         publish(session->generation, LINX_VOICE_WIFI_SCANNING, LINX_VOICE_OK, NULL);
         result = wifi_setup(session);
-    } else if (request->command == LINX_VOICE_WIFI_SAVE) {
+    } else {
         publish(session->generation, LINX_VOICE_WIFI_CONNECTING, LINX_VOICE_OK, NULL);
         result = wifi_save(session, request);
-    } else {
-        publish(session->generation, LINX_VOICE_CONNECTING, LINX_VOICE_OK, NULL);
-        result = wifi_start(session);
-    }
-    bool voice = request->command == LINX_VOICE_START;
-    if (voice && result == LINX_VOICE_OK && current(session->generation)) result = trusted_time(session);
-    if (voice && result == LINX_VOICE_OK && current(session->generation)) result = gateway(session);
-    if (voice && result == LINX_VOICE_OK && current(session->generation) && !session->gateway.activation_code[0])
-        result = websocket_start(session, &request->context);
-    if (voice && result == LINX_VOICE_OK && current(session->generation) && !session->gateway.activation_code[0])
-        result = conversation(session);
-    if (current(session->generation)) {
-        atomic_store(&listening, false);
-        atomic_store(&finish_pending, false);
     }
     linx_voice_error_t cleaned = cleanup(session);
     if (result == LINX_VOICE_OK) result = cleaned;
     if (result != LINX_VOICE_OK) publish(request->generation, LINX_VOICE_ERROR, result, NULL);
+}
+
+static void idle_poll(void)
+{
+    voice_session_t *session = retained;
+    if (!session) return;
+    bool expired = session->hello && session->idle_deadline && esp_timer_get_time() >= session->idle_deadline;
+    bool discard = atomic_exchange(&discard_transport, false);
+    bool cancel = atomic_exchange(&cancel_turn_pending, false);
+    if (expired) ESP_LOGI("linx_voice", "voice_idle_expired ms=%d", IDLE_TIMEOUT_MS);
+    linx_voice_error_t result = LINX_VOICE_OK;
+    if (discard || expired || session->audio_awake) result = transport_reset(session);
+    else if (cancel) result = cancel_turn(session);
+    else if (session->ws) {
+        bool draining = session->draining;
+        result = receive(session);
+        if (draining && !session->draining)
+            publish(session->generation, LINX_VOICE_READY, LINX_VOICE_OK, NULL);
+    }
+    if (result != LINX_VOICE_OK) {
+        linx_voice_error_t cleaned = transport_reset(session);
+        if (cleaned != LINX_VOICE_OK) publish(session->generation, LINX_VOICE_ERROR, cleaned, NULL);
+    }
+    if (atomic_load(&session->disconnected)) cleanup(session);
 }
 
 static void worker(void *user)
@@ -989,15 +1310,26 @@ static void worker(void *user)
     (void)user;
     linx_voice_request_t request;
     for (;;) {
-        if (pending_cleanup && cleanup(pending_cleanup) != LINX_VOICE_OK && pending_cleanup) {
-            publish(atomic_load(&active_generation), LINX_VOICE_ERROR, LINX_VOICE_WIFI_FAILED, NULL);
-            vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
-            continue;
+        if (pending_cleanup) {
+            linx_voice_error_t cleaned = cleanup(pending_cleanup);
+            if (cleaned != LINX_VOICE_OK && pending_cleanup) {
+                publish(atomic_load(&active_generation), LINX_VOICE_ERROR, cleaned, NULL);
+                vTaskDelay(pdMS_TO_TICKS(READ_TIMEOUT_MS));
+                continue;
+            }
         }
-        if (xQueueReceive(commands, &request, portMAX_DELAY) == pdTRUE &&
-            (request.command == LINX_VOICE_START || request.command == LINX_VOICE_WIFI_SCAN ||
-             request.command == LINX_VOICE_WIFI_SAVE || request.command == LINX_VOICE_WIFI_SETUP) && current(request.generation)) run(&request);
-        clear_sensitive(&request, sizeof(request));
+        TickType_t wait = retained && (retained->ws || retained->audio_awake) ? pdMS_TO_TICKS(READ_TIMEOUT_MS) : portMAX_DELAY;
+        if (xQueueReceive(commands, &request, wait) == pdTRUE) {
+            bool starts = request.command == LINX_VOICE_START || request.command == LINX_VOICE_PREPARE ||
+                          request.command == LINX_VOICE_WIFI_SCAN || request.command == LINX_VOICE_WIFI_SAVE ||
+                          request.command == LINX_VOICE_WIFI_SETUP;
+            bool adopted = retained && retained->voice && retained->handled_generation == request.generation &&
+                           (request.command == LINX_VOICE_START || request.command == LINX_VOICE_PREPARE) &&
+                           same_context(&retained->context, &request.context);
+            if (starts && current(request.generation) && !adopted) run(&request);
+            clear_sensitive(&request, sizeof(request));
+        } else idle_poll();
+        if (atomic_load(&discard_transport) || atomic_load(&cancel_turn_pending)) idle_poll();
     }
 }
 
@@ -1026,23 +1358,31 @@ bool linx_device_init(void)
 bool linx_device_request(const linx_voice_request_t *request, void *user)
 {
     (void)user;
-    if (!request || (unsigned)request->command > LINX_VOICE_WIFI_SETUP) return false;
+    if (!request || (unsigned)request->command > LINX_VOICE_RELEASE) return false;
     bool starts = request->command == LINX_VOICE_START || request->command == LINX_VOICE_WIFI_SCAN ||
-                  request->command == LINX_VOICE_WIFI_SAVE || request->command == LINX_VOICE_WIFI_SETUP;
+                  request->command == LINX_VOICE_WIFI_SAVE || request->command == LINX_VOICE_WIFI_SETUP ||
+                  request->command == LINX_VOICE_PREPARE;
     if (!commands && (!starts || !linx_device_init())) return false;
     if (starts) {
         atomic_store(&listening, false);
         atomic_store(&finish_pending, false);
         atomic_store(&active, false);
         atomic_store(&active_generation, request->generation);
+        taskENTER_CRITICAL(&command_state_lock);
+        requested_target = (voice_target_t){.command = request->command, .generation = request->generation,
+                                            .context = request->context};
+        taskEXIT_CRITICAL(&command_state_lock);
         atomic_store(&active, true);
         return xQueueOverwrite(commands, request) == pdTRUE;
     }
-    if (!current(request->generation)) return true;
+    if (!current(request->generation) &&
+        !(request->command == LINX_VOICE_RELEASE && request->generation == atomic_load(&active_generation))) return true;
     if (request->command == LINX_VOICE_FINISH) {
         if (atomic_load(&listening)) atomic_store(&finish_pending, true);
         return true;
     }
+    if (request->command == LINX_VOICE_RELEASE) atomic_store(&discard_transport, true);
+    else atomic_store(&cancel_turn_pending, true);
     atomic_store(&active, false);
     atomic_store(&listening, false);
     atomic_store(&finish_pending, false);

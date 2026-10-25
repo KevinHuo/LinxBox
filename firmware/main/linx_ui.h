@@ -5,13 +5,14 @@
 #include <stdint.h>
 #include "lvgl.h"
 #include "linx_demo.h"
+#include "linx_input.h"
 #include "linx_voice.h"
 
 typedef enum {
     LINX_UI_KEY_UP,
     LINX_UI_KEY_DOWN,
     LINX_UI_KEY_OK,
-    LINX_UI_KEY_OK_LONG
+    LINX_UI_KEY_BACK
 } linx_ui_key_t;
 
 typedef enum {
@@ -20,9 +21,6 @@ typedef enum {
     LINX_UI_OVERVIEW,
     LINX_UI_READER,
     LINX_UI_HISTORY,
-    LINX_UI_IMAGES,
-    LINX_UI_IMAGE_MENU,
-    LINX_UI_IMAGE_DETAIL,
     LINX_UI_VOICE,
     LINX_UI_CONFIRM,
     LINX_UI_RECEIPT,
@@ -49,7 +47,6 @@ typedef struct {
     size_t selected;
     size_t read_page;
     size_t read_page_count;
-    unsigned image_view;
     bool render_overflow;
     size_t labels_used;
     uint32_t voice_generation;
@@ -60,7 +57,7 @@ typedef struct {
 
 /* Call only from a serialized LVGL context (or while the BSP LVGL lock is held).
  * The caller owns screen; deinit removes only children created by this module.
- * Input must already suppress a click after an OK long press.
+ * Input maps the configured return gesture to the logical BACK action.
  */
 void linx_ui_init(lv_obj_t *screen, uint64_t now_ms);
 void linx_ui_handle_key(linx_ui_key_t key);
@@ -70,6 +67,13 @@ void linx_ui_deinit(void);
 /* 在同一 LVGL 上下文内注册非阻塞后端、接收主循环转交的状态快照。 */
 void linx_ui_set_voice_handler(linx_voice_handler_t handler, void *user);
 bool linx_ui_voice_event(const linx_voice_event_t *event);
+
+/* 启动时加载偏好；设置页仅投递保存请求，成功结果到达后才切换操作方式。 */
+typedef bool (*linx_ui_back_mode_handler_t)(linx_back_mode_t mode, void *user);
+void linx_ui_set_back_mode(linx_back_mode_t mode);
+linx_back_mode_t linx_ui_back_mode(void);
+void linx_ui_set_back_mode_handler(linx_ui_back_mode_handler_t handler, void *user);
+void linx_ui_back_mode_result(linx_back_mode_t mode, bool saved);
 
 /* Read-only diagnostics shared by the desktop render harness and device logs. */
 linx_ui_page_t linx_ui_page(void);

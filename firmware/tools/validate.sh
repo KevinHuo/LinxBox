@@ -69,6 +69,9 @@ EOF
         tests/test_linx_input.c main/linx_input.c \
         -o "${test_dir}/test_linx_input"
     "${test_dir}/test_linx_input"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
+        -Imain tests/test_linx_input_settings.c -o "${test_dir}/test_linx_input_settings"
+    "${test_dir}/test_linx_input_settings"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_linx_wifi.c main/linx_wifi.c \
         -o "${test_dir}/test_linx_wifi"

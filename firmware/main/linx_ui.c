@@ -19,7 +19,7 @@
 #define BOX_COUNT 8U
 #define DECOR_COUNT 128U
 #define STACK_LIMIT 10U
-#define HISTORY_ITEMS (LINX_HISTORY_CAPACITY * 3U)
+#define HISTORY_ITEMS (LINX_HISTORY_CAPACITY * 2U)
 #define BODY_WIDTH 208
 #define BODY_HEIGHT 200
 #define BODY_TOP 74
@@ -32,22 +32,17 @@ typedef struct {
     uint8_t radius;
 } decoration_t;
 
-typedef enum { HISTORY_AGENT, HISTORY_USER, HISTORY_IMAGES } history_kind_t;
+typedef enum { HISTORY_AGENT, HISTORY_USER } history_kind_t;
 
 typedef struct {
     linx_ui_page_t page;
     uint32_t task;
     uint32_t turn;
-    uint32_t filter;
     uint32_t command;
     uint32_t history_turn;
     history_kind_t history_kind;
     size_t selected;
     size_t read_page;
-    size_t image_index;
-    uint32_t image_id;
-    uint32_t image_turn;
-    unsigned image_view;
     bool user_text;
 } location_t;
 
@@ -66,7 +61,6 @@ static struct {
     lv_obj_t *root;
     lv_obj_t *labels[LABEL_COUNT];
     lv_obj_t *boxes[BOX_COUNT];
-    lv_obj_t *image;
     lv_obj_t *voice_counter;
     lv_obj_t *decor;
     decoration_t decorations[DECOR_COUNT];
@@ -83,6 +77,16 @@ static struct {
     linx_reply_context_t reply;
     linx_voice_handler_t voice_handler;
     void *voice_user;
+    linx_back_mode_t back_mode;
+    linx_back_mode_t pending_back_mode;
+    linx_ui_back_mode_handler_t back_mode_handler;
+    void *back_mode_user;
+    bool back_mode_pending;
+    const char *back_mode_notice;
+    uint32_t connection_generation;
+    linx_reply_context_t prepared_context;
+    bool prepared_context_valid;
+    linx_ui_page_t rendered_page;
     uint32_t voice_generation;
     linx_voice_state_t voice_state;
     linx_voice_error_t voice_error;
@@ -92,12 +96,9 @@ static struct {
     char wifi_ap_ssid[LINX_WIFI_SSID_CAPACITY];
     char wifi_ap_password[9];
     read_position_t positions[LINX_TASK_COUNT][LINX_HISTORY_CAPACITY * 2U];
-    linx_image_ref_t remembered_image[LINX_TASK_COUNT];
     linx_reader_layout_t pages;
     history_item_t history[HISTORY_ITEMS];
     size_t history_count;
-    linx_image_ref_t images[LINX_HISTORY_CAPACITY * LINX_IMAGE_COUNT];
-    size_t image_count;
     char page_text[1024];
     uint64_t now_ms;
     uint64_t boot_ms;
@@ -249,7 +250,6 @@ static void reset_objects(void)
 {
     for (size_t i = 0U; i < LABEL_COUNT; i++) set_hidden(ui.labels[i], true);
     for (size_t i = 0U; i < BOX_COUNT; i++) set_hidden(ui.boxes[i], true);
-    set_hidden(ui.image, true);
     ui.labels_used = 0U;
     ui.boxes_used = 0U;
     ui.decoration_count = 0U;
@@ -288,9 +288,13 @@ static void footer(const char *value)
     if (length >= sizeof(primary)) length = sizeof(primary) - 1U;
     memcpy(primary, value, length);
     primary[length] = '\0';
-    const char *secondary = strstr(value, "演示选项") ? "长按选项" :
-                            strstr(value, "取消") ? "长按取消" :
-                            strstr(value, "放弃") ? "长按放弃" : "长按返回";
+    const char *action = strstr(value, "设备设置") ? "设置" :
+                         strstr(value, "演示选项") ? "选项" :
+                         strstr(value, "取消") ? "取消" :
+                         strstr(value, "放弃") ? "放弃" : "返回";
+    char secondary[24];
+    snprintf(secondary, sizeof(secondary), "%s%s",
+             ui.back_mode == LINX_BACK_DOUBLE_CLICK ? "双击" : "长按", action);
     stroke(16, 280, 224, 280, COLOR_LINE, 1);
     text(primary, 24, 288, 136, 16, &linx_font_12, COLOR_INK);
     text(secondary, 168, 288, 48, 16, &linx_font_12, COLOR_MUTED);
@@ -403,8 +407,6 @@ static void rebuild_history(void)
         if (!turn) continue;
         if (turn->complete && turn->content_id != LINX_CONTENT_NONE)
             ui.history[ui.history_count++] = (history_item_t){turn->id, HISTORY_AGENT};
-        if (turn->image_count > 0U)
-            ui.history[ui.history_count++] = (history_item_t){turn->id, HISTORY_IMAGES};
         if (turn->user_text)
             ui.history[ui.history_count++] = (history_item_t){turn->id, HISTORY_USER};
     }
@@ -414,47 +416,11 @@ static void rebuild_history(void)
             return;
         }
     }
-    if (ui.at.selected >= ui.history_count) ui.at.selected = 0U;
+    if (ui.at.history_turn != 0U || ui.at.selected >= ui.history_count) ui.at.selected = 0U;
     if (ui.history_count > 0U) {
         ui.at.history_turn = ui.history[ui.at.selected].turn;
         ui.at.history_kind = ui.history[ui.at.selected].kind;
     }
-}
-
-static void rebuild_images(void)
-{
-    ui.image_count = linx_demo_images(&ui.demo, ui.at.task, ui.at.filter, ui.images,
-                                     sizeof(ui.images) / sizeof(ui.images[0]));
-    if (ui.at.image_id != 0U) {
-        for (size_t i = 0U; i < ui.image_count; i++) {
-            if (ui.images[i].image_id == ui.at.image_id && ui.images[i].turn_id == ui.at.image_turn) {
-                ui.at.image_index = i;
-                return;
-            }
-        }
-    }
-    if (ui.at.image_index >= ui.image_count) ui.at.image_index = 0U;
-    if (ui.image_count > 0U) {
-        ui.at.image_id = ui.images[ui.at.image_index].image_id;
-        ui.at.image_turn = ui.images[ui.at.image_index].turn_id;
-    }
-}
-
-static const linx_image_ref_t *current_image(void)
-{
-    rebuild_images();
-    return ui.image_count > 0U ? &ui.images[ui.at.image_index] : NULL;
-}
-
-static void open_images(uint32_t filter)
-{
-    push(LINX_UI_IMAGES);
-    ui.at.filter = filter;
-    linx_image_ref_t remembered = ui.remembered_image[ui.at.task - 1U];
-    ui.at.image_index = 0U;
-    ui.at.image_id = filter == 0U ? remembered.image_id : 0U;
-    ui.at.image_turn = filter == 0U ? remembered.turn_id : 0U;
-    rebuild_images();
 }
 
 static bool voice_request(linx_voice_command_t command)
@@ -463,10 +429,48 @@ static bool voice_request(linx_voice_command_t command)
     return ui.voice_handler && ui.voice_handler(&request, ui.voice_user);
 }
 
-static void cancel_live_voice(void)
+static uint32_t next_voice_generation(void)
+{
+    if (++voice_sequence == 0U) ++voice_sequence;
+    return voice_sequence;
+}
+
+static void cancel_prepared_voice(void)
+{
+    uint32_t generation = ui.connection_generation;
+    if (generation != 0U && ui.voice_handler) {
+        const linx_voice_request_t request = {.command = LINX_VOICE_RELEASE,
+            .generation = generation, .context = ui.prepared_context};
+        ui.voice_handler(&request, ui.voice_user);
+    }
+    ui.connection_generation = 0U;
+    ui.prepared_context_valid = false;
+}
+
+static void prepare_overview_voice(void)
+{
+    if (!ui.voice_handler || ui.at.page != LINX_UI_OVERVIEW) return;
+    linx_reply_context_t context;
+    if (!linx_demo_reply_context(&ui.demo, ui.at.task, 0U, 0U, &context)) return;
+    bool same = ui.prepared_context_valid &&
+        context.scene_id == ui.prepared_context.scene_id && context.task_id == ui.prepared_context.task_id &&
+        context.source_turn_id == ui.prepared_context.source_turn_id && context.image_id == ui.prepared_context.image_id;
+    if (ui.rendered_page == LINX_UI_OVERVIEW && same) return;
+    const linx_voice_request_t request = {.command = LINX_VOICE_PREPARE,
+        .generation = next_voice_generation(), .context = context};
+    if (ui.voice_handler(&request, ui.voice_user)) {
+        ui.connection_generation = request.generation;
+    }
+    ui.prepared_context = context;
+    ui.prepared_context_valid = true;
+}
+
+static void cancel_live_voice(linx_voice_command_t command)
 {
     if (ui.voice_generation != 0U) {
-        voice_request(LINX_VOICE_CANCEL);
+        voice_request(command);
+        if (command == LINX_VOICE_RELEASE && ui.connection_generation == ui.voice_generation)
+            ui.connection_generation = 0U;
         ui.voice_generation = 0U;
     }
 }
@@ -478,28 +482,35 @@ static void start_voice(void)
     ui.voice_ms = ui.now_ms;
     ui.last_wave_ms = ui.now_ms;
     if (ui.voice_handler) {
-        if (++voice_sequence == 0U) ++voice_sequence;
-        ui.voice_generation = voice_sequence;
-        ui.voice_state = LINX_VOICE_CONNECTING;
+        ui.voice_generation = next_voice_generation();
+        ui.voice_state = LINX_VOICE_PREPARING;
         ui.voice_error = LINX_VOICE_OK;
         memset(ui.activation_code, 0, sizeof(ui.activation_code));
         if (!voice_request(LINX_VOICE_START)) {
             ui.voice_state = LINX_VOICE_ERROR;
             ui.voice_error = LINX_VOICE_NO_MEMORY;
+        } else {
+            ui.connection_generation = ui.voice_generation;
         }
     }
 }
 
-static void cancel_reply(void)
+static void restore_reply_origin(void)
 {
-    cancel_live_voice();
+    ui.voice_generation = 0U;
     ui.at = ui.reply_origin;
     ui.depth = ui.reply_depth;
     memset(&ui.reply, 0, sizeof(ui.reply));
     ui.notice = NULL;
 }
 
-static void begin_reply(uint32_t source_turn, uint32_t image_id)
+static void cancel_reply(void)
+{
+    cancel_live_voice(LINX_VOICE_CANCEL);
+    restore_reply_origin();
+}
+
+static void begin_reply(void)
 {
     linx_reply_gate_t gate = linx_demo_reply_gate(&ui.demo, ui.at.task);
     if (!ui.voice_handler && (gate == LINX_REPLY_PENDING || gate == LINX_REPLY_FAILED)) {
@@ -512,7 +523,7 @@ static void begin_reply(uint32_t source_turn, uint32_t image_id)
         return;
     }
     if ((!ui.voice_handler && gate != LINX_REPLY_ALLOWED) ||
-        !linx_demo_reply_context(&ui.demo, ui.at.task, source_turn, image_id, &ui.reply)) {
+        !linx_demo_reply_context(&ui.demo, ui.at.task, 0U, 0U, &ui.reply)) {
         ui.notice = "这轮已更新，请返回任务";
         return;
     }
@@ -545,15 +556,15 @@ static void render_tasks(void)
         chevron(214, y + 11, i == ui.at.selected ? COLOR_ACCENT_TEXT : COLOR_MUTED);
         if (i + 1U < LINX_TASK_COUNT) stroke(25, y + 55, 224, y + 55, COLOR_LINE, 1);
     }
-    footer("↑↓选择  OK进入\n长按OK 演示选项");
+    footer(ui.voice_handler ? "↑↓选择  OK进入\n双击OK 设备设置" :
+           "↑↓选择  OK进入\n双击OK 演示选项");
 }
 
-static void overview_enabled(bool enabled[4])
+static void overview_enabled(bool enabled[3])
 {
     enabled[0] = latest_reply() != NULL;
     enabled[1] = true;
     enabled[2] = task() && task()->turn_count > 0U;
-    enabled[3] = linx_demo_images(&ui.demo, ui.at.task, 0U, NULL, 0U) > 0U;
 }
 
 static void render_overview(void)
@@ -576,23 +587,21 @@ static void render_overview(void)
     }
     text(ui.notice ? ui.notice : (content ? content->summary : "正在补充边界测试\n可以先下发下一条指令"),
          16, 132, 208, 44, &linx_font_16, COLOR_INK);
-    bool enabled[4];
+    bool enabled[3];
     overview_enabled(enabled);
-    char image_label[48];
-    size_t count = linx_demo_images(&ui.demo, ui.at.task, 0U, NULL, 0U);
-    snprintf(image_label, sizeof(image_label), "查看图片  %u 张", (unsigned)count);
     linx_reply_gate_t gate = linx_demo_reply_gate(&ui.demo, ui.at.task);
     const char *reply = gate == LINX_REPLY_FAILED ? "处理未发送指令" :
                         gate == LINX_REPLY_PENDING ? "查看待处理指令" : "继续沟通";
-    const char *options[] = {turn ? "阅读本轮回复" : "阅读回复  暂无", reply, "最近对话", image_label};
-    for (size_t i = 0U; i < 4U; i++) menu_row(i, ui.at.selected, 178 + (int)i * 25, 24, options[i], enabled[i]);
-    footer("↑↓选择  OK打开\n长按OK 返回任务");
+    const char *options[] = {turn ? "阅读本轮回复" : "阅读回复  暂无", reply, "最近对话"};
+    for (size_t i = 0U; i < 3U; i++) menu_row(i, ui.at.selected, 178 + (int)i * 25, 24, options[i], enabled[i]);
+    footer("↑↓选择  OK打开\n双击OK 返回任务");
 }
 
 static const char *reader_source(void)
 {
     const linx_turn_t *turn = linx_demo_turn(&ui.demo, ui.at.task, ui.at.turn);
-    if (!turn) return "这轮记录已移出保留范围。\n长按 OK 返回。";
+    if (!turn) return ui.back_mode == LINX_BACK_DOUBLE_CLICK ?
+        "这轮记录已移出保留范围。\n双击 OK 返回。" : "这轮记录已移出保留范围。\n长按 OK 返回。";
     if (ui.at.user_text) return turn->user_text ? turn->user_text : "没有用户消息";
     const linx_content_t *content = linx_content_get(turn->content_id);
     return content ? content->body : "本轮仍在执行，请稍后查看。";
@@ -644,7 +653,7 @@ static void render_reader(void)
             }
         }
     }
-    footer(ui.at.user_text ? "↑↓翻页  OK返回\n长按OK 返回" : "↑↓翻页  OK回复\n长按OK 返回");
+    footer("↑↓翻页\n双击OK 返回");
 }
 
 static void render_history(void)
@@ -662,87 +671,36 @@ static void render_history(void)
         int y = 101 + (int)(i - first) * 55;
         if (i == ui.at.selected) selected_row(y, 49);
         char title[72];
-        const char *speaker = entry.kind == HISTORY_USER ? "你" :
-                              entry.kind == HISTORY_IMAGES ? "图片附件" : current->agent;
+        const char *speaker = entry.kind == HISTORY_USER ? "你" : current->agent;
         snprintf(title, sizeof(title), "%s · 第%u轮", speaker, (unsigned)turn->number);
         text(title, 26, y + 2, 190, 22, &linx_font_16_bold, COLOR_INK);
         const linx_content_t *content = linx_content_get(turn->content_id);
-        const char *snippet = entry.kind == HISTORY_USER ? turn->user_text :
-                              entry.kind == HISTORY_IMAGES ? "查看这一轮的图片" : (content ? content->summary : "执行中");
+        const char *snippet = entry.kind == HISTORY_USER ? turn->user_text : (content ? content->summary : "执行中");
         lv_obj_t *preview = text(snippet, 26, y + 25, 190, 19, &linx_font_14, COLOR_MUTED);
         if (preview) lv_label_set_long_mode(preview, LV_LABEL_LONG_DOT);
     }
-    footer("↑↓选择  OK查看\n长按OK 返回概览");
-}
-
-static void draw_image(unsigned view)
-{
-    const linx_image_ref_t *image = current_image();
-    const lv_image_dsc_t *asset = image ? linx_asset_image(image->image_id, view) : NULL;
-    if (!asset) {
-        text("图片暂不可用\n仍可阅读配套说明", 25, 152, 190, 64, &linx_font_16, COLOR_MUTED);
-        return;
-    }
-    set_hidden(ui.image, false);
-    lv_image_set_src(ui.image, asset);
-    lv_obj_set_pos(ui.image, (240 - (int)asset->header.w) / 2, 100);
-}
-
-static void render_images(void)
-{
-    const linx_image_ref_t *image = current_image();
-    const linx_image_info_t *info = image ? linx_content_image(image->image_id) : NULL;
-    char context[72];
-    snprintf(context, sizeof(context), "第%u轮附件 · %u/%u", (unsigned)(image ? image->turn_number : 0U),
-             (unsigned)(ui.at.image_index + 1U), (unsigned)ui.image_count);
-    header(info ? info->name : "图片附件", context);
-    draw_image(0U);
-    footer("↑↓切图  OK操作\n长按OK 返回");
-}
-
-static void render_image_menu(void)
-{
-    const linx_image_ref_t *image = current_image();
-    const linx_image_info_t *info = image ? linx_content_image(image->image_id) : NULL;
-    header("图片操作", info ? info->name : "图片暂不可用");
-    const char *options[] = {"查看上下局部", "针对这张图回复", "返回图片"};
-    for (size_t i = 0U; i < 3U; i++) menu_row(i, ui.at.selected, 119 + (int)i * 42, 36, options[i], true);
-    footer("↑↓选择  OK确认\n长按OK 返回图片");
-}
-
-static void render_image_detail(void)
-{
-    const linx_image_ref_t *image = current_image();
-    const linx_image_info_t *info = image ? linx_content_image(image->image_id) : NULL;
-    header(info ? info->name : "图片局部", ui.at.image_view == 1U ? "上部局部 · 1/2" : "下部局部 · 2/2");
-    lv_obj_t *viewport = box(15, 99, 210, 170, COLOR_PAPER, 1);
-    if (viewport) {
-        lv_obj_set_style_border_color(viewport, lv_color_hex(COLOR_LINE), 0);
-        lv_obj_set_style_border_width(viewport, 1, 0);
-    }
-    draw_image(ui.at.image_view);
-    footer("↑↓看局部  OK回复\n长按OK 返回图片");
+    footer("↑↓选择  OK查看\n双击OK 返回概览");
 }
 
 static void reply_target(char *out, size_t capacity)
 {
-    const linx_image_info_t *info = ui.reply.image_id ? linx_content_image(ui.reply.image_id) : NULL;
     const linx_turn_t *turn = linx_demo_turn(&ui.demo, ui.reply.task_id, ui.reply.source_turn_id);
-    if (info) snprintf(out, capacity, "关联图片：%s", info->name);
-    else snprintf(out, capacity, "原任务 · 第%u轮", (unsigned)(turn ? turn->number : 0U));
+    snprintf(out, capacity, "原任务 · 第%u轮", (unsigned)(turn ? turn->number : 0U));
 }
 
 static const char *voice_status(void)
 {
     switch (ui.voice_state) {
-    case LINX_VOICE_CONNECTING: return "正在连接灵矽";
+    case LINX_VOICE_PREPARING: return "正在准备录音";
+    case LINX_VOICE_DRAINING: return "正在结束上一条指令";
+    case LINX_VOICE_CONNECTING: return "正在连接语音服务";
     case LINX_VOICE_BINDING: return "请在灵矽平台绑定设备";
     case LINX_VOICE_LISTENING: return "麦克风已开启，请说话";
-    case LINX_VOICE_WAITING: return "已结束说话，等待灵矽回复";
-    case LINX_VOICE_SPEAKING: return "正在播放灵矽语音回复";
-    case LINX_VOICE_ERROR: return "连接失败，按OK重试";
-    case LINX_VOICE_CLOSED: return "会话已关闭，按OK重试";
-    default: return "正在连接灵矽";
+    case LINX_VOICE_WAITING: return "正在等待发送结果";
+    case LINX_VOICE_SPEAKING: return "正在播报发送结果";
+    case LINX_VOICE_ERROR: return "本次未能完成，按OK重录";
+    case LINX_VOICE_CLOSED: return "本轮已结束，按OK重录";
+    default: return "正在准备录音";
     }
 }
 
@@ -765,19 +723,19 @@ static void render_voice(void)
 {
     const linx_task_t *target = linx_demo_task(&ui.demo, ui.reply.task_id);
     const bool live = ui.voice_handler != NULL;
-    header(live ? "灵矽对话" : "正在聆听", target ? target->title : "原任务");
+    header(live ? "发送指令" : "正在聆听", target ? target->title : "原任务");
     text(live ? voice_status() : "模拟输入，不采集声音",
          live ? 16 : 34, 106, live ? 208 : 180, 18, &linx_font_12, COLOR_MUTED);
     if (live && ui.voice_state == LINX_VOICE_BINDING) {
         text("设备激活码", 64, 148, 130, 24, &linx_font_16, COLOR_INK);
         text(ui.activation_code, 40, 183, 160, 36, &linx_font_28_bold, COLOR_ACCENT_TEXT);
-        footer("OK绑定后重试  ↓返回\n长按OK 返回");
+        footer("OK绑定后重试\n双击OK 返回");
         return;
     }
     if (live && (ui.voice_state == LINX_VOICE_ERROR || ui.voice_state == LINX_VOICE_CLOSED)) {
         text(voice_error(), 28, 151, 184, 64, &linx_font_16, COLOR_ACCENT_TEXT);
-        footer(ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "OK手机配网  ↓返回\n长按OK 返回" :
-               "OK重试  ↓返回\n长按OK 返回");
+        footer(ui.voice_error == LINX_VOICE_NOT_CONFIGURED ? "OK手机配网\n双击OK 返回" :
+               "OK重新录入\n双击OK 返回");
         return;
     }
     unsigned phase = (unsigned)((ui.now_ms - ui.voice_ms) / 125U);
@@ -794,10 +752,9 @@ static void render_voice(void)
     char target_context[96];
     reply_target(target_context, sizeof(target_context));
     text(target_context, 28, 252, 184, 18, &linx_font_12, COLOR_MUTED);
-    footer(!live ? "OK结束录音  ↓取消\n长按OK 取消" :
-           ui.voice_state == LINX_VOICE_SPEAKING ? "OK打断重录  ↓返回\n长按OK 返回" :
-           ui.voice_state == LINX_VOICE_LISTENING ? "OK结束说话  ↓返回\n长按OK 返回" :
-           "↓返回\n长按OK 返回");
+    footer(!live ? "OK结束录音\n双击OK 取消" :
+           ui.voice_state == LINX_VOICE_LISTENING ? "OK结束并发送\n双击OK 返回" :
+           "请稍候\n双击OK 返回");
 }
 
 static void update_voice_wave(void)
@@ -828,7 +785,7 @@ static void render_confirm(void)
          ui.notice ? COLOR_ACCENT_TEXT : COLOR_MUTED);
     const char *options[] = {"发送到原任务", "重新模拟输入", "取消"};
     for (size_t i = 0U; i < 3U; i++) menu_row(i, ui.at.selected, 211 + (int)i * 23, 22, options[i], true);
-    footer("↑↓选择  OK确认\n长按OK 放弃草稿");
+    footer("↑↓选择  OK确认\n双击OK 放弃草稿");
 }
 
 static void render_receipt(void)
@@ -847,15 +804,11 @@ static void render_receipt(void)
     else if (state == LINX_COMMAND_FINISHED) detail = "原任务已有新的回复\n按 OK 返回查看";
     else if (state == LINX_COMMAND_FAILED) detail = "电脑尚未接收\n保留原指令，可手动重试";
     text(detail, 16, 156, 208, 44, &linx_font_16, COLOR_MUTED);
-    if (command && command->context.image_id) {
-        const linx_image_info_t *info = linx_content_image(command->context.image_id);
-        text(info ? info->name : "关联原图片", 16, 201, 208, 19, &linx_font_14, COLOR_MUTED);
-    }
     if (state == LINX_COMMAND_FAILED) {
         menu_row(0U, ui.at.selected, 222, 23, "重试同一条指令", true);
         menu_row(1U, ui.at.selected, 246, 23, "取消这条指令", true);
-        footer("↑↓选择  OK执行\n长按OK 保留并返回");
-    } else footer("OK返回任务概览\n长按OK 返回概览");
+        footer("↑↓选择  OK执行\n双击OK 保留并返回");
+    } else footer("OK返回任务概览\n双击OK 返回概览");
 }
 
 static void wifi_clear(void)
@@ -868,8 +821,8 @@ static void wifi_clear(void)
 static void wifi_setup(void)
 {
     wifi_clear();
-    if (++voice_sequence == 0U) ++voice_sequence;
-    ui.voice_generation = voice_sequence;
+    cancel_prepared_voice();
+    ui.voice_generation = next_voice_generation();
     ui.wifi_mode = LINX_UI_WIFI_SCANNING;
     ui.voice_error = LINX_VOICE_OK;
     linx_voice_request_t request = {.command = LINX_VOICE_WIFI_SETUP, .generation = voice_sequence};
@@ -882,7 +835,7 @@ static void wifi_setup(void)
 static void open_wifi(void)
 {
     ui.wifi_origin = ui.at;
-    cancel_live_voice();
+    cancel_live_voice(LINX_VOICE_RELEASE);
     ui.at.page = LINX_UI_WIFI;
     ui.notice = NULL;
     wifi_setup();
@@ -890,7 +843,7 @@ static void open_wifi(void)
 
 static void close_wifi(void)
 {
-    cancel_live_voice();
+    cancel_live_voice(LINX_VOICE_RELEASE);
     wifi_clear();
     ui.at = ui.wifi_origin;
     ui.notice = NULL;
@@ -968,9 +921,9 @@ static void render_wifi(void)
             ui.voice_error == LINX_VOICE_TIMEOUT ? "配网已超时，请重试" : voice_error();
         text(status, 28, 151, 184, 64, &linx_font_16, COLOR_INK);
     }
-    footer(ui.wifi_mode == LINX_UI_WIFI_ERROR ? "OK重新配网\n长按OK 返回" :
-           ui.wifi_mode == LINX_UI_WIFI_CONNECTED ? "OK返回设置\n长按OK 返回" :
-           "5分钟内完成配网\n长按OK 取消");
+    footer(ui.wifi_mode == LINX_UI_WIFI_ERROR ? "OK重新配网\n双击OK 返回" :
+           ui.wifi_mode == LINX_UI_WIFI_CONNECTED ? "OK返回设置\n双击OK 返回" :
+           "5分钟内完成配网\n双击OK 取消");
 }
 
 static void render_settings(void)
@@ -979,13 +932,34 @@ static void render_settings(void)
            ui.voice_handler ? "网络与演示选项" : "固定剧情 · 无网络连接");
     const char *options[] = {"恢复初始场景", ui.demo.online ? "模拟电脑：在线" : "模拟电脑：离线",
                               ui.demo.fail_next_send ? "下次发送失败：开" : "下次发送失败：关", "关于 LinX 演示"};
-    if (ui.voice_handler) {
-        menu_row(0U, ui.at.selected, 108, 28, "Wi-Fi网络", true);
-        for (size_t i = 0U; i < 4U; ++i) menu_row(i + 1U, ui.at.selected, 139 + (int)i * 31, 28, options[i], true);
-    } else {
-        for (size_t i = 0U; i < 4U; i++) menu_row(i, ui.at.selected, 110 + (int)i * 37, 33, options[i], true);
+    size_t count = ui.voice_handler ? 6U : 5U;
+    for (size_t i = 0U; i < count; ++i) {
+        const char *option;
+        if (i == count - 1U) option = ui.back_mode == LINX_BACK_DOUBLE_CLICK ? "返回方式：双击" : "返回方式：长按";
+        else if (ui.voice_handler && i == 0U) option = "Wi-Fi网络";
+        else option = options[i - (ui.voice_handler ? 1U : 0U)];
+        menu_row(i, ui.at.selected, (ui.voice_handler ? 106 : 108) + (int)i * (ui.voice_handler ? 26 : 30),
+                 ui.voice_handler ? 24 : 27, option, true);
     }
-    footer("↑↓选择  OK切换\n长按OK 返回任务");
+    const char *status = ui.back_mode_pending ? "正在保存，请稍候" : ui.back_mode_notice;
+    if (status) text(status, 24, 262, 192, 16, &linx_font_12, COLOR_MUTED);
+    footer("↑↓选择  OK切换\n双击OK 返回任务");
+}
+
+static void change_back_mode(void)
+{
+    if (ui.back_mode_pending) return;
+    if (!ui.back_mode_handler) {
+        ui.back_mode_notice = "无法保存，请重试";
+        return;
+    }
+    ui.pending_back_mode = ui.back_mode == LINX_BACK_LONG_PRESS ? LINX_BACK_DOUBLE_CLICK : LINX_BACK_LONG_PRESS;
+    ui.back_mode_pending = true;
+    ui.back_mode_notice = NULL;
+    if (!ui.back_mode_handler(ui.pending_back_mode, ui.back_mode_user)) {
+        ui.back_mode_pending = false;
+        ui.back_mode_notice = "保存失败，请重试";
+    }
 }
 
 static void render_reset(void)
@@ -994,22 +968,20 @@ static void render_reset(void)
     text("清除历史、未发送指令\n和全部演示计时，\n重新载入三条任务。", 16, 110, 208, 92, &linx_font_16, COLOR_INK);
     menu_row(0U, ui.at.selected, 211, 27, "取消", true);
     menu_row(1U, ui.at.selected, 242, 27, "恢复初始场景", true);
-    footer("↑↓选择  OK确认\n长按OK 取消");
+    footer("↑↓选择  OK确认\n双击OK 取消");
 }
 
 static void render_about(void)
 {
     header("关于 LinX", "随身 Agent 对话终端");
-    const char *detail = ui.voice_handler
-        ? "灵矽语音已开启\n\n进入语音页后联网，\n采集声音并上传灵矽，\n播放智能体语音回复。\n\n任务、图片及电量\n仍为内置模拟内容。"
-        : "暖白交互演示\n\n任务、对话、图片、\n电脑状态与电量均为\n内置模拟内容。\n\n不会采集声音或联网。";
-    text(detail, 16, 102, 208, 168, &linx_font_16, COLOR_INK);
-    footer("OK返回演示选项\n长按OK 返回");
+    text("暖白交互演示\n\n任务、文字对话、\n电脑状态与电量均为\n内置模拟内容。\n\n不会采集声音或联网。", 16, 102, 208, 168, &linx_font_16, COLOR_INK);
+    footer("OK返回演示选项\n双击OK 返回");
 }
 
 static void render(void)
 {
     if (!ui.root) return;
+    prepare_overview_voice();
     reset_objects();
     switch (ui.at.page) {
         case LINX_UI_BOOT:
@@ -1022,9 +994,6 @@ static void render(void)
         case LINX_UI_OVERVIEW: render_overview(); break;
         case LINX_UI_READER: render_reader(); break;
         case LINX_UI_HISTORY: render_history(); break;
-        case LINX_UI_IMAGES: render_images(); break;
-        case LINX_UI_IMAGE_MENU: render_image_menu(); break;
-        case LINX_UI_IMAGE_DETAIL: render_image_detail(); break;
         case LINX_UI_VOICE: render_voice(); break;
         case LINX_UI_CONFIRM: render_confirm(); break;
         case LINX_UI_RECEIPT: render_receipt(); break;
@@ -1035,12 +1004,12 @@ static void render(void)
     }
     lv_obj_invalidate(ui.decor);
     ui.seen_revision = ui.demo.revision;
+    ui.rendered_page = ui.at.page;
 }
 
 void linx_ui_init(lv_obj_t *screen, uint64_t now_ms)
 {
     linx_ui_deinit();
-    memset(&ui, 0, sizeof(ui));
     if (!screen) return;
     ui.now_ms = now_ms;
     ui.boot_ms = now_ms;
@@ -1064,7 +1033,6 @@ void linx_ui_init(lv_obj_t *screen, uint64_t now_ms)
     lv_obj_remove_flag(ui.decor, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(ui.decor, 240, 320);
     lv_obj_add_event_cb(ui.decor, draw_decorations, LV_EVENT_DRAW_MAIN, NULL);
-    ui.image = lv_image_create(ui.root);
     for (size_t i = 0U; i < LABEL_COUNT; i++) {
         ui.labels[i] = lv_label_create(ui.root);
         lv_obj_remove_style_all(ui.labels[i]);
@@ -1075,7 +1043,8 @@ void linx_ui_init(lv_obj_t *screen, uint64_t now_ms)
 
 void linx_ui_deinit(void)
 {
-    cancel_live_voice();
+    cancel_live_voice(LINX_VOICE_RELEASE);
+    cancel_prepared_voice();
     wifi_clear();
     if (ui.root) lv_obj_delete(ui.root);
     memset(&ui, 0, sizeof(ui));
@@ -1084,9 +1053,44 @@ void linx_ui_deinit(void)
 void linx_ui_set_voice_handler(linx_voice_handler_t handler, void *user)
 {
     if (ui.at.page == LINX_UI_WIFI) close_wifi();
-    if (ui.at.page == LINX_UI_VOICE || ui.at.page == LINX_UI_CONFIRM) cancel_reply();
+    if (ui.at.page == LINX_UI_VOICE || ui.at.page == LINX_UI_CONFIRM) {
+        cancel_live_voice(LINX_VOICE_RELEASE);
+        restore_reply_origin();
+    }
+    cancel_prepared_voice();
     ui.voice_handler = handler;
     ui.voice_user = user;
+    if (ui.at.page == LINX_UI_SETTINGS && ui.at.selected >= (handler ? 6U : 5U))
+        ui.at.selected = handler ? 5U : 4U;
+    render();
+}
+
+void linx_ui_set_back_mode(linx_back_mode_t mode)
+{
+    if ((unsigned)mode > LINX_BACK_DOUBLE_CLICK) return;
+    ui.back_mode = mode;
+    ui.back_mode_pending = false;
+    ui.back_mode_notice = NULL;
+    render();
+}
+
+linx_back_mode_t linx_ui_back_mode(void)
+{
+    return ui.back_mode;
+}
+
+void linx_ui_set_back_mode_handler(linx_ui_back_mode_handler_t handler, void *user)
+{
+    ui.back_mode_handler = handler;
+    ui.back_mode_user = user;
+}
+
+void linx_ui_back_mode_result(linx_back_mode_t mode, bool saved)
+{
+    if (!ui.back_mode_pending || mode != ui.pending_back_mode) return;
+    ui.back_mode_pending = false;
+    if (saved) ui.back_mode = mode;
+    ui.back_mode_notice = saved ? "已保存" : "保存失败，请重试";
     render();
 }
 
@@ -1095,7 +1099,12 @@ bool linx_ui_voice_event(const linx_voice_event_t *event)
     if (!event || !ui.voice_handler || ui.voice_generation == 0U ||
         event->generation != ui.voice_generation || (unsigned)event->error > LINX_VOICE_TIMEOUT) return false;
     if (ui.at.page == LINX_UI_WIFI) return wifi_event(event);
-    if (ui.at.page != LINX_UI_VOICE || (unsigned)event->state > LINX_VOICE_CLOSED) return false;
+    if (ui.at.page != LINX_UI_VOICE ||
+        ((unsigned)event->state > LINX_VOICE_CLOSED && event->state != LINX_VOICE_PREPARING &&
+         event->state != LINX_VOICE_DRAINING)) return false;
+    if (event->state == LINX_VOICE_FINISHED &&
+        (event->error != LINX_VOICE_OK ||
+         (ui.voice_state != LINX_VOICE_WAITING && ui.voice_state != LINX_VOICE_SPEAKING))) return false;
     if (event->state == LINX_VOICE_BINDING) {
         if (event->activation_code[6] != '\0') return false;
         for (size_t i = 0U; i < 6U; ++i) {
@@ -1109,6 +1118,7 @@ bool linx_ui_voice_event(const linx_voice_event_t *event)
     ui.voice_state = event->state;
     ui.voice_error = event->error;
     memcpy(ui.activation_code, event->activation_code, sizeof(ui.activation_code));
+    if (event->state == LINX_VOICE_FINISHED) restore_reply_origin();
     render();
     return true;
 }
@@ -1118,14 +1128,11 @@ static void handle_back(void)
     switch (ui.at.page) {
         case LINX_UI_BOOT: ui.at.page = LINX_UI_TASKS; break;
         case LINX_UI_TASKS: push(LINX_UI_SETTINGS); break;
+        case LINX_UI_OVERVIEW: pop(); break;
         case LINX_UI_WIFI: close_wifi(); break;
         case LINX_UI_VOICE:
         case LINX_UI_CONFIRM: cancel_reply(); break;
         case LINX_UI_RECEIPT: to_overview(); break;
-        case LINX_UI_IMAGE_DETAIL:
-            pop();
-            if (ui.at.page == LINX_UI_IMAGE_MENU) pop();
-            break;
         default: pop(); break;
     }
 }
@@ -1135,9 +1142,9 @@ static void handle_direction(int direction)
     switch (ui.at.page) {
         case LINX_UI_TASKS: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, LINX_TASK_COUNT); break;
         case LINX_UI_OVERVIEW: {
-            bool enabled[4];
+            bool enabled[3];
             overview_enabled(enabled);
-            ui.at.selected = linx_menu_step(ui.at.selected, direction, enabled, 4U);
+            ui.at.selected = linx_menu_step(ui.at.selected, direction, enabled, 3U);
             break;
         }
         case LINX_UI_READER: {
@@ -1154,18 +1161,6 @@ static void handle_direction(int direction)
                 ui.at.history_kind = ui.history[ui.at.selected].kind;
             }
             break;
-        case LINX_UI_IMAGES:
-            rebuild_images();
-            ui.at.image_index = linx_menu_step(ui.at.image_index, direction, NULL, ui.image_count);
-            if (ui.image_count > 0U) {
-                const linx_image_ref_t *image = &ui.images[ui.at.image_index];
-                ui.at.image_id = image->image_id;
-                ui.at.image_turn = image->turn_id;
-                if (ui.at.filter == 0U) ui.remembered_image[ui.at.task - 1U] = *image;
-            }
-            break;
-        case LINX_UI_IMAGE_DETAIL: ui.at.image_view = direction > 0 ? 2U : 1U; break;
-        case LINX_UI_IMAGE_MENU:
         case LINX_UI_CONFIRM: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 3U); break;
         case LINX_UI_RECEIPT: {
             const linx_command_t *command = linx_demo_command(&ui.demo, ui.at.task, ui.at.command);
@@ -1173,10 +1168,10 @@ static void handle_direction(int direction)
                 ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 2U);
             break;
         }
-        case LINX_UI_SETTINGS: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, ui.voice_handler ? 5U : 4U); break;
+        case LINX_UI_SETTINGS: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, ui.voice_handler ? 6U : 5U); break;
         case LINX_UI_WIFI: break;
         case LINX_UI_RESET: ui.at.selected = linx_menu_step(ui.at.selected, direction, NULL, 2U); break;
-        case LINX_UI_VOICE: if (direction > 0) cancel_reply(); break;
+        case LINX_UI_VOICE: break;
         default: break;
     }
 }
@@ -1197,45 +1192,21 @@ static void handle_ok(void)
             if (ui.at.selected == 0U) {
                 const linx_turn_t *turn = latest_reply();
                 if (turn) open_reader(turn->id, false);
-            } else if (ui.at.selected == 1U) begin_reply(0U, 0U);
+            } else if (ui.at.selected == 1U) begin_reply();
             else if (ui.at.selected == 2U) {
                 push(LINX_UI_HISTORY);
                 ui.at.history_turn = 0U;
                 rebuild_history();
-            } else if (ui.at.selected == 3U && linx_demo_images(&ui.demo, ui.at.task, 0U, NULL, 0U) > 0U) open_images(0U);
+            }
             break;
-        case LINX_UI_READER:
-            if (ui.at.user_text) pop();
-            else begin_reply(ui.at.turn, 0U);
-            break;
+        case LINX_UI_READER: break;
         case LINX_UI_HISTORY:
             rebuild_history();
             if (ui.history_count > 0U) {
                 history_item_t item = ui.history[ui.at.selected];
-                if (item.kind == HISTORY_IMAGES) open_images(item.turn);
-                else open_reader(item.turn, item.kind == HISTORY_USER);
+                open_reader(item.turn, item.kind == HISTORY_USER);
             }
             break;
-        case LINX_UI_IMAGES:
-            if (current_image()) {
-                push(LINX_UI_IMAGE_MENU);
-                ui.at.selected = 1U;
-            }
-            break;
-        case LINX_UI_IMAGE_MENU:
-            if (ui.at.selected == 0U) {
-                push(LINX_UI_IMAGE_DETAIL);
-                ui.at.image_view = 1U;
-            } else if (ui.at.selected == 1U) {
-                const linx_image_ref_t *image = current_image();
-                if (image) begin_reply(image->turn_id, image->image_id);
-            } else pop();
-            break;
-        case LINX_UI_IMAGE_DETAIL: {
-            const linx_image_ref_t *image = current_image();
-            if (image) begin_reply(image->turn_id, image->image_id);
-            break;
-        }
         case LINX_UI_VOICE:
             if (ui.voice_handler) {
                 if (ui.voice_state == LINX_VOICE_LISTENING) {
@@ -1246,7 +1217,7 @@ static void handle_ok(void)
                     }
                 } else if (ui.voice_state == LINX_VOICE_ERROR && ui.voice_error == LINX_VOICE_NOT_CONFIGURED) open_wifi();
                 else if (ui.voice_state == LINX_VOICE_ERROR || ui.voice_state == LINX_VOICE_CLOSED ||
-                           ui.voice_state == LINX_VOICE_BINDING || ui.voice_state == LINX_VOICE_SPEAKING) start_voice();
+                           ui.voice_state == LINX_VOICE_BINDING) start_voice();
             } else {
                 ui.at.page = LINX_UI_CONFIRM;
                 ui.at.selected = 0U;
@@ -1281,6 +1252,7 @@ static void handle_ok(void)
         case LINX_UI_WIFI: wifi_ok(); break;
         case LINX_UI_SETTINGS: {
             size_t selected = ui.at.selected;
+            if (selected == (ui.voice_handler ? 5U : 4U)) { change_back_mode(); break; }
             if (ui.voice_handler) {
                 if (selected == 0U) { open_wifi(); break; }
                 --selected;
@@ -1295,7 +1267,6 @@ static void handle_ok(void)
             if (ui.at.selected == 1U) {
                 linx_demo_reset(&ui.demo, ui.now_ms);
                 memset(ui.positions, 0, sizeof(ui.positions));
-                memset(ui.remembered_image, 0, sizeof(ui.remembered_image));
                 memset(&ui.reply, 0, sizeof(ui.reply));
                 memset(&ui.at, 0, sizeof(ui.at));
                 ui.at.page = LINX_UI_TASKS;
@@ -1310,7 +1281,7 @@ static void handle_ok(void)
 void linx_ui_handle_key(linx_ui_key_t key)
 {
     if (!ui.root) return;
-    if (key == LINX_UI_KEY_OK_LONG) handle_back();
+    if (key == LINX_UI_KEY_BACK) handle_back();
     else if (key == LINX_UI_KEY_OK) handle_ok();
     else if (key == LINX_UI_KEY_UP) handle_direction(-1);
     else if (key == LINX_UI_KEY_DOWN) handle_direction(1);
@@ -1333,7 +1304,7 @@ void linx_ui_tick(uint64_t now_ms)
             ui.at.selected = 0U;
             refresh = true;
         } else if (now_ms - ui.last_wave_ms >= 125U &&
-                   (!ui.voice_handler || ui.voice_state == LINX_VOICE_LISTENING || ui.voice_state == LINX_VOICE_SPEAKING)) {
+                   (!ui.voice_handler || ui.voice_state == LINX_VOICE_LISTENING)) {
             ui.last_wave_ms = now_ms;
             if (!refresh) update_voice_wave();
         }
@@ -1361,7 +1332,6 @@ linx_ui_debug_t linx_ui_debug(void)
         .selected = ui.at.selected,
         .read_page = ui.at.read_page,
         .read_page_count = ui.pages.count,
-        .image_view = ui.at.image_view,
         .render_overflow = ui.render_overflow,
         .labels_used = ui.labels_used,
         .voice_generation = ui.voice_generation,
@@ -1369,13 +1339,7 @@ linx_ui_debug_t linx_ui_debug(void)
         .voice_error = ui.voice_error,
         .wifi_mode = ui.wifi_mode,
     };
-    if (ui.at.page == LINX_UI_IMAGES || ui.at.page == LINX_UI_IMAGE_MENU || ui.at.page == LINX_UI_IMAGE_DETAIL) {
-        const linx_image_ref_t *image = current_image();
-        if (image) {
-            result.image_id = image->image_id;
-            result.turn_id = image->turn_id;
-        }
-    } else if (ui.at.page == LINX_UI_VOICE || ui.at.page == LINX_UI_CONFIRM) {
+    if (ui.at.page == LINX_UI_VOICE || ui.at.page == LINX_UI_CONFIRM) {
         result.image_id = ui.reply.image_id;
         result.turn_id = ui.reply.source_turn_id;
         result.task_id = ui.reply.task_id;

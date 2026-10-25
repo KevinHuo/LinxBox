@@ -36,8 +36,7 @@ static void check_reset(void)
     assert(!ui.render_overflow && ui.voice_counter == NULL);
     for (size_t i = 0; i < LABEL_COUNT; ++i) assert(lv_obj_has_flag(ui.labels[i], LV_OBJ_FLAG_HIDDEN));
     for (size_t i = 0; i < BOX_COUNT; ++i) assert(lv_obj_has_flag(ui.boxes[i], LV_OBJ_FLAG_HIDDEN));
-    assert(lv_obj_has_flag(ui.image, LV_OBJ_FLAG_HIDDEN));
-    assert(lv_obj_get_child_count(ui.root) == LABEL_COUNT + BOX_COUNT + 2);
+    assert(lv_obj_get_child_count(ui.root) == LABEL_COUNT + BOX_COUNT + 1);
     assert(lv_mem_test() == LV_RESULT_OK);
 }
 
@@ -54,7 +53,7 @@ static void check_full_labels(void)
 {
     assert(ui.labels_used == LABEL_COUNT && ui.render_overflow);
     for (size_t i = 0; i < LABEL_COUNT; ++i) assert(strcmp(lv_label_get_text(ui.labels[i]), "x") == 0);
-    assert(lv_obj_get_child_count(ui.root) == LABEL_COUNT + BOX_COUNT + 2);
+    assert(lv_obj_get_child_count(ui.root) == LABEL_COUNT + BOX_COUNT + 1);
     assert(lv_mem_test() == LV_RESULT_OK);
 }
 
@@ -82,7 +81,6 @@ static void test_label_capacity(void)
 static void test_box_capacity(void)
 {
     check_reset();
-    lv_obj_t *image = ui.image;
     lv_obj_t *decor = ui.decor;
     for (size_t i = 0; i < BOX_COUNT; ++i) {
         lv_obj_t *object = box(12, 13, 40, 20, COLOR_SELECTED, 5);
@@ -93,7 +91,7 @@ static void test_box_capacity(void)
     assert(!ui.render_overflow && ui.boxes_used == BOX_COUNT);
     assert(box(0, 0, 1, 1, COLOR_ACCENT, 0) == NULL);
     assert(ui.render_overflow && ui.boxes_used == BOX_COUNT);
-    assert(ui.image == image && ui.decor == decor && lv_mem_test() == LV_RESULT_OK);
+    assert(ui.decor == decor && lv_mem_test() == LV_RESULT_OK);
     check_reset();
     assert(box(1, 2, 3, 4, COLOR_LINE, 0) == ui.boxes[0]);
     assert(ui.boxes_used == 1 && !ui.render_overflow);
@@ -174,8 +172,21 @@ static void test_footer_truncation(void)
     assert(strspn(lv_label_get_text(ui.labels[0]), "x") == 79);
     assert(strcmp(lv_label_get_text(ui.labels[1]), "长按返回") == 0);
     check_reset();
-    footer("OK确认\n长按OK返回");
+    footer("OK确认\n双击OK返回");
     assert(strcmp(lv_label_get_text(ui.labels[0]), "OK确认") == 0);
+    const char *instructions[] = {"设备设置", "演示选项", "取消", "放弃", "返回"};
+    const char *actions[] = {"设置", "选项", "取消", "放弃", "返回"};
+    for (unsigned mode = LINX_BACK_LONG_PRESS; mode <= LINX_BACK_DOUBLE_CLICK; ++mode) {
+        linx_ui_set_back_mode((linx_back_mode_t)mode);
+        for (size_t i = 0U; i < sizeof(instructions) / sizeof(instructions[0]); ++i) {
+            check_reset();
+            footer(instructions[i]);
+            char expected[24];
+            snprintf(expected, sizeof(expected), "%s%s", mode == LINX_BACK_LONG_PRESS ? "长按" : "双击", actions[i]);
+            assert(strcmp(lv_label_get_text(ui.labels[1]), expected) == 0);
+        }
+    }
+    linx_ui_set_back_mode(LINX_BACK_LONG_PRESS);
 }
 
 static void test_stack_capacity(void)
@@ -225,7 +236,7 @@ static void test_renderers_handle_exhausted_pools(void)
     render_reader();
     check_full_labels();
 
-    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
     linx_ui_handle_key(LINX_UI_KEY_DOWN);
     linx_ui_handle_key(LINX_UI_KEY_DOWN);
     linx_ui_handle_key(LINX_UI_KEY_OK);
@@ -234,19 +245,17 @@ static void test_renderers_handle_exhausted_pools(void)
     render_history();
     check_full_labels();
 
-    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
-    linx_ui_handle_key(LINX_UI_KEY_DOWN);
-    linx_ui_handle_key(LINX_UI_KEY_OK);
-    assert(linx_ui_page() == LINX_UI_IMAGES);
-    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
     linx_ui_handle_key(LINX_UI_KEY_UP);
     linx_ui_handle_key(LINX_UI_KEY_OK);
-    assert(linx_ui_page() == LINX_UI_IMAGE_DETAIL);
+    assert(linx_ui_page() == LINX_UI_VOICE && ui.reply.image_id == 0U);
+    fill_labels();
+    render_voice();
+    check_full_labels();
     check_reset();
     for (size_t i = 0; i < BOX_COUNT; ++i) assert(box(1, 2, 3, 4, COLOR_PAPER, 0) != NULL);
-    render_image_detail();
+    render_voice();
     assert(ui.boxes_used == BOX_COUNT && ui.render_overflow);
-    assert(!lv_obj_has_flag(ui.image, LV_OBJ_FLAG_HIDDEN));
     assert(lv_mem_test() == LV_RESULT_OK);
 }
 
@@ -273,35 +282,79 @@ static void test_voice_sequence_and_private_guards(void)
     linx_ui_handle_key(LINX_UI_KEY_OK);
     linx_ui_handle_key(LINX_UI_KEY_DOWN);
     assert(linx_ui_page() == LINX_UI_OVERVIEW && linx_ui_debug().selected == 1U);
+    assert(boundary_voice_count == 1U && boundary_voice_requests[0].command == LINX_VOICE_PREPARE &&
+           boundary_voice_requests[0].generation != 0U && ui.voice_generation == 0U);
 
     /* 只把编号计数器放到实际溢出边界；任务、上下文和页面均由真实按键建立。 */
     voice_sequence = UINT32_MAX - 1U;
     linx_ui_handle_key(LINX_UI_KEY_OK);
-    assert(boundary_voice_count == 1U && ui.voice_generation == UINT32_MAX);
-    assert(boundary_voice_requests[0].command == LINX_VOICE_START);
-    linx_reply_context_t original = boundary_voice_requests[0].context;
-    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
-    assert(boundary_voice_count == 2U && boundary_voice_requests[1].command == LINX_VOICE_CANCEL);
-    assert(boundary_voice_requests[1].generation == UINT32_MAX);
+    assert(boundary_voice_count == 2U && ui.voice_generation == UINT32_MAX);
+    assert(boundary_voice_requests[1].command == LINX_VOICE_START);
+    linx_reply_context_t original = boundary_voice_requests[1].context;
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(boundary_voice_count == 4U && boundary_voice_requests[2].command == LINX_VOICE_CANCEL);
+    assert(boundary_voice_requests[2].generation == UINT32_MAX);
+    assert(boundary_voice_requests[3].command == LINX_VOICE_PREPARE &&
+           boundary_voice_requests[3].generation == 1U && ui.voice_generation == 0U);
     linx_ui_handle_key(LINX_UI_KEY_OK);
-    assert(boundary_voice_count == 3U && boundary_voice_requests[2].command == LINX_VOICE_START);
-    assert(ui.voice_generation == 1U && boundary_voice_requests[2].generation == 1U);
-    assert(memcmp(&original, &boundary_voice_requests[2].context, sizeof(original)) == 0);
+    assert(boundary_voice_count == 5U && boundary_voice_requests[4].command == LINX_VOICE_START);
+    assert(ui.voice_generation == 2U && boundary_voice_requests[4].generation == 2U);
+    assert(memcmp(&original, &boundary_voice_requests[4].context, sizeof(original)) == 0);
     linx_voice_event_t stale = { .generation = UINT32_MAX, .state = LINX_VOICE_LISTENING };
     assert(!linx_ui_voice_event(&stale));
 
     /* 无法从公开事件进入的非法枚举仍有稳定默认文案。 */
     ui.voice_state = (linx_voice_state_t)-1;
-    assert(strcmp(voice_status(), "正在连接灵矽") == 0);
+    assert(strcmp(voice_status(), "正在准备录音") == 0);
     ui.voice_state = LINX_VOICE_CONNECTING;
-    cancel_live_voice();
-    assert(boundary_voice_count == 4U && ui.voice_generation == 0U);
+    cancel_live_voice(LINX_VOICE_CANCEL);
+    assert(boundary_voice_count == 6U && ui.voice_generation == 0U);
     linx_voice_event_t zero = { .generation = 0U, .state = LINX_VOICE_LISTENING };
     assert(!linx_ui_voice_event(&zero));
-    cancel_live_voice();
-    assert(boundary_voice_count == 4U);
+    cancel_live_voice(LINX_VOICE_CANCEL);
+    assert(boundary_voice_count == 6U);
     linx_ui_set_voice_handler(NULL, NULL);
     assert(linx_ui_page() == LINX_UI_OVERVIEW && lv_mem_test() == LV_RESULT_OK);
+
+    /* 普通返回后保留准备所有权，真正销毁时仍能取消同一连接。 */
+    boundary_voice_count = 0U;
+    linx_ui_set_voice_handler(boundary_voice_handler, &boundary_voice_count);
+    assert(boundary_voice_count == 1U && boundary_voice_requests[0].command == LINX_VOICE_PREPARE);
+    uint32_t prepared = boundary_voice_requests[0].generation;
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_TASKS && ui.connection_generation == prepared && boundary_voice_count == 1U);
+    linx_ui_deinit();
+    assert(boundary_voice_count == 2U && boundary_voice_requests[1].command == LINX_VOICE_RELEASE &&
+           boundary_voice_requests[1].generation == prepared && lv_mem_test() == LV_RESULT_OK);
+}
+
+static void test_soft_cancel_without_overview_retains_owner(void)
+{
+    linx_ui_init(lv_screen_active(), 0U);
+    linx_ui_tick(800U);
+    boundary_voice_count = 0U;
+    linx_ui_set_voice_handler(boundary_voice_handler, &boundary_voice_count);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    location_t tasks_origin = ui.at;
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    linx_ui_handle_key(LINX_UI_KEY_DOWN);
+    linx_ui_handle_key(LINX_UI_KEY_OK);
+    uint32_t owner = ui.voice_generation;
+    assert(owner != 0U && ui.connection_generation == owner &&
+           boundary_voice_count == 2U && boundary_voice_requests[1].command == LINX_VOICE_START);
+
+    /* 当前公开入口只从概览录入；内部恢复到其他原页面也必须保留实际连接所有者。 */
+    ui.reply_origin = tasks_origin;
+    ui.reply_depth = 0U;
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
+    assert(ui.at.page == LINX_UI_TASKS && ui.depth == 0U && ui.voice_generation == 0U &&
+           ui.connection_generation == owner && boundary_voice_count == 3U);
+    assert(boundary_voice_requests[2].command == LINX_VOICE_CANCEL &&
+           boundary_voice_requests[2].generation == owner);
+    linx_ui_deinit();
+    assert(boundary_voice_count == 4U && boundary_voice_requests[3].command == LINX_VOICE_RELEASE &&
+           boundary_voice_requests[3].generation == owner && lv_mem_test() == LV_RESULT_OK);
 }
 
 static void assert_phone_credentials_erased(void)
@@ -316,7 +369,7 @@ static void boundary_enter_phone_portal(void)
     linx_ui_tick(800U);
     boundary_voice_count = 0U;
     linx_ui_set_voice_handler(boundary_voice_handler, &boundary_voice_count);
-    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
     linx_ui_handle_key(LINX_UI_KEY_OK);
     assert(ui.at.page == LINX_UI_WIFI && ui.wifi_mode == LINX_UI_WIFI_SCANNING);
     linx_voice_event_t portal = { .generation = ui.voice_generation, .state = LINX_VOICE_WIFI_PORTAL,
@@ -337,7 +390,7 @@ static void test_phone_secret_and_render_boundaries(void)
     assert(ui.wifi_mode == LINX_UI_WIFI_SCANNING);
     assert_phone_credentials_erased();
     boundary_enter_phone_portal();
-    linx_ui_handle_key(LINX_UI_KEY_OK_LONG);
+    linx_ui_handle_key(LINX_UI_KEY_BACK);
     assert(ui.at.page == LINX_UI_SETTINGS);
     assert_phone_credentials_erased();
     boundary_enter_phone_portal();
@@ -372,7 +425,7 @@ static void test_phone_secret_and_render_boundaries(void)
     assert(linx_ui_voice_event(&portal));
     saved.generation = ui.voice_generation;
     assert(linx_ui_voice_event(&saved));
-    assert(ui.at.page == LINX_UI_VOICE && ui.voice_state == LINX_VOICE_CONNECTING);
+    assert(ui.at.page == LINX_UI_VOICE && ui.voice_state == LINX_VOICE_PREPARING);
     assert_phone_credentials_erased();
 
     /* 真实热点页面绘制器在池满时保留已有对象，SSID 省略分支不解引用空指针。 */
@@ -408,6 +461,7 @@ int main(void)
     test_stack_capacity();
     test_renderers_handle_exhausted_pools();
     test_voice_sequence_and_private_guards();
+    test_soft_cancel_without_overview_retains_owner();
     test_phone_secret_and_render_boundaries();
     linx_ui_deinit();
     render();

@@ -8,6 +8,7 @@ endif()
 idf_component_register(
     SRCS "main.c"
          "linx_input.c"
+         "linx_input_settings.c"
          "linx_demo.c"
          "linx_content.c"
          "linx_navigation.c"
@@ -24,7 +25,6 @@ idf_component_register(
          "../assets/fonts/linx_font_20_bold.c"
          "../assets/fonts/linx_font_24_bold.c"
          "../assets/fonts/linx_font_28_bold.c"
-         "../assets/images/linx_image_data.c"
     INCLUDE_DIRS "." "${AI_PASSPORT_DIR}/main"
     REQUIRES bsp esp_timer json esp_wifi esp_netif esp_event nvs_flash lwip
              esp_http_client esp_http_server tcp_transport esp-tls esp_app_format esp_audio_codec
