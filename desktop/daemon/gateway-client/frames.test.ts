@@ -67,6 +67,27 @@ describe('parseInboundFrame', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('accepts contract-defined project and history request frames', () => {
+    expect(parseInboundFrame({
+      ...dispatchFrame,
+      type: 'project.upsert',
+      payload: {
+        project_id: 'prj_1', display_name: 'LinxBox', capabilities: ['read'],
+        availability: 'online', grant_version: 1,
+      },
+    }).ok).toBe(true);
+    expect(parseInboundFrame({
+      ...dispatchFrame,
+      type: 'messages.list',
+      payload: { agent_session_id: 'ses_1' },
+    }).ok).toBe(true);
+    expect(parseInboundFrame({
+      ...dispatchFrame,
+      type: 'message.content.get',
+      payload: { agent_session_id: 'ses_1', message_id: 'msg_1', offset: 0 },
+    }).ok).toBe(true);
+  });
+
   it('accepts a device-selected existing Codex session continuation', () => {
     const result = parseInboundFrame({
       ...dispatchFrame,

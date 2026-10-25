@@ -28,6 +28,8 @@ export const GATEWAY_MESSAGE_TYPES = [
   'agent_sessions.sync.result',
   'project.upsert',
   'project.revoke',
+  'messages.list',
+  'message.content.get',
 ] as const;
 
 export type GatewayMessageType = (typeof GATEWAY_MESSAGE_TYPES)[number];
@@ -49,6 +51,8 @@ export const DESKTOP_MESSAGE_TYPES = [
   'presentation.upsert',
   'presentation.revoke',
   'command.receipt',
+  'message.available',
+  'query.result',
 ] as const;
 
 export type DesktopMessageType = (typeof DESKTOP_MESSAGE_TYPES)[number];
@@ -123,6 +127,45 @@ export interface ProjectRevokePayload {
   readonly project_id: string;
   readonly grant_version: number;
   readonly revoked_at: string;
+}
+
+export interface MessagesListPayload {
+  readonly agent_session_id: string;
+  readonly cursor?: string;
+}
+
+export interface ContentGetPayload {
+  readonly agent_session_id: string;
+  readonly message_id: string;
+  readonly offset?: number;
+}
+
+export interface MessageMeta {
+  readonly message_id: string;
+  readonly role: 'user' | 'assistant';
+  readonly summary: string;
+}
+
+export interface MessagePage {
+  readonly items: readonly MessageMeta[];
+  readonly next_cursor: string | null;
+}
+
+export interface ContentChunk {
+  readonly text: string;
+  readonly next_offset: number | null;
+}
+
+export interface MessageAvailablePayload {
+  readonly agent_session_id: string;
+  readonly message_id: string;
+}
+
+export interface QueryResultPayload {
+  readonly reply_to_message_id: string;
+  readonly ok: boolean;
+  readonly data?: MessagePage | ContentChunk;
+  readonly error?: ContractError;
 }
 
 /** `task.dispatch` payload. */
@@ -236,6 +279,8 @@ export interface GatewayPayloadByType {
   'binding.result': BindingResultPayload;
   'project.upsert': ProjectUpsertPayload;
   'project.revoke': ProjectRevokePayload;
+  'messages.list': MessagesListPayload;
+  'message.content.get': ContentGetPayload;
 }
 
 export interface DesktopPayloadByType {
@@ -254,6 +299,8 @@ export interface DesktopPayloadByType {
   'presentation.upsert': Record<string, unknown>;
   'presentation.revoke': Record<string, unknown>;
   'command.receipt': Record<string, unknown>;
+  'message.available': MessageAvailablePayload;
+  'query.result': QueryResultPayload;
 }
 
 /**

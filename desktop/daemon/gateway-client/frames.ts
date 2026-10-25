@@ -98,6 +98,28 @@ export const taskCancelSchema = z.strictObject({
   reason: z.string(),
 });
 
+const projectUpsertSchema = z.strictObject({
+  project_id: z.string().min(1).max(128),
+  display_name: z.string().min(1),
+  capabilities: z.array(z.enum(['read', 'write', 'test'])),
+  availability: z.enum(['online', 'offline']),
+  grant_version: z.number().int().nonnegative(),
+});
+const projectRevokeSchema = z.strictObject({
+  project_id: z.string().min(1).max(128),
+  grant_version: z.number().int().nonnegative(),
+  revoked_at: z.iso.datetime({ offset: true }),
+});
+const messagesListSchema = z.strictObject({
+  agent_session_id: z.string().min(1).max(128),
+  cursor: z.string().min(1).max(128).optional(),
+});
+const contentGetSchema = z.strictObject({
+  agent_session_id: z.string().min(1).max(128),
+  message_id: z.string().min(1).max(128),
+  offset: z.number().int().nonnegative().optional(),
+});
+
 const agentSessionsSyncResultSchema = z
   .strictObject({
     reply_to_message_id: z.string().min(1),
@@ -190,6 +212,19 @@ export function parseInboundFrame(
       ok: true,
       frame: { ...value, type: 'task.cancel', payload: payload.data } as GatewayFrame,
     };
+  }
+  if (value.type === 'project.upsert' || value.type === 'project.revoke' || value.type === 'messages.list' || value.type === 'message.content.get') {
+    const schemas = {
+      'project.upsert': projectUpsertSchema,
+      'project.revoke': projectRevokeSchema,
+      'messages.list': messagesListSchema,
+      'message.content.get': contentGetSchema,
+    } as const;
+    const payload = schemas[value.type].safeParse(value.payload);
+    if (!payload.success) {
+      return { ok: false, error: publicError(INVALID_FRAME, `${value.type} 负载不合法`, value.message_id) };
+    }
+    return { ok: true, frame: { ...value, type: value.type, payload: payload.data } as GatewayFrame };
   }
   if (value.type === 'agent_sessions.sync.result') {
     const payload = agentSessionsSyncResultSchema.safeParse(value.payload);
