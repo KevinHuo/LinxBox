@@ -47,6 +47,7 @@ function setOpen(open: boolean): void {
   state.open = open;
   qs('#float-card')?.classList.toggle('is-open', open);
   qs('#float-ball')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  void bridge?.setFloatWindowExpanded({ expanded: open });
 }
 
 const deviceStorageKey = 'linxbox.device.facts';

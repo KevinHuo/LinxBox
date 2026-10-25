@@ -573,7 +573,17 @@ export class GatewayConnectionManager {
         2000,
         [],
       );
-      for (const session of existingSessions) {
+      const sortedSessions = [...existingSessions].sort((left, right) => {
+        const leftTime =
+          left.updatedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(left.updatedAt);
+        const rightTime =
+          right.updatedAt === null ? Number.NEGATIVE_INFINITY : Date.parse(right.updatedAt);
+        return (
+          (Number.isNaN(rightTime) ? Number.NEGATIVE_INFINITY : rightTime) -
+          (Number.isNaN(leftTime) ? Number.NEGATIVE_INFINITY : leftTime)
+        );
+      });
+      for (const session of sortedSessions) {
         const sessionCwd = session.cwd;
         if (sessionCwd === null) continue;
         if (this.blockedThreads.has(session.threadId)) continue;

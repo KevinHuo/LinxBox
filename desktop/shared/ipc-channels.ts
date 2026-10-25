@@ -35,6 +35,7 @@ export const IPC_METHODS = [
   'appearance.read',
   'appearance.save',
   'window.float.move',
+  'window.float.setExpanded',
   'window.float.read',
   'window.float.setVisible',
   'window.main.focus',

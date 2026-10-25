@@ -271,6 +271,7 @@ export interface LinxboxBridge {
   saveAppearance(payload: unknown): Promise<unknown>;
   readFloatWindow(): Promise<unknown>;
   setFloatWindowVisible(payload: unknown): Promise<unknown>;
+  setFloatWindowExpanded(payload: unknown): Promise<unknown>;
   moveFloatWindow(payload: unknown): Promise<unknown>;
   focusMainWindow(): Promise<unknown>;
   quitApp(): Promise<unknown>;

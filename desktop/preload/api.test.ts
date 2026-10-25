@@ -96,6 +96,7 @@ describe('preload bridge', () => {
         'listTasks',
         'saveAppearance',
         'setFloatWindowVisible',
+        'setFloatWindowExpanded',
         'startCodexTurn',
         'readDiagnostics',
         'revokeProject',
