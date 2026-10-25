@@ -49,6 +49,10 @@ func New(cfg *config.Config) (*App, error) {
 	bindingSvc := service.NewBindingService(repos, cfg, server, logger)
 	sessionSvc := service.NewSessionService(repos, cfg, server, logger)
 	server.SetServices(bindingSvc, sessionSvc)
+	if err := server.SetRequests(service.NewRequestService(repos, cfg, server)); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("初始化 MCP: %w", err)
+	}
 
 	return &App{cfg: cfg, logger: logger, db: db, server: server}, nil
 }
@@ -60,6 +64,7 @@ func (a *App) Run(ctx context.Context) error {
 
 // Close 关闭数据库。
 func (a *App) Close() error {
+	a.server.CloseMCP()
 	return a.db.Close()
 }
 

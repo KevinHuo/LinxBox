@@ -67,4 +67,4 @@ cd firmware
 
 ## 共享协议契约
 
-固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。契约需三方评审，当前运行代码尚未接入新增消息；不代表完整链路已实现。
+固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由及 [MCP 文字提案接收](gateway/docs/mcp.md)；固件和 Desktop 的新增消息接线、灵矽逐轮透传及完整执行链路仍待实现和联调，不代表真实语音闭环已经完成。

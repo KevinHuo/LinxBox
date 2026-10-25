@@ -85,6 +85,10 @@ func newPipeServer(t *testing.T) *Server {
 	conns := lifecycle.NewConnections(logger, cfg.Limits)
 	s := NewServer(cfg, logger, v, NewAuthenticator(cfg), conns)
 	s.SetServices(service.NewBindingService(repos, cfg, s, logger), service.NewSessionService(repos, cfg, s, logger))
+	if err := s.SetRequests(service.NewRequestService(repos, cfg, s)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.CloseMCP)
 	return s
 }
 

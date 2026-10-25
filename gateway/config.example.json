@@ -15,6 +15,13 @@
         "subject": "<账号主体>"
       }
     ],
+    "mcp": [
+      {
+        "token": "<独立 MCP 凭据，不能复用设备或 Desktop token>",
+        "device_id": "AA:BB:CC:DD:EE:01",
+        "agent_id": "<灵矽智能体 ID>"
+      }
+    ],
     "desktops": [
       {
         "token": "<Desktop 凭据 token，与部署环境注入保持一致>",

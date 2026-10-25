@@ -5,7 +5,7 @@ LinxBox Gateway 是用 Go 编写的常驻后端服务：固件（AI Passport）�
 一个监听端口、一个本地 SQLite 数据库；MCP 与 WebSocket 是同一程序的不同入口。
 
 当前实现覆盖工程与契约、绑定与目录，以及历史 / 正文读取路由和新消息通知。
-本轮优先保证三端只读联调；MCP、请求确认、调度与执行事实暂缓。本仓库 `contracts/`
+另已接入 MCP 最终文字提案及请求准备、查询、取消；请求确认、调度与执行事实暂缓。本仓库 `contracts/`
 仍是字段契约的唯一正文，本程序生成的 `internal/contracts/assets/` 为构建资源。
 
 ## 目录
@@ -56,6 +56,8 @@ make build
   配置 `listen.tls_cert_file` / `listen.tls_key_file`。
 - 凭据 token 通过子协议 `linxbox.v1, linxbox-token.<token>` 或
   `Authorization: Bearer <token>` 传递；token 不进入帧、日志或数据库。
+- MCP 使用 `credentials.mcp` 的独立 Bearer 凭据，绑定一个设备及灵矽智能体；
+  省略该配置时拒绝全部 MCP 访问。设备和 Desktop 凭据不能访问 MCP。
 
 ## 验证
 
@@ -86,12 +88,13 @@ race 检测与发布构建分开：发布构建不要求 CGO。
 | `WSS /v1/devices/connect` | hello、目录分页、单条会话、历史与正文读取 | 已实现 |
 | `WSS /v1/clients/connect` | hello、绑定、目录同步、query.result、新消息通知 | 已实现 |
 | `GET /healthz` / `GET /readyz` | 存活与就绪探测 | 已实现 |
-| `HTTPS /mcp` | 灵矽 `propose_task_reply` | 后续阶段 |
-| 请求与调度 | `request.*`、`task.*` | 契约已识别，未开放 |
+| `GET /mcp`、`POST /mcp/message` | 灵矽 SSE MCP，唯一工具 `propose_task_reply` | 已实现 Gateway 接收；真实平台待联调 |
+| `request.prepare/get/cancel` | 固定目标、读取快照、确认前取消 | 已实现 Gateway 侧 |
+| `request.confirm`、任务调度 | 确认与 `task.*` | 未实现；明确返回依赖不可用，不执行任务 |
 
 ## 已知限制（与设计文档一致）
 
-- 尚未实现录音准备、MCP 文字接收、确认投递、执行事实与 unknown 恢复（阶段 3/4）。
+- 固件尚未接入 Gateway 录音准备及请求通知；确认投递、执行事实与 unknown 恢复未实现。
 - 目录 cursor 绑定设备、Desktop 和目录版本，5 分钟过期；目录变动或 Gateway 重启后从首页重取。
 - 默认每设备最多 4 条、全局最多 128 条在途历史 / 正文查询，15 秒超时；Desktop 断线明确失败，不自动重试。
 - 现有 Desktop 运行代码尚未支持绑定、全量目录与 sync.result，需独立实现 PR。
@@ -100,6 +103,8 @@ race 检测与发布构建分开：发布构建不要求 CGO。
   本程序的 `make smoke` 与集成测试是主机模拟证据，不能据此声称端到端可用。
 
 三端接线、只读验收和部署步骤见 [联调说明](docs/integration.md)。本轮不改共享 Schema，不新增绕过 MCP 的文字投递接口。
+
+MCP 配置、逐轮透传要求和模拟验收见 [MCP 接入说明](docs/mcp.md)。注册工具或设置提示词不能证明全部语音已固定路由。
 
 新增 `TestInterop*` 使用内存管道中的真实 HTTP upgrade / WebSocket 帧及 SQLite，环境禁止监听 TCP 时可运行：
 

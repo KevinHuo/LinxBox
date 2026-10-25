@@ -32,6 +32,8 @@ type Server struct {
 	binding   *service.BindingService
 	sessions  *service.SessionService
 	queries   *service.QueryRouter
+	requests  *service.RequestService
+	mcp       *mcpEndpoint
 	upgrader  websocket.Upgrader
 	ready     atomic.Bool
 	httpSrv   *http.Server
@@ -73,11 +75,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/readyz", s.handleReadyz)
 	mux.HandleFunc("/v1/devices/connect", s.handleDeviceConnect)
 	mux.HandleFunc("/v1/clients/connect", s.handleDesktopConnect)
+	mux.HandleFunc("/mcp", s.handleMCP)
+	mux.HandleFunc("/mcp/message", s.handleMCP)
 	return mux
 }
 
 // Run 启动服务并阻塞，直到 ctx 取消或监听失败；收尾时停止接收新请求。
 func (s *Server) Run(ctx context.Context) error {
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	if s.requests != nil {
+		if err := s.requests.Expire(ctx); err != nil {
+			return err
+		}
+		go s.expireRequests(ctx)
+	}
+	defer s.CloseMCP()
 	s.ready.Store(true)
 	s.httpSrv = &http.Server{
 		Addr:              s.cfg.Listen.Addr,
@@ -102,11 +115,45 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		s.ready.Store(false)
+		s.CloseMCP()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeouts.ShutdownGrace.Std())
 		defer cancel()
 		_ = s.httpSrv.Shutdown(shutdownCtx)
 		s.conns.CloseAll()
 		return nil
+	}
+}
+
+func (s *Server) expireRequests(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.requests.Expire(ctx); err != nil && ctx.Err() == nil {
+				s.logger.Error("请求过期处理失败")
+			}
+		}
+	}
+}
+
+// CloseMCP 结束 SSE 长连接，释放 SDK 会话。
+func (s *Server) CloseMCP() {
+	if s.mcp != nil {
+		s.mcp.close()
+	}
+}
+
+// NotifyRequest 推送已提交请求快照；未连接设备用 request.get 恢复。
+func (s *Server) NotifyRequest(deviceID, event string, request contracts.Request) {
+	if conn := s.conns.Device(deviceID); conn != nil {
+		s.sendFirmwarePush(conn, event, struct {
+			ID      string            `json:"id"`
+			Type    string            `json:"type"`
+			Payload contracts.Request `json:"payload"`
+		}{contracts.NewMessageID("msg_"), event, request})
 	}
 }
 

@@ -95,6 +95,28 @@ func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.
 		s.respondFirmware(wsConn, "agent_session.get", msg.ID, session, err)
 	case "messages.list", "message.content.get":
 		return s.forwardQuery(ctx, wsConn, p, msg)
+	case "request.prepare", "request.get", "request.cancel", "request.confirm":
+		if s.requests == nil {
+			s.respondFirmware(wsConn, msg.Type, msg.ID, nil, domain.ErrDependencyUnavailable("请求服务未配置"))
+			break
+		}
+		var payload contracts.RequestPayload
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			return err
+		}
+		var request contracts.Request
+		var err error
+		switch msg.Type {
+		case "request.prepare":
+			request, err = s.requests.Prepare(ctx, p.DeviceID, payload.RequestID, payload.AgentSessionID)
+		case "request.get":
+			request, err = s.requests.Get(ctx, p.DeviceID, payload.RequestID)
+		case "request.cancel":
+			request, err = s.requests.Cancel(ctx, p.DeviceID, payload.RequestID)
+		case "request.confirm":
+			err = domain.ErrDependencyUnavailable("任务调度尚未实现，请求未执行")
+		}
+		s.respondFirmware(wsConn, msg.Type, msg.ID, request, err)
 	default:
 		// 首版未开放的操作（request.* 等）：明确拒绝，不假装成功。
 		s.logger.Info("固件请求暂未开放", "type", msg.Type, "device_id", p.DeviceID)

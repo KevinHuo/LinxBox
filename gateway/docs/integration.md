@@ -84,8 +84,9 @@ summary 最多 120 个 Unicode 码点。Desktop 必须保留轮次边界，不�
 不会伪造成功应答，客户端需有自己的等待超时。默认查询超时 15 秒，每设备最多 4 条、全局 128 条；
 Desktop 离线或查询中断返回 `DEPENDENCY_UNAVAILABLE`，超出并发限制返回 `RESOURCE_EXHAUSTED`。
 
-`/mcp` 尚未挂载；`request.*` 尚未开放；`task.*` 既有事件仅识别和记录，尚不推进执行状态。
-本轮不能验收语音提案、确认投递、执行或任务状态回传。
+只读阶段之外，Gateway 已增加 SSE MCP 与 `request.prepare/get/cancel`，见 [MCP 接入说明](mcp.md)。
+`request.confirm` 和调度未实现；`task.*` 既有事件仅识别和记录，尚不推进执行状态。
+本轮只读验收仍不能证明真实语音提案、确认投递、执行或任务状态回传已完成。
 
 ## Desktop 接线清单
 

@@ -78,6 +78,10 @@ func newTestEnv(t *testing.T, mutate func(*config.Config)) *testEnv {
 	binding := service.NewBindingService(repos, cfg, server, logger)
 	sessions := service.NewSessionService(repos, cfg, server, logger)
 	server.SetServices(binding, sessions)
+	if err := server.SetRequests(service.NewRequestService(repos, cfg, server)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(server.CloseMCP)
 
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)

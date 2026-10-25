@@ -17,6 +17,22 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Request 是固件与 MCP 共用的请求快照，显式保留必填 null。
+type Request struct {
+	RequestID      string  `json:"request_id"`
+	AgentSessionID string  `json:"agent_session_id"`
+	TargetTitle    string  `json:"target_title"`
+	Text           *string `json:"text"`
+	Status         string  `json:"status"`
+	Error          *Error  `json:"error"`
+}
+
+// RequestPayload 用于 request.prepare/get/cancel；prepare 额外要求目标。
+type RequestPayload struct {
+	RequestID      string `json:"request_id"`
+	AgentSessionID string `json:"agent_session_id,omitempty"`
+}
+
 // Binding 是固件 hello 返回的当前绑定（desktop_client_id 可为 null）。
 type Binding struct {
 	DeviceID        string  `json:"device_id"`

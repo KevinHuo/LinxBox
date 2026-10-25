@@ -66,6 +66,14 @@ type DatabaseConfig struct {
 type CredentialsConfig struct {
 	Devices  []DeviceCredential  `json:"devices"`
 	Desktops []DesktopCredential `json:"desktops"`
+	MCP      []MCPCredential     `json:"mcp,omitempty"`
+}
+
+// MCPCredential 将独立的 MCP 凭据限制到一个设备和灵矽智能体。
+type MCPCredential struct {
+	Token    string `json:"token"`
+	DeviceID string `json:"device_id"`
+	AgentID  string `json:"agent_id"`
 }
 
 // DeviceCredential 是设备凭据：token 映射到稳定设备标识与账号主体。
@@ -138,6 +146,11 @@ func Load(path string) (*Config, error) {
 
 // normalize 将 MAC 相关字段统一为规范化格式。
 func (c *Config) normalize() {
+	for i := range c.Credentials.MCP {
+		if id, err := domain.NormalizeMAC(c.Credentials.MCP[i].DeviceID); err == nil {
+			c.Credentials.MCP[i].DeviceID = string(id)
+		}
+	}
 	for i := range c.Credentials.Devices {
 		if id, err := domain.NormalizeMAC(c.Credentials.Devices[i].DeviceID); err == nil {
 			c.Credentials.Devices[i].DeviceID = string(id)
@@ -263,6 +276,21 @@ func (c *Config) Validate() error {
 			if !domain.IsDeviceID(d) {
 				return fmt.Errorf("配对规则 %s 的 device_id %q 不是合法 MAC", r.Subject, d)
 			}
+		}
+	}
+	for _, m := range c.Credentials.MCP {
+		if err := checkToken("MCP", m.Token, "mcp:"+m.DeviceID); err != nil {
+			return err
+		}
+		deviceID, err := domain.NormalizeMAC(m.DeviceID)
+		if err != nil {
+			return fmt.Errorf("MCP device_id 必须为合法 MAC")
+		}
+		if _, ok := c.DeviceSubject(deviceID); !ok {
+			return fmt.Errorf("MCP device_id 必须对应已配置设备")
+		}
+		if !domain.ValidateID(m.AgentID) {
+			return fmt.Errorf("MCP agent_id 必须为 1～128 个字符")
 		}
 	}
 	if c.Limits.MaxFrameBytes < 1024 {
