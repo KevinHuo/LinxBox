@@ -103,4 +103,4 @@ HTTPS 和 WSS 使用证书与主机名校验；网络时间无法满足校验条
 
 该次采样包含 12 个自有 C 文件，整体及每文件的行、分支、函数覆盖率均达到 90% 门槛。统计范围为 `main/`、`hardware/` 的全部自有 C 源码，排除第三方依赖、生成资源和测试代码；主机模拟覆盖率不代表真机、真实灵矽或完整任务链路验收。
 
-查看最新数据：打开 [Firmware checks](https://github.com/KevinHuo/LinxBox/actions/workflows/firmware.yml) 中对应提交的运行，在摘要查看整体及每文件覆盖率，在 Artifacts 下载 `firmware-c-coverage`（保留 14 天），解压后打开 `html/index.html` 查看未覆盖位置。门禁失败时摘要仍展示已生成的数据；未生成报告时会明确提示查看构建与测试日志。本地复现命令与工具要求见上方[构建与验证](#构建与验证)。
+查看最新数据：打开 [Firmware checks](https://github.com/KevinHuo/LinxBox/actions/workflows/firmware.yml) 中对应提交的运行，在摘要查看整体及每文件覆盖率，在 Artifacts 下载 `firmware-c-coverage`（保留 14 天），解压后进入 `run.*` 目录，打开其中的 `html/index.html` 查看未覆盖位置。门禁失败时摘要仍展示已生成的数据；未生成报告时会明确提示查看构建与测试日志。本地复现命令与工具要求见上方[构建与验证](#构建与验证)。
