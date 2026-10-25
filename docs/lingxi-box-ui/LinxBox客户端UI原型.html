@@ -412,7 +412,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 }
 .app-foot b { color: var(--ink); font-weight: 600; }
 
-/* ============ 外层灵矽 AI 应用栏 ============ */
+/* ============ 外层 Linx AI 应用栏 ============ */
 .win-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .app-rail {
   display: flex;
@@ -655,26 +655,26 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   <section class="window" role="region" aria-label="LinxBox 主窗口">
     <div class="titlebar">
       <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="window-title"><b>灵矽 AI</b> <small>· 桌面客户端</small></div>
+      <div class="window-title"><b>Linx AI</b> <small>· 桌面客户端</small></div>
       <div style="width:52px" aria-hidden="true"></div>
     </div>
 
-    <!-- 外层：灵矽 AI 应用栏；内层：LinxBox（当前应用） -->
+    <!-- 外层：Linx AI 应用栏；内层：LinxBox（当前应用） -->
     <div class="win-body">
-      <aside class="app-rail" aria-label="灵矽 AI 应用列表">
+      <aside class="app-rail" aria-label="Linx AI 应用列表">
         <div class="rail-brand">
           <span class="rail-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="18" height="18"><rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28"/><path d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><path d="M11.9 7.2a7 7 0 0 1 0 9.6" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8"/></svg>
           </span>
-          <div><strong>灵矽 AI</strong><small>桌面客户端</small></div>
+          <div><strong>Linx AI</strong><small>桌面客户端</small></div>
         </div>
         <nav class="rail-nav" aria-label="应用列表">
           <p class="rail-label">应用</p>
-          <button class="rail-item is-active" type="button" data-app="box" aria-current="page">灵矽 Box</button>
+          <button class="rail-item is-active" type="button" data-app="box" aria-current="page">Linx Box</button>
           <button class="rail-item" type="button" data-app="settings">设置</button>
         </nav>
         <div class="rail-foot">
-          <span>灵矽 AI · 0.2</span>
+          <span>Linx AI · 0.2</span>
         </div>
       </aside>
 
@@ -683,8 +683,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     <header class="app-head">
       <div class="brand">
         <div class="brand-name">
-          <strong id="head-brand">灵矽 Box</strong>
-          <span id="head-crumb">灵矽 AI / LinxBox · 常驻后台</span>
+          <strong id="head-brand">Linx Box</strong>
+          <span id="head-crumb">Linx AI / LinxBox · 常驻后台</span>
         </div>
       </div>
       <div class="head-actions">
@@ -696,15 +696,15 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     <!-- ===== 视图：未配对（默认） ===== -->
     <section class="view is-active" data-view="pair" aria-labelledby="pair-title">
       <div class="hero">
-        <h1 id="pair-title">把 灵矽设备 与这台 Mac 配对</h1>
-        <p class="lede">配对后，灵矽设备与这台 Mac 建立安全连接。设备上的指令会同步到电脑，由你授权的 Agent 执行，任务状态与回复再同步回设备。灵矽 Box 常驻后台，不打断你的工作。</p>
+        <h1 id="pair-title">把 Linx 设备与这台 Mac 配对</h1>
+        <p class="lede">配对后，Linx 设备与这台 Mac 建立安全连接。设备上的指令会同步到电脑，由你授权的 Agent 执行，任务状态与回复再同步回设备。Linx Box 常驻后台，不打断你的工作。</p>
       </div>
       <div class="pair-layout">
         <div class="device-card">
           <ol class="steps">
             <li>
               <span class="step-no" aria-hidden="true">01</span>
-              <div class="step-txt"><strong>查看 MAC 地址</strong><span>在 灵矽设备 上打开「设置 · 关于」，查看设备 MAC 地址</span></div>
+              <div class="step-txt"><strong>查看 MAC 地址</strong><span>在 Linx 设备上打开「设置 · 关于」，查看设备 MAC 地址</span></div>
             </li>
             <li>
               <span class="step-no" aria-hidden="true">02</span>
@@ -718,7 +718,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
         </div>
 
         <div class="code-card">
-          <p>设备 MAC 地址 · 在 灵矽设备 上查看</p>
+          <p>设备 MAC 地址 · 在 Linx 设备上查看</p>
           <div class="mac-field">
             <input id="mac-input" type="text" autocomplete="off" spellcheck="false" maxlength="17" placeholder="如 A4:C1:38:5B:2A:9E" aria-label="设备 MAC 地址" />
           </div>
@@ -778,7 +778,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
               <path d="M20 33l8 8 16-18" fill="none" stroke="#D94F28" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <div class="ok-txt">
-              <strong>灵矽设备</strong>
+              <strong>Linx 设备</strong>
               <span>已连接 · 这台 Mac</span>
             </div>
           </div>
@@ -795,11 +795,11 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
       </div>
     </section>
 
-    <!-- ===== 视图：全局设置（灵矽 AI） ===== -->
+    <!-- ===== 视图：全局设置（Linx AI） ===== -->
     <section class="view" data-view="settings" aria-labelledby="settings-title">
       <div class="hero">
         <h1 id="settings-title">设置</h1>
-        <p class="lede">灵矽 AI · 全局设置，作用于整个桌面客户端。</p>
+        <p class="lede">Linx AI · 全局设置，作用于整个桌面客户端。</p>
       </div>
       <ul class="settings-list">
         <li>
@@ -810,7 +810,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
           </div>
         </li>
         <li>
-          <div class="s-txt"><strong>开机自启</strong><span>登录这台 Mac 时自动启动灵矽 AI</span></div>
+          <div class="s-txt"><strong>开机自启</strong><span>登录这台 Mac 时自动启动 Linx AI</span></div>
           <button class="switch is-on" type="button" role="switch" aria-checked="true" data-switch="startup" aria-label="开机自启"></button>
         </li>
         <li>
@@ -837,24 +837,24 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 </div>
 
 <!-- ============ 悬浮窗 ============ -->
-<aside class="float-card" id="float-card" aria-label="灵矽 AI 悬浮窗">
+<aside class="float-card" id="float-card" aria-label="Linx AI 悬浮窗">
   <div class="fc-head">
     <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17"><rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28"/><path d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><path d="M11.9 7.2a7 7 0 0 1 0 9.6" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8"/></svg></span>
-    <div><strong>灵矽 AI</strong><span>桌面客户端 · 常驻后台</span></div>
+    <div><strong>Linx AI</strong><span>桌面客户端 · 常驻后台</span></div>
   </div>
   <div class="fc-body">
     <div class="fc-app-wrap">
       <button class="fc-app" id="fc-app" type="button" aria-expanded="false" aria-controls="fc-app-list">
         <span>当前应用</span>
-        <b>灵矽 Box · 运行中<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></b>
+        <b>Linx Box · 运行中<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></b>
       </button>
       <ul class="fc-app-list" id="fc-app-list" aria-label="选择应用">
         <li>
-          <button type="button" data-app="box" class="is-selected"><i aria-hidden="true"></i>灵矽 Box <em>运行中</em></button>
+          <button type="button" data-app="box" class="is-selected"><i aria-hidden="true"></i>Linx Box <em>运行中</em></button>
         </li>
       </ul>
     </div>
-    <div class="fc-row"><span>设备</span><b><i aria-hidden="true"></i>灵矽设备 · 在线</b></div>
+    <div class="fc-row"><span>设备</span><b><i aria-hidden="true"></i>Linx 设备 · 在线</b></div>
     <div class="fc-row"><span>最近动态</span><b id="fc-last">登录校验修复 · 运行中</b></div>
     <div class="fc-row"><span>待执行指令</span><b>0 条</b></div>
   </div>
@@ -863,7 +863,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     <button class="btn btn-quiet" id="btn-pause" type="button">暂停提醒</button>
   </div>
 </aside>
-<button class="float-ball" id="float-ball" type="button" aria-label="灵矽 AI 悬浮窗" aria-expanded="false">
+<button class="float-ball" id="float-ball" type="button" aria-label="Linx AI 悬浮窗" aria-expanded="false">
   <span class="f-dot" aria-hidden="true"></span>
   <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="#D94F28"/><path d="M8.6 9.4a3.5 3.5 0 0 1 0 5.2" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><path d="M11.9 7.2a7 7 0 0 1 0 9.6" fill="none" stroke="#F7F2E8" stroke-width="2.1" stroke-linecap="round"/><circle cx="16.5" cy="12" r="1.7" fill="#F7F2E8"/></svg>
 </button>
@@ -902,7 +902,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     return VIEW_NAMES.indexOf(h) >= 0 ? h : "pair";
   }
 
-  /* 外层灵矽 AI 应用栏：选中态跟随当前应用 */
+  /* 外层 Linx AI 应用栏：选中态跟随当前应用 */
   function syncRail() {
     var target = state.view === "settings" ? "settings" : "box";
     document.querySelectorAll(".rail-item").forEach(function (btn) {
@@ -971,7 +971,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
       var homeMac = document.getElementById("home-mac");
       if (homeMac) homeMac.textContent = state.deviceMac;
       go("home");
-      toast("配对成功 · 灵矽设备 已连接这台 Mac");
+      toast("配对成功 · Linx 设备已连接这台 Mac");
     }, 5200);
   }
   function cancelPair() {
@@ -1102,7 +1102,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     });
   }
 
-  /* 设置页返回（回到灵矽 Box 主界面） */
+  /* 设置页返回（回到 Linx Box 主界面） */
   document.querySelectorAll("[data-back='main']").forEach(function (btn) {
     btn.addEventListener("click", function () {
       go(state.paired ? "home" : "pair");
@@ -1118,7 +1118,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     });
   });
 
-  /* 外层灵矽 AI 应用栏切换 */
+  /* 外层 Linx AI 应用栏切换 */
   document.querySelectorAll(".rail-item").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var app = btn.dataset.app;
