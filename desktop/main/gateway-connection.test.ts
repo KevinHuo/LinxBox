@@ -48,7 +48,13 @@ function createSessionStub(
     readSession?: () => Promise<{ cwd: string | null } | null>;
     on?: (listener: (event: unknown) => void) => () => void;
     listSessions?: () => Promise<
-      { threadId: string; title: string; cwd: string | null; status: string }[]
+      {
+        threadId: string;
+        title: string;
+        cwd: string | null;
+        status: string;
+        updatedAt?: string | null;
+      }[]
     >;
     createSession?: (cwd: string) => Promise<string>;
     continueSession?: (
@@ -248,6 +254,46 @@ describe('GatewayConnectionManager', () => {
       title: 'LinxBox · LinxBox',
     });
     expect(JSON.stringify(sync)).not.toContain('/tmp/work');
+  });
+
+  it('publishes the most recently updated conversation first', async () => {
+    const { socket } = createManager({
+      listProjects: () => [
+        {
+          projectId: 'prj_1',
+          displayName: 'LinxBox',
+          rootPath: '/tmp/work',
+          enabled: true,
+        },
+      ],
+      session: createSessionStub({
+        createSession: () => Promise.resolve(''),
+        listSessions: () =>
+          Promise.resolve([
+            {
+              threadId: 'th_old',
+              title: '旧会话',
+              cwd: '/tmp/work',
+              status: 'idle',
+              updatedAt: '2026-10-25T08:00:00.000Z',
+            },
+            {
+              threadId: 'th_new',
+              title: '新会话',
+              cwd: '/tmp/work',
+              status: 'idle',
+              updatedAt: '2026-10-26T08:00:00.000Z',
+            },
+          ]),
+      }),
+    });
+
+    socket.emit('open', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const sync = socket.frames().find((frame) => frame.type === 'agent_sessions.sync');
+    const items = sync?.payload['items'] as { thread_id: string }[];
+    expect(items.map((item) => item.thread_id)).toEqual(['th_new', 'th_old']);
   });
 
   it('does not publish a managed session when thread creation returns no id', async () => {
