@@ -170,6 +170,33 @@
         cursor: not-allowed;
       }
 
+      .dispatch-callout {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 14px;
+        padding: 12px 13px;
+        border: 1px solid #efb99f;
+        border-radius: 9px;
+        background: #fff1e8;
+      }
+
+      .dispatch-callout strong {
+        color: var(--accent-deep);
+        font-size: 14px;
+      }
+
+      .dispatch-callout span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .dispatch-primary {
+        min-height: 42px;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
       /* ---------- 主体 ---------- */
       main {
         display: grid;
@@ -468,6 +495,10 @@
           </div>
 
           <div class="tab-body" id="tab-dispatch">
+            <div class="dispatch-callout">
+              <strong>向 Electron 下达测试指令</strong>
+              <span>选择项目和对话后，点击下方按钮发送真实的 <code>task.dispatch</code>。</span>
+            </div>
             <div class="field">
               <label for="in-prompt">任务提示词（prompt）</label>
               <textarea id="in-prompt">
@@ -505,8 +536,8 @@
               <label for="in-caps">capabilities（逗号分隔）</label>
               <input id="in-caps" type="text" value="read,write,test" />
             </div>
-            <button class="btn btn-primary" id="btn-dispatch" type="button" style="width: 100%">
-              下达 task.dispatch
+            <button class="btn btn-primary dispatch-primary" id="btn-dispatch" type="button" style="width: 100%">
+              下达测试指令
             </button>
             <p class="hint" style="margin-top: 10px">
               下发的帧会走真实的 Gateway/Desktop 1.0 校验。Desktop 回传的
