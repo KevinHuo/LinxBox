@@ -15,6 +15,7 @@
  */
 import type { CodexDomainEvent } from '../codex-adapter/events.js';
 import type { CodexTurnState } from '../codex-adapter/client.js';
+import { isPathInsideRoot } from '../policy/authorization.js';
 import { sanitizeVoiceSummary } from '../result-projector/projection.js';
 import { publicError } from './frames.js';
 import type {
@@ -45,6 +46,13 @@ export interface CodexRunner {
     cwd: string;
     clientMessageId: string;
   }): Promise<{ threadId: string; turnId: string }>;
+  /**
+   * The working directory the provider recorded for a thread.
+   *
+   * The dispatcher uses it to confirm that a continuation really lives inside
+   * the authorised project before it runs.
+   */
+  sessionCwd(threadId: string): Promise<string | null>;
   on(listener: (event: CodexDomainEvent) => void): () => void;
   status(): CodexTurnState;
 }
@@ -86,6 +94,12 @@ export interface DispatchOutcome {
   readonly error: string | null;
 }
 
+/** A task that ran locally, kept so a continuation can find its session. */
+interface LocalTaskSession {
+  readonly threadId: string;
+  readonly projectId: string;
+}
+
 interface ActiveDispatchContext {
   readonly messageId: string;
   readonly taskId: string;
@@ -99,12 +113,13 @@ export class TaskDispatcher {
   /** `message_id` values already accepted, so a replay never runs twice. */
   private readonly handled = new Map<string, DispatchOutcome>();
   /**
-   * `task_id` to the provider thread the task ran in.
+   * `task_id` to the provider session the task ran in.
    *
-   * A continuation is resolved through this map. It is process local for now;
-   * a persistent mapping is tracked in #11.
+   * A continuation is resolved through this map, together with the project the
+   * task belongs to. It is process local for now; a persistent mapping is
+   * tracked in #11.
    */
-  private readonly taskThreads = new Map<string, string>();
+  private readonly taskSessions = new Map<string, LocalTaskSession>();
   private eventCounter = 0;
   private unsubscribe: (() => void) | null = null;
   private active: ActiveDispatchContext | null = null;
@@ -152,20 +167,21 @@ export class TaskDispatcher {
       return outcome;
     }
 
-    const taskId = payload.task_id;
-    // A continuation has to land in the parent conversation. When the parent
-    // is unknown locally the request is refused: falling back to a new session
-    // would silently answer the wrong conversation.
-    const continuationThreadId = this.resolveContinuationThread(payload.continuation);
-    if (payload.continuation !== null && continuationThreadId === null) {
-      const outcome = this.reject('原任务不存在或不可续接');
+    if (this.active !== null) {
+      const outcome = this.reject('客户端正在执行另一项任务');
       this.handled.set(messageId, outcome);
       this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
       return outcome;
     }
 
-    if (this.active !== null) {
-      const outcome = this.reject('客户端正在执行另一项任务');
+    const taskId = payload.task_id;
+    // A continuation has to land in the parent conversation, inside the
+    // project the parent task ran in. When that cannot be confirmed the
+    // request is refused: falling back to a new session would answer the
+    // wrong conversation.
+    const continuation = await this.resolveContinuation(payload);
+    if (continuation.reason !== null) {
+      const outcome = this.reject(continuation.reason);
       this.handled.set(messageId, outcome);
       this.options.onDisposition?.(outcome.disposition, messageId, outcome.error ?? undefined);
       return outcome;
@@ -183,14 +199,14 @@ export class TaskDispatcher {
 
     try {
       const started =
-        continuationThreadId === null
+        continuation.threadId === null
           ? await this.options.runner.startTurn({
               prompt: payload.prompt,
               cwd: project.rootPath,
               clientMessageId: messageId,
             })
           : await this.options.runner.continueTurn({
-              threadId: continuationThreadId,
+              threadId: continuation.threadId,
               prompt: payload.prompt,
               cwd: project.rootPath,
               clientMessageId: messageId,
@@ -198,7 +214,10 @@ export class TaskDispatcher {
       if (this.active === context) {
         context.threadId = started.threadId;
         context.turnId = started.turnId;
-        this.taskThreads.set(taskId, started.threadId);
+        this.taskSessions.set(taskId, {
+          threadId: started.threadId,
+          projectId: payload.project_id,
+        });
         this.emit(taskId, 'task.started', {
           state: 'running',
           stage: 'preparing',
@@ -348,19 +367,42 @@ export class TaskDispatcher {
   }
 
   /**
-   * Resolve the provider thread a continuation has to run in.
+   * Resolve where a continuation has to run.
    *
-   * Returns `null` when the request is not a continuation, and also when the
-   * parent task is unknown locally. The caller refuses such a request instead
-   * of starting a fresh conversation.
+   * The continuation is only allowed when the parent task ran in the very
+   * project this request names, that project is still authorised, and the
+   * session really lives inside the authorised directory. Anything else is
+   * refused instead of silently answering a different conversation.
    */
-  private resolveContinuationThread(
-    continuation: TaskDispatchPayload['continuation'],
-  ): string | null {
+  private async resolveContinuation(payload: TaskDispatchPayload): Promise<{
+    threadId: string | null;
+    reason: string | null;
+  }> {
+    const continuation = payload.continuation;
     if (continuation === null) {
-      return null;
+      return { threadId: null, reason: null };
     }
-    return this.taskThreads.get(continuation.parent_task_id) ?? null;
+    const parent = this.taskSessions.get(continuation.parent_task_id);
+    if (parent === undefined) {
+      return { threadId: null, reason: '原任务不存在或不可续接' };
+    }
+    if (parent.projectId !== payload.project_id) {
+      return { threadId: null, reason: '续接目标不属于本次授权项目' };
+    }
+    const sessionCwd = await this.options.runner.sessionCwd(parent.threadId);
+    if (sessionCwd === null) {
+      return { threadId: null, reason: '目标会话没有可校验的工作目录' };
+    }
+    // The authorisation is checked again right before the turn starts, so a
+    // grant revoked while the session was being looked up cannot slip through.
+    const parentProject = this.options.resolveProject(parent.projectId);
+    if (parentProject === null || !parentProject.enabled) {
+      return { threadId: null, reason: '原任务项目授权已撤销' };
+    }
+    if (!isPathInsideRoot(parentProject.rootPath, sessionCwd)) {
+      return { threadId: null, reason: '目标会话不属于本次授权项目' };
+    }
+    return { threadId: parent.threadId, reason: null };
   }
 
   private safeSummary(text: string, fallback: string): string {

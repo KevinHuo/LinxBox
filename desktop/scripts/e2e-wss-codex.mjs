@@ -61,6 +61,10 @@ const dispatcher = new TaskDispatcher({
   runner: {
     startTurn: (input) => session.startTurn(input.prompt, input.cwd),
     continueTurn: (input) => session.continueSession(input.threadId, input.prompt),
+    sessionCwd: async (threadId) => {
+      const detail = await session.readSession(threadId);
+      return detail === null ? null : detail.cwd;
+    },
     on: (listener) => session.on(listener),
     status: () => session.status(),
   },

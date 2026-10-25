@@ -28,16 +28,28 @@ interface Harness {
   readonly events: DispatchedTaskEvent[];
   readonly started: { prompt: string; cwd: string }[];
   readonly continued: { threadId: string; prompt: string; cwd: string }[];
+  revoke(projectId: string): void;
   emit(event: CodexDomainEvent): void;
 }
 
 function createHarness(
-  options: { projects?: Record<string, { rootPath: string; enabled: boolean }> } = {},
+  options: {
+    projects?: Record<string, { rootPath: string; enabled: boolean }>;
+    sessionCwd?: string | null | ((threadId: string) => string | null);
+  } = {},
 ): Harness {
   const events: DispatchedTaskEvent[] = [];
   const started: { prompt: string; cwd: string }[] = [];
   const continued: { threadId: string; prompt: string; cwd: string }[] = [];
   const listeners = new Set<(event: CodexDomainEvent) => void>();
+  const projects = options.projects ?? {};
+
+  const resolveSessionCwd = (threadId: string): string | null => {
+    if (typeof options.sessionCwd === 'function') {
+      return options.sessionCwd(threadId);
+    }
+    return options.sessionCwd === undefined ? '/tmp/app' : options.sessionCwd;
+  };
 
   const state: CodexTurnState = {
     threadId: 'th_1',
@@ -59,6 +71,7 @@ function createHarness(
       continued.push({ threadId: input.threadId, prompt: input.prompt, cwd: input.cwd });
       return Promise.resolve({ threadId: input.threadId, turnId: 'tn_2' });
     },
+    sessionCwd: (threadId) => Promise.resolve(resolveSessionCwd(threadId)),
     on: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -67,7 +80,7 @@ function createHarness(
   };
 
   const dispatcher = new TaskDispatcher({
-    resolveProject: (projectId) => options.projects?.[projectId] ?? null,
+    resolveProject: (projectId) => projects[projectId] ?? null,
     runner,
     onEvent: (event) => events.push(event),
   });
@@ -77,6 +90,12 @@ function createHarness(
     events,
     started,
     continued,
+    revoke: (projectId) => {
+      const project = projects[projectId];
+      if (project !== undefined) {
+        project.enabled = false;
+      }
+    },
     emit: (event) => {
       for (const listener of listeners) {
         listener(event);
@@ -148,6 +167,164 @@ describe('TaskDispatcher', () => {
     expect(harness.started).toHaveLength(1);
   });
 
+  it('refuses a continuation whose parent task belongs to another project', async () => {
+    const harness = createHarness({
+      projects: {
+        prj_1: { rootPath: '/tmp/app', enabled: true },
+        prj_2: { rootPath: '/tmp/other', enabled: true },
+      },
+    });
+
+    await harness.dispatcher.handle(dispatchFrame);
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'completed',
+      error: null,
+    });
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: {
+        ...dispatchFrame.payload,
+        project_id: 'prj_2',
+        task_id: 'tsk_2',
+        continuation: { parent_task_id: 'tsk_1' },
+      },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('续接目标不属于本次授权项目');
+    expect(harness.continued).toHaveLength(0);
+  });
+
+  it('refuses a continuation after the parent project authorisation was revoked', async () => {
+    const harness = createHarness({
+      projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+    });
+
+    await harness.dispatcher.handle(dispatchFrame);
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'completed',
+      error: null,
+    });
+    harness.revoke('prj_1');
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: {
+        ...dispatchFrame.payload,
+        task_id: 'tsk_2',
+        continuation: { parent_task_id: 'tsk_1' },
+      },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('项目授权已撤销');
+    expect(harness.continued).toHaveLength(0);
+  });
+
+  it('refuses a continuation when the authorisation is revoked while the session is looked up', async () => {
+    let revokeProject: () => void = () => undefined;
+    const harness = createHarness({
+      projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+      sessionCwd: () => {
+        revokeProject();
+        return '/tmp/app';
+      },
+    });
+    revokeProject = () => harness.revoke('prj_1');
+
+    await harness.dispatcher.handle(dispatchFrame);
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'completed',
+      error: null,
+    });
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: {
+        ...dispatchFrame.payload,
+        task_id: 'tsk_2',
+        continuation: { parent_task_id: 'tsk_1' },
+      },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('原任务项目授权已撤销');
+    expect(harness.continued).toHaveLength(0);
+  });
+
+  it('refuses a continuation whose session directory is outside the authorised project', async () => {
+    const harness = createHarness({
+      projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+      sessionCwd: '/tmp/elsewhere',
+    });
+
+    await harness.dispatcher.handle(dispatchFrame);
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'completed',
+      error: null,
+    });
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: {
+        ...dispatchFrame.payload,
+        task_id: 'tsk_2',
+        continuation: { parent_task_id: 'tsk_1' },
+      },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('目标会话不属于本次授权项目');
+    expect(harness.continued).toHaveLength(0);
+  });
+
+  it('refuses a continuation whose session has no verifiable working directory', async () => {
+    const harness = createHarness({
+      projects: { prj_1: { rootPath: '/tmp/app', enabled: true } },
+      sessionCwd: null,
+    });
+
+    await harness.dispatcher.handle(dispatchFrame);
+    harness.emit({
+      type: 'terminal',
+      threadId: 'th_1',
+      turnId: 'tn_1',
+      outcome: 'completed',
+      error: null,
+    });
+
+    const outcome = await harness.dispatcher.handle({
+      ...dispatchFrame,
+      message_id: 'msg_2',
+      payload: {
+        ...dispatchFrame.payload,
+        task_id: 'tsk_2',
+        continuation: { parent_task_id: 'tsk_1' },
+      },
+    } as unknown as GatewayFrame);
+
+    expect(outcome.disposition).toBe('rejected');
+    expect(outcome.error).toBe('目标会话没有可校验的工作目录');
+    expect(harness.continued).toHaveLength(0);
+  });
+
   it('rejects a dispatch for an unknown project', async () => {
     const harness = createHarness();
 
@@ -192,6 +369,7 @@ describe('TaskDispatcher', () => {
           });
         },
         continueTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' }),
+        sessionCwd: () => Promise.resolve('/tmp/app'),
         on: () => () => undefined,
         status: () => ({
           threadId: null,
@@ -232,6 +410,7 @@ describe('TaskDispatcher', () => {
           new Promise((_resolve, reject) => {
             rejectStart = reject;
           }),
+        sessionCwd: () => Promise.resolve('/tmp/app'),
         on: (next) => {
           listener = next;
           return () => undefined;
@@ -455,6 +634,7 @@ describe('TaskDispatcher cancel and failure paths', () => {
       runner: {
         startTurn: () => Promise.reject(new Error('provider unavailable')),
         continueTurn: () => Promise.reject(new Error('provider unavailable')),
+        sessionCwd: () => Promise.resolve('/tmp/app'),
         on: () => () => undefined,
         status: () => ({
           threadId: null,
@@ -485,6 +665,7 @@ describe('TaskDispatcher cancel and failure paths', () => {
       runner: {
         startTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_1' }),
         continueTurn: () => Promise.resolve({ threadId: 'th_1', turnId: 'tn_2' }),
+        sessionCwd: () => Promise.resolve('/tmp/app'),
         on: (listener) => {
           listeners.add(listener);
           return () => listeners.delete(listener);
