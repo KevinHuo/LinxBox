@@ -8,10 +8,7 @@
  * Dragging the ball is reported to the main process, which owns the real
  * window position and clamps it into the display work area.
  */
-import {
-  getBridge,
-  type ConnectionFacts,
-} from './view-model.js';
+import { getBridge, type ConnectionFacts } from './view-model.js';
 
 const bridge = getBridge();
 
@@ -24,8 +21,23 @@ const state = {
     gatewayUrl: null,
     tokenHint: null,
     computerName: null,
+    activeProfile: 'online',
+    profiles: {
+      local: {
+        gatewayUrl: 'ws://127.0.0.1:8787/v1/clients/connect',
+        tokenHint: 'demo…oken',
+      },
+      online: {
+        gatewayUrl: 'ws://124.220.162.10:8787/v1/clients/connect',
+        tokenHint: null,
+      },
+    },
   } as ConnectionFacts,
-  device: { mac: null as string | null, pairedAt: null as string | null, syncedAt: null as string | null },
+  device: {
+    mac: null as string | null,
+    pairedAt: null as string | null,
+    syncedAt: null as string | null,
+  },
 };
 
 const qs = <T extends Element>(selector: string): T | null => document.querySelector<T>(selector);
