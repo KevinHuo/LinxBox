@@ -63,9 +63,12 @@ function createSessionStub(
       overrides.continueSession ?? (() => Promise.resolve({ threadId: 'th_2', turnId: 'tn_2' })),
     readSession: overrides.readSession ?? (() => Promise.resolve(null)),
     listSessions: overrides.listSessions ?? (() => Promise.resolve([])),
+    listProjects: () => Promise.resolve([]),
     createSession: overrides.createSession ?? (() => Promise.resolve('th_managed')),
     on: overrides.on ?? (() => () => {}),
     status: () => ({ status: 'idle' }),
+    close: () => undefined,
+    interrupt: () => Promise.resolve(),
   } as unknown as CodexSession;
 }
 
@@ -240,7 +243,7 @@ describe('GatewayConnectionManager', () => {
     const items = sync?.payload['items'] as { agent_session_id: string; project_id: string }[];
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      agent_session_id: 'codex_th_managed',
+      agent_session_id: 'codex_prj_1',
       project_id: 'prj_1',
       title: 'LinxBox · LinxBox',
     });
@@ -346,7 +349,7 @@ describe('GatewayConnectionManager', () => {
           acceptance_criteria: [],
           policy_version: '2026-10-25',
           continuation: {
-            agent_session_id: 'codex_th_managed',
+            agent_session_id: 'codex_prj_1',
             thread_id: 'th_managed',
           },
         },
@@ -414,7 +417,7 @@ describe('GatewayConnectionManager', () => {
     expect(ack?.payload['disposition']).toBe('accepted');
   });
 
-  it('rejects a dispatch for a project that is not authorised locally', async () => {
+  it('uses the configured default for WSS without an Electron project grant', async () => {
     const { socket } = createManager({
       resolveProject: () => null,
     });
@@ -442,7 +445,8 @@ describe('GatewayConnectionManager', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     const ack = socket.frames().find((frame) => frame.type === 'task.ack');
-    expect(ack?.payload['disposition']).toBe('rejected');
+    expect(ack?.payload['disposition']).toBe('accepted');
+    expect(socket.frames().some((frame) => frame.type === 'task.started')).toBe(true);
   });
 
   it('runs the task on the local provider and reports the events back', async () => {

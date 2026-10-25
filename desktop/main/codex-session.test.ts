@@ -92,9 +92,10 @@ describe('CodexSession failure paths', () => {
 
     const probe = await probing;
     expect(probe.available).toBe(false);
-    // The provider's raw reason stays in the local stderr buffer; the surfaced
-    // message is generic so it can never leak provider internals.
+    // 探测只返回固定诊断文案，不能回显 provider 的任意错误文本。
     expect(probe.error).toContain('本机 Codex');
+    expect(probe.error).not.toContain('boom');
+    expect(harness.child.killed).toBe(true);
     session.close();
   });
 

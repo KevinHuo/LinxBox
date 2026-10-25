@@ -28,6 +28,38 @@ afterEach(() => {
 });
 
 describe('connection settings', () => {
+  it.each([
+    { activeProfile: 'invalid', computerName: 'mac', profiles: {} },
+    { activeProfile: 'online', computerName: 1, profiles: {} },
+    { activeProfile: 'online', computerName: 'mac', profiles: null },
+    { activeProfile: 'online', computerName: 'mac', profiles: 'invalid' },
+    { activeProfile: 'online', computerName: 'mac', profiles: { local: null, online: {} } },
+    {
+      activeProfile: 'online',
+      computerName: 'mac',
+      profiles: { local: { gatewayUrl: 'ws://local', accessToken: 'local' }, online: 1 },
+    },
+    { gatewayUrl: 'ws://localhost', accessToken: 1, computerName: 'mac' },
+    { gatewayUrl: 'ws://localhost', accessToken: 'local', computerName: null },
+  ])('拒绝字段类型不合法的配置 %#', (value) => {
+    const dir = makeWorkspace();
+    writeFileSync(resolveSettingsPath(dir), JSON.stringify(value));
+    expect(readConnectionSettings(dir)).toBeNull();
+  });
+  it('迁移远端旧档案时不改动其中的地址与凭据', () => {
+    const dir = makeWorkspace();
+    const legacy = {
+      gatewayUrl: 'wss://gateway.example.com/ws',
+      accessToken: 'old-remote',
+      computerName: 'mac',
+    };
+    writeFileSync(resolveSettingsPath(dir), JSON.stringify(legacy));
+    expect(readConnectionSettings(dir)).toMatchObject({
+      activeProfile: 'online',
+      computerName: 'mac',
+      profiles: { online: { gatewayUrl: legacy.gatewayUrl, accessToken: legacy.accessToken } },
+    });
+  });
   const settings = (computerName = 'mac') => createConnectionSettings(computerName, 'secret');
   it('puts the file inside the user-data directory', () => {
     const dir = makeWorkspace();

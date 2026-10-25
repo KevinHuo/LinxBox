@@ -133,22 +133,19 @@ payload：
 当前处理规则：
 
 1. 同一 `message_id` 再次出现，不启动第二个 Codex turn，返回 `duplicate`。
-2. `project_id` 在本机不存在，返回 `rejected`，原因“项目未授权”。
-3. 本地项目已停用，返回 `rejected`，原因“项目授权已撤销”。
+2. 优先使用本机可用的项目目录映射；没有映射或 Electron 项目已停用时，新任务使用 Desktop 默认目录。WSS 不重复要求 Electron 授权。
+3. 既无可用项目目录也未配置默认目录时返回 `rejected`，原因“没有可用的 Codex 工作目录”。
 4. Codex 启动成功，产生 `task.started`，并返回 `accepted` ack。
 5. Codex 启动失败，产生 `task.failed`，并返回 `rejected` ack。
 6. 去重记录当前只在内存中，Desktop 重启后不会保留。
 7. `capabilities` 与 `policy_version` 当前不参与执行判断，只随包记录。Gateway 不能因为下发了
    `["read"]` 就认为 Desktop 只读执行。
-8. `continuation` 不为 `null` 时，Desktop 用 `parent_task_id` 查本机已执行的父任务，并逐项校验：
-   父任务必须属于本次请求的 `project_id`；该项目当前仍然授权；目标会话记录的工作目录必须落在该授权
-   项目目录内。任一项不满足即返回 `rejected`（“续接目标不属于本次授权项目”“原任务项目授权已撤销”
-   “目标会话不属于本次授权项目”“目标会话没有可校验的工作目录”），**不会回落到新建会话**。
+8. `continuation` 不为 `null` 时保持原目标：父任务必须存在且匹配本次 `project_id`；已发布的 `agent_session_id/thread_id` 校对目录映射，未命中则通过本机 Codex 查询 thread 的工作目录。目录为空或查询不到时拒绝，**不会回落到新建会话**。已映射目标仍检查项目身份，但不重复要求 Electron grant，也不强制改用旧项目根目录。
 9. `task.started` 及其后的事件都会带上实际执行的 `thread_id` 与 `turn_id`，Gateway 用它定位本机会话。
 10. 父任务映射当前只在内存中。**Desktop 进程重启后不支持恢复父任务续接**，续接请求会因父任务不存在而
     返回 `rejected`；Gateway 不得通过重放原始执行任务来重建映射——重放产生的是一次新的执行，不是恢复原
     会话身份。持久映射与状态核对／恢复机制见 #11 / #14。
-11. 本进程内的父任务续接只覆盖“由本机执行过的任务”，不等于支持直接选择 Desktop 上的任意已有会话。
+11. 父任务续接限于本进程已执行的任务；`agent_session_id/thread_id` 续接支持本机目录映射或 Codex 可解析的既有会话。绝对路径仍由本机决定，远端不提供路径。
 
 ### 4.3 `task.cancel`
 
@@ -434,22 +431,20 @@ Desktop -> Gateway  task.completed | task.failed | task.interrupted
 
 ## 8. 当前联调必须注意的缺口
 
-1. Electron 主进程尚未实例化 `GatewayClient` / `TaskDispatcher`；完整链路目前只在 E2E 脚本中接通。
-2. `task.cancel` 尚未真正 interrupt Codex。
+1. Electron 主进程已实例化 `GatewayClient` / `TaskDispatcher` 并接入线上配置；真实部署、固件与模型仍须单独验收。
+2. `task.cancel` 会向当前活动 turn 请求 interrupt；接受请求不等于证明已取消，终态仍由 provider 事实确认。
 3. `expires_at` 尚未在当前 dispatch 路径执行过期判定，因此还不会产生 `expired` disposition。
 4. 去重与 `last_acked_sequence` 只在内存中，进程重启会丢失。
-5. `project.upsert` / `project.revoke` 尚未接入当前 WSS client。
+5. `project.upsert` / `project.revoke` 已接入，按版本保存项目展示与可用性元数据；这不改变 WSS 不重复要求 Electron grant 的规则。
 6. `task.approval_required` / `task.cancelled` 尚无实际生产路径。
 7. 成功终态已有本轮完成 TaskResult，但真实文件改动、验证与风险的完整事实投影仍未接入；其他事件的 result 仍可为 null。
 8. `presentation.upsert` / `presentation.revoke` / `command.receipt` 只有类型占位。
-9. 当前运行时只保留 `gateway-client/frames.ts` 作为入站 parser；类型契约仍声明
-   `project.upsert` / `project.revoke`，但 parser 尚未实现，后续共享 schema 需要收敛这处差异。
-10. `continuation` 已接入执行路径并校验父任务的项目归属与当前授权，但 `parent_task_id → 会话` 的映射
+9. 当前 `gateway-client/frames.ts` 校验项目元数据、配对、目录应答和历史查询；未知消息仍拒绝，类型占位不代表运行时已经支持。
+10. `continuation` 已接入执行路径并校验父任务的项目归属与本机 Codex 工作目录，但 `parent_task_id → 会话` 的映射
     只在内存中：Desktop 进程重启后不支持恢复父任务续接，Gateway 也不得靠重放原始执行任务重建映射。
     持久映射与 `conversation_id` 统一标识见 #11 / #14。
 11. `capabilities` 与 `policy_version` 当前只随包透传，不参与执行授权判断。
-12. `task_id → thread_id / turn_id` 的持久映射尚未实现，Gateway 侧会话标识统一为 `conversation_id` 的
-    方向见 #14。
+12. Desktop 的 `task_id → thread_id / turn_id` 持久映射尚未实现；Gateway 的请求/投递持久化见 [确认执行说明](../gateway/docs/execution.md)，不能替代 Desktop 的本机恢复。
 
 ## 9. Codex 数据对 Issue #4 展示的覆盖
 

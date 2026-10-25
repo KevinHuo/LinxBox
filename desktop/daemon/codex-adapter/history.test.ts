@@ -14,6 +14,42 @@ import {
   normalizeTurnList,
 } from './history.js';
 
+describe('不完整 provider 明细的显示降级', () => {
+  it.each([
+    [{ type: 'agentMessage' }, 'agent', ''],
+    [{ type: 'reasoning', summary: [null, undefined] }, 'reasoning', '(没有可读的推理文本)'],
+    [{ type: 'commandExecution' }, 'command', ''],
+    [{ type: 'fileChange', changes: [{}] }, 'file-change', '### (未知文件) (modify)\n'],
+    [{ type: 'mcpToolCall' }, 'mcp', ''],
+    [{ type: 'mcpToolCall', error: '工具错误', arguments: '原始参数' }, 'mcp', '原始参数'],
+    [{ type: 'webSearch', action: { type: 'open' } }, 'web-search', ''],
+    [{ type: 'imageView' }, 'image', ''],
+  ] as const)('保持明细类型与可读降级 %#', (raw, kind, body) => {
+    const result = normalizeDetailItem(raw);
+    expect(result.kind).toBe(kind);
+    expect(result.body).toBe(body);
+    if (raw.type === 'commandExecution') expect(result.meta).toBeNull();
+    if (raw.type === 'mcpToolCall' && 'error' in raw) expect(result.meta).toBe('工具错误');
+    if (raw.type === 'webSearch') expect(result.meta).toBe('open');
+  });
+  it('未知扩展中的循环引用不使历史面板崩溃', () => {
+    const cycle: { self?: unknown } = {};
+    cycle.self = cycle;
+    expect(normalizeDetailItem({ type: 'mcpToolCall', arguments: cycle }).body).toBe(
+      '[无法序列化的值]',
+    );
+    expect(normalizeDetailItem({ type: 'mcpToolCall', arguments: () => undefined }).body).toBe('');
+  });
+  it('拒绝空会话身份，缺失标题和目录使用明确的降级值', () => {
+    expect(normalizeSessionDetail({ thread: { id: '', turns: [] } })).toBeNull();
+    expect(normalizeSessionDetail({ thread: { id: 'thread', turns: [] } })).toMatchObject({
+      title: '(未命名会话)',
+      cwd: null,
+      turns: [],
+    });
+  });
+});
+
 /** Shape taken from a real `thread/list` response. */
 const rawThread = {
   id: '01a16d9d-5e5f-7290-8f73-c8bc049d0737',

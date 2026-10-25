@@ -66,7 +66,7 @@ pnpm format:check   # Prettier
 pnpm lint           # ESLint（type-aware）
 pnpm typecheck      # tsc --noEmit
 pnpm test           # Vitest
-pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statements 均 >= 90%）
+pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statements 均 >= 93%）
 ```
 
 ## 测试覆盖率
@@ -75,12 +75,14 @@ pnpm coverage       # Vitest + 覆盖率门槛（lines/branches/functions/statem
 
 | 指标       | 覆盖率 |
 | ---------- | -----: |
-| Statements | 97.10% |
-| Branches   | 91.67% |
-| Functions  | 98.42% |
-| Lines      | 97.25% |
+| Statements | 98.29% |
+| Branches   | 95.77% |
+| Functions  | 98.02% |
+| Lines      | 98.37% |
 
-最近验证：2026-10-25，29 个测试文件通过、1 个跳过；586 个测试通过、3 个跳过。覆盖率报告为本地生成物，不提交到仓库。
+最近验证：2026-10-26，35 个测试文件通过、1 个跳过；692 个测试通过、3 个既有测试跳过，0 失败。格式、lint、类型检查、四项覆盖率门禁和构建全部通过。四项门槛已从 90% 提高至 93%，统计范围及排除项不变；覆盖率报告为本地生成物，不提交到仓库。
+
+新增回归覆盖配对超时/断线、目录同步超时与重试、历史查询和 UTF-8 分块、原任务续接及迟到结果、配置损坏和显示缓存。用户已确认保留 main 的 WSS 默认目录/不重复授权规则，旧断言按该规则更新，仍验证无目录拒绝、项目身份匹配、不回退新会话及重复投递。修复异步操作完成后残留超时定时器、握手失败的 provider 进程回收及原始错误文案回显，并校验本机显示缓存的字段。验证使用模拟 Gateway/provider，不代表真实语音或模型任务验收。
 
 首次安装若 pnpm 未执行 Electron 的 postinstall（下载预编译二进制），手动补一次：
 
@@ -303,13 +305,11 @@ pnpm e2e:mock-console    # 终端 B：起 Desktop 侧，浏览器打开 http://1
 
 ### 授权本地项目
 
-远程任务要能在本机执行，得先在这台 Mac 上授权一个目录：**设置 → 本地项目 → 授权目录**，在系统
-目录选择器里选一个文件夹。没授权时，远程下发的任务会被本地授权检查拒绝（`disposition=rejected`，
-「项目未授权」）。
+可以通过 **设置 → 本地项目 → 授权目录** 指定要展示和同步的项目。沿用 main 当前行为，WSS 指令不重复要求 Electron 项目授权：新任务在本机映射或默认目录执行，续接沿用本机 Codex 记录的目录。不存在或没有可校验目录的会话仍拒绝，不回退新任务。
 
 > 目录只能由主进程的系统选择器给出，渲染层无法传入路径——这是安全边界，自动化脚本无法代替这一步。
 > 授权后 Electron 会枚举该目录下的既有 Codex 会话，并把不含绝对路径的会话目录同步给 mock Gateway。
-> 控制台只能选择这份目录里的会话，不再要求人工复制 `project_id`；未由本机发布的 `thread_id` 会被拒绝。
+> 控制台从已同步目录选择会话并携带匹配的项目与标题；未命中本机目录的 thread 仍须由 Codex 解析成功，不从远端标识推导路径。
 
 项目授权当前仍是进程内状态，Electron 重启后需要重新授权目录。真实云端 Gateway、固件列表读取和灵矽
 MCP 路由仍属于 Issue #14 的后续实现；这里验证的是同一消息语义下的本机 mock 闭环。
