@@ -92,11 +92,11 @@ LINX_CONTRACT_PYTHON="$PWD/../.local/issue14/contracts-venv/bin/python" ./tools/
 LINX_CONTRACT_PYTHON="$PWD/../.local/issue14/contracts-venv/bin/python" ./tools/validate_go_gateway.sh
 ```
 
-TLS mock 验证真实 C controller、LVGL、分页、推送刷新和单次停录。第二项启动仓库的真实 Go Gateway，模拟 Desktop 查询内容、模拟平台 SSE MCP 和四个逐轮来源头，验证原文不变、目标固定、错轮拒绝、OK 后单次确认、播完后迟到原文不丢失，以及服务端拒绝后不伪造投递成功、不自动重投。抓包逐条按共享 Schema 校验。全部模拟均不访问私人账号或执行真实 Codex 任务。
+TLS mock 验证真实 C controller、LVGL、分页、推送刷新和单次停录。第二项启动仓库的真实 Go Gateway，模拟 Desktop 查询内容、模拟平台 SSE MCP 和四个逐轮来源头，先验证真实设备 hello 登记后再绑定，再核对原文不变、目标固定、错轮拒绝、OK 后单次确认和唯一任务投递；模拟 Desktop 的 ACK、开始及完整完成结果分别验证 sending、running、completed 展示，不把收到投递或 ACK 当作执行完成。抓包逐条按共享 Schema 校验。全部模拟均不访问私人账号或执行真实 Codex 任务。
 
 2026-10-25 本轮验证：静态检查、真实 LVGL 主机回归、Gateway + 灵矽 + WS 配置的 ESP32-C3 固件构建均通过；自有 C 代码行覆盖率 99.38%、分支 93.31%、函数 100%，每个文件均达到 90% 门槛。TLS mock 和本地正式 Go Gateway 集成均验证了单次确认、明确拒绝及无真实任务投递，所有抓包通过共享 Schema 校验。协议日志包含敏感内容排除与分配峰值回归。本轮未重新烧录，未实测实际部署服务、灵矽平台与已绑定另一台电脑的完整确认执行链路。
 
-**当前服务端限制：** `d906469` 的 `propose_task_reply` 只持久化到 `awaiting_confirmation`；`request.confirm` 返回 `DEPENDENCY_UNAVAILABLE`，尚未投递 Desktop。此时 Agent 不能说“已发送”，必须依据真实工具结果说明未能发送。硬件会发送用户授权的确认并保留该错误，在请求状态页显示；不能通过发包补齐服务端调度。其余接口状态见[三端接口清单](interface-status.md)。
+**服务端版本边界：** 上述 2026-10-25 记录使用旧服务 `d906469`，当时确认返回 `DEPENDENCY_UNAVAILABLE` 且未投递。当前仓库已实现确认投递，正式 Go 集成用例已按动态 hello 登记、绑定、单次投递和执行回执更新；该本机模拟结果不代表线上 Codex 执行成功。Agent 仍须依据真实工具与执行结果反馈，不能把保存提案或收到 ACK 说成执行完成。其余接口状态见[三端接口清单](interface-status.md)。
 
 **当前平台限制：** [正式 MCP 接入说明](../../gateway/docs/mcp.md)明确要求每轮 `X-Linx-Device-Id/Agent-Id/Session-Id/Request-Id`，其中 request_id 透传及最终 ASR 原话固定路由仍待灵矽平台支持。设备发送 `listen.start.request_id` 不等于平台已经透传；不使用“最新请求”推断，也不让模型猜目标。
 

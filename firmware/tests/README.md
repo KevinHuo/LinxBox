@@ -31,6 +31,6 @@
 `test_linx_input_settings.c` 核对默认值、异步保存、关闭运行对象后的重启读回、非法值、读取／队列／任务失败及资源清理。替身按固定 ESP-IDF 的 set 即写入行为模拟，覆盖写入后报错与提交失败，不将关闭句柄当成回滚。UI 测试另外核对保存成功后才切换、失败保持当前模式、离页结果不跳转，以及保存确认重绘期间排队的旧按键不能穿透新模式。
 
 
-Gateway 回归使用正式共享 Schema，验证目录、历史、正文、推送刷新、固定目标 prepare、单轮录音许可和重连恢复。设备不发送 `request.propose` 或列表 `limit`，也不生成指定播报；OK 停录被接受后才授权 `request.confirm`，覆盖原文先到／后到、重复按键、取消和断线后只读恢复。`test_gateway_socket.mjs` 通过 TLS mock 驱动真实 C/LVGL 界面；`test_go_gateway.mjs` 另启动正式 Go Gateway，以模拟 Desktop 提供查询数据、模拟灵矽来源头调用真实 SSE MCP，确认原文落盘、单次确认和 UI 刷新。后者明确断言当前服务返回调度未实现、错误保留且没有任务投递，不能把草稿保存当成“已发送”。测试不连接私人账号，不调用真实 Codex。
+Gateway 回归使用正式共享 Schema，验证目录、历史、正文、推送刷新、固定目标 prepare、单轮录音许可和重连恢复。设备不发送 `request.propose` 或列表 `limit`，也不生成指定播报；OK 停录被接受后才授权 `request.confirm`，覆盖原文先到／后到、重复按键、取消和断线后只读恢复。`test_gateway_socket.mjs` 通过 TLS mock 驱动真实 C/LVGL 界面；`test_go_gateway.mjs` 另启动正式 Go Gateway，以模拟 Desktop 提供查询数据、模拟灵矽来源头调用真实 SSE MCP，先由真实 C 客户端完成 hello 登记，再绑定设备和同步目录；核对原文不变、单次确认与唯一任务投递，并由模拟 Desktop 发送 ACK、开始和完整完成结果，验证 UI 按 sending → running → completed 更新。保存提案、收到投递或 ACK 均不能提前显示执行完成。测试不连接私人账号，不调用真实 Codex。
 
 从固件目录运行 `./tools/validate_gateway_mock.sh` 和 `./tools/validate_go_gateway.sh`。第二项需要仓库 Go 工具链，仍须单独验证真实灵矽平台的逐轮请求头透传、工具路由和部署后的任务投递。
