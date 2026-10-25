@@ -79,6 +79,28 @@ make release           # CGO_ENABLED=0 构建 Linux amd64/arm64
 `INCREMENTAL_BASE=origin/main make check` 运行。
 race 检测与发布构建分开：发布构建不要求 CGO。
 
+## 测试覆盖率
+
+当前覆盖率由 `make check` 生成，统计 `gateway/` 内全部自有 Go 包，使用
+`go test -count=1 -covermode=atomic -coverpkg=./...`，不排除未命中的源码；整体及关键包
+门槛均为 90%。最近本地验证（2026-10-26）结果如下：
+
+| 范围 | 语句覆盖率 | 已覆盖 / 总数 |
+| --- | ---: | ---: |
+| 整体 | 93.08% | 2826 / 3036 |
+| `cmd/linxbox-gateway` | 92.31% | 36 / 39 |
+| `cmd/linxbox-smoke` | 92.62% | 276 / 298 |
+| `internal/config` | 99.31% | 143 / 144 |
+| `internal/contracts` | 97.69% | 127 / 130 |
+| `internal/domain` | 100.00% | 42 / 42 |
+| `internal/lifecycle` | 96.63% | 172 / 178 |
+| `internal/service` | 91.19% | 600 / 658 |
+| `internal/storage` | 90.95% | 181 / 199 |
+| `internal/transport` | 94.25% | 1115 / 1183 |
+
+覆盖率报告为本地或 CI 生成物，不提交到仓库；CI 会在摘要中展示关键包结果，并保存
+`gateway-go-coverage` artifact。覆盖率只反映主机测试代码路径，不代表真实设备、云端服务或完整语音链路验收。
+
 `make smoke-local` 自动启动回环 TCP 服务，以固定模拟会话验证绑定、5+1 目录分页、
 会话详情、历史、中文正文连续分块、新消息通知和错误凭据拒绝。它连续运行两次，
 再重启 Gateway，先确认数据库中的绑定和目录仍可读取，再跑一轮完整链路。

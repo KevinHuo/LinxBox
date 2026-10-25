@@ -1,6 +1,7 @@
 # LinxBox
 
 [![Desktop coverage](https://img.shields.io/badge/Desktop%20coverage-98.29%25-brightgreen)](desktop/README.md#测试覆盖率)
+[![Gateway coverage](https://img.shields.io/badge/Gateway%20coverage-93.08%25-brightgreen)](gateway/README.md#测试覆盖率)
 [![Firmware line coverage](https://img.shields.io/badge/Firmware%20line%20coverage-99.30%25-brightgreen)](firmware/README.md#测试覆盖率)
 
 **把 AI 编程会话带到手边。**

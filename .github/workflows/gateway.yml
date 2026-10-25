@@ -29,6 +29,44 @@ jobs:
         working-directory: gateway
         run: |
           INCREMENTAL_BASE=origin/main make check
+      - name: 展示 Gateway 覆盖率摘要
+        if: ${{ !cancelled() }}
+        working-directory: gateway
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          report = Path("coverage.out")
+          total = covered = 0
+          seen = set()
+          covered_seen = set()
+          for line in report.read_text(encoding="utf-8").splitlines()[1:]:
+              fields = line.split()
+              if len(fields) != 3:
+                  continue
+              key = fields[0]
+              statements = int(fields[1])
+              count = int(fields[2])
+              if key not in seen:
+                  seen.add(key)
+                  total += statements
+              if count > 0 and key not in covered_seen:
+                  covered_seen.add(key)
+                  covered += statements
+          percent = covered / total * 100 if total else 0
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              print("## Gateway Go 测试覆盖率\n", file=output)
+              print(f"整体语句覆盖率：**{percent:.2f}%**（{covered} / {total}）；门槛：90%。\n", file=output)
+              print("详细关键包统计见 `covergate` 门禁输出；报告已保存为 workflow artifact。", file=output)
+          PY
+      - name: 保存 Gateway 覆盖率报告
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-go-coverage
+          retention-days: 14
+          path: gateway/coverage.out
       - name: 构建
         working-directory: gateway
         run: make build
