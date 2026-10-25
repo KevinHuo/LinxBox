@@ -43,6 +43,19 @@ func operationName(operation string) string {
 	return "处理消息"
 }
 
+// publicErrorMessage 仅放行 Gateway 生成的固定安全文案；未知内容仍按对端错误脱敏。
+func publicErrorMessage(message string) (string, bool) {
+	switch message {
+	case "任务发送结果不确定，请核对原任务；不会自动重发", "Desktop 未接受任务投递",
+		"完成事件缺少一致的成功结果，不能确认任务成功", "Desktop 报告任务执行失败，请在电脑端查看详情",
+		"Desktop 报告任务中断，结果未确认；不会自动重发", "任务需要在电脑端处理审批，当前入口不自动授权",
+		"连接中断或 Gateway 重启，执行结果未确认；不会自动重发":
+		return message, false
+	default:
+		return peerErrorMessage(message)
+	}
+}
+
 // peerErrorMessage 仅展示已知诊断文案；任意对端错误可能含正文、路径或凭据。
 func peerErrorMessage(message string) (string, bool) {
 	switch message {
@@ -99,7 +112,19 @@ func errorFields(err error, source string) []any {
 	case domain.CodeResourceExhausted:
 		hint = "检查连接、队列、在途查询数量及消息大小限制"
 	}
-	return []any{"error_code", domain.CodeOf(err), "error_message", message, "error_source", source, "error_hint", hint, "error_detail_redacted", redacted}
+	fields := []any{"error_code", domain.CodeOf(err), "error_message", message, "error_source", source, "error_hint", hint, "error_detail_redacted", redacted}
+	var conflict *service.RequestConflict
+	if errors.As(err, &conflict) {
+		fields = append(fields, "target_status", conflict.TargetStatus, "blocking_request_count", len(conflict.Blockers))
+		for i, blocker := range conflict.Blockers {
+			suffix := ""
+			if i > 0 {
+				suffix = fmt.Sprintf("_%d", i+1)
+			}
+			fields = append(fields, "blocking_request_id"+suffix, blocker.RequestID, "blocking_status"+suffix, blocker.Status, "blocking_scope"+suffix, blocker.Scope)
+		}
+	}
+	return fields
 }
 
 // logOperation 将业务结果与队列细节分层，避免一次失败重复输出多条 WARN。

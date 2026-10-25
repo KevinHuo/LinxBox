@@ -155,7 +155,7 @@ stateDiagram-v2
     unknown --> cancelled: 可核验原任务取消结果
 ```
 
-completed、failed、cancelled 不回退。unknown 若来自真实 interrupted 终态，保留该任务的终态屏障；若来自连接中断，则可由原任务后续事实收敛。缺少一致 TaskResult 的 completed 保存为 unknown，不伪造成功。
+completed、failed、cancelled 不回退。unknown 若来自真实 interrupted 终态，保留该任务的终态屏障；若来自连接中断，则可由原任务后续事实收敛。缺少一致 TaskResult 的 completed 保存为 unknown，不伪造成功或锁成已核实终态；允许原任务补报更高序号、全新 event_id 的有效终态事实。此时迟到的 started/progress 不能把请求回退到 running。
 
 ### 全部共享消息索引
 
@@ -218,3 +218,42 @@ Linux amd64／arm64 的 Gateway 和 smoke 工具均使用 CGO_ENABLED=0 静态�
 - 未更新固件或部署腾讯云；真实 Desktop/Code Agent 的执行与三端语音闭环仍需重新验收。已使用旧 Desktop 时，须核对其是否包含本文件所述结构化 TaskResult 投影；缺少结果事实时 Gateway 保持 unknown，不伪造 completed。
 
 升级新增迁移 004，需停服备份完整 SQLite 数据目录后安装。启动会将既有 sending/running 收敛到 unknown，不自动重投。回退程序时同时恢复升级前配置和数据库备份。
+
+## Gateway 结果恢复与占用排查（2026-10-26）
+
+本次仅修复现有共享契约下的 Gateway 执行事实恢复和内部日志，不新增接口、状态、错误字段、自动重投、执行取消或人工批准入口。DRI：BoleLiu；主模块：Gateway；必要跨端评审：KevinHuo（固件）、yydounai1234（Desktop）。
+
+`task.completed` 的 `result=null` 或 result.status 不是 succeeded 时，Gateway 保持 unknown 和设备/会话占用，但不再设置终态屏障。已部署旧版本写入的 `unknown + DEPENDENCY_UNAVAILABLE + 完成事件缺少一致的成功结果，不能确认任务成功` 也适用恢复，无需删除数据库、修改旧迁移或手动改 terminal 字段。
+
+恢复仍须由当前认证且归属一致的 Desktop，通过既有任务事件补报原 task_id/thread_id/turn_id 的可核验终态。补报使用新的 event_id 和大于已保存 last_event_sequence 的序号；不能修改旧 event_id 的内容。原样重复事件保持幂等；不同账号、任务、会话或 turn、过期序号以及事件身份冲突仍被拒绝。已核实 completed/failed/cancelled 及真实 interrupted 的屏障不受影响。完成结果待核实期间只接受后续终态事实，started/progress 不使它回退到运行中。
+
+收到有效成功结果后保存 completed，收到一致失败/取消事实后保存对应状态，并释放 Request 的设备和会话占用。目录状态仍单独检查：Desktop 目录若为 running/unknown，仍不能创建新追问。没有补报时继续保持 unknown；重启、重复确认、语音 abort 或确认前 request.cancel 都不能解除已确认任务占用。更新 Gateway 本身不生成执行证据，也不为旧版 Desktop 增加结果补报能力。
+
+`request.prepare` 冲突时，日志新增 blocking_request_id、blocking_status、blocking_scope、blocking_request_count 和 target_status。scope 为 device、session 或 device_and_session；有两个不同占用者时，第二条使用 `_2` 后缀。只有目录状态冲突时 count=0，通过 target_status 定位。诊断留在服务端日志，不扩展固件响应。prepare 失败不会创建新 request_id，应按日志中的旧 request_id 查询，查询失败的新 ID 返回 NOT_FOUND 属于预期。
+
+request.state 的 response_body 改为实际 FirmwareResponseBody（ok/data/error）；失败时展示实际错误，而非全为空的 Request。通知日志对 Gateway 产生的固定状态错误保留安全原文，并标明 state_error_source=gateway；未知对端异常、文字、路径和凭据继续脱敏。
+
+服务器可先根据日志中的旧请求定位持久身份。使用配置 database.path；默认路径的只读检查示例（需 sqlite3）如下，不读取识别正文、标题或结果内容：
+
+```sh
+sudo sqlite3 -readonly /var/lib/linxbox/gateway.db <<'SQL'
+SELECT r.request_id, r.agent_session_id, r.status, r.error_code,
+       e.task_id, e.turn_id, e.last_event_sequence, e.terminal
+FROM requests r
+LEFT JOIN request_executions e ON e.request_id = r.request_id
+WHERE r.device_id = '4C:11:AE:32:D2:38'
+  AND r.status IN ('awaiting_text','awaiting_confirmation','sending','running','unknown');
+SQL
+```
+
+随后由 Desktop 核对原任务结果并补报；用固件 request.get 查询旧请求快照，确认收敛后再建立新请求。本次未访问或更改服务器数据库，也未部署修复。
+
+回归先在旧实现复现误设终态、旧库补报被拒和错误原因被脱敏，再验证修复。用例包含空结果与不一致结果、旧 terminal 记录关闭/重开 SQLite 后恢复、补报去重和串线/乱序拒绝、真实终态不可覆盖、设备/会话/双重/目录占用定位，以及真实 WebSocket 编解码下的 unknown→冲突→补报 completed→新请求成功（模拟 Desktop）。
+
+## PR #26 开发线整合（2026-10-26）
+
+将 PR 分支中的 5b30e12、37b3917 与 Streamable HTTP、缺省请求 ID 联调及记录缺失诊断合并，保留两边提交历史。此前 3827d95 部署包只手动导入了 5b30e12 的确认执行实现，未包含 37b3917 的结果恢复修复；提交 PR 不会自动替换该安装包或服务器程序。
+
+TestMVPStreamableImplicitConfirmDispatchAndCompletion 同时覆盖直接成功与缺结果补报：缺头 MCP 提案 → 固件确认 → 固定 Desktop 投递 → started → 缺结果 completed 保存 unknown → 新 prepare 冲突且失败 ID 查询为 NOT_FOUND → 原任务以新事件和更高序号补报成功结果 → completed → 新 prepare 成功。重复确认始终只投递一次。请求选择仍检查设备、Desktop 绑定和账号归属，未放宽认证。
+
+整合后执行 `INCREMENTAL_BASE=origin/main make check build release` 通过，含生成核对、格式、go vet、全部单元/集成测试、整体/关键包/增量包原有覆盖率门禁及 race。本机及 Linux amd64/arm64 无 CGO 构建通过。整体语句覆盖率 93.08%（2826/3036），service 91.19%、storage 90.95%、transport 94.25%；均未降低门槛。定向执行恢复、MCP 组合链路及记录缺失诊断的 race 回归通过。Desktop 运行代码与 37b3917 一致，本轮未重跑其全量检查；此前失败记录继续保留。未部署服务器或执行真实平台/固件/模型验收。

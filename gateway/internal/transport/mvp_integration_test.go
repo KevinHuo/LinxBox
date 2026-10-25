@@ -7,8 +7,19 @@ import (
 	"github.com/KevinHuo/LinxBox/gateway/internal/contracts"
 )
 
-// 发布包必须同时包含缺头 MCP 提案与确认执行，防止各自测试通过却分开发包。
+// 同一份实现必须兼容缺头 MCP 提案、确认执行和缺结果恢复，防止整合时遗漏。
 func TestMVPStreamableImplicitConfirmDispatchAndCompletion(t *testing.T) {
+	for _, recovery := range []bool{false, true} {
+		name := "direct_completion"
+		if recovery {
+			name = "incomplete_result_recovery"
+		}
+		t.Run(name, func(t *testing.T) { runMVPStreamableExecution(t, recovery) })
+	}
+}
+
+func runMVPStreamableExecution(t *testing.T, recovery bool) {
+	t.Helper()
 	env, capture := streamableEnv(t, 16, true)
 	fw := dialWS(t, env.baseWS+"/v1/devices/connect", "dev-token")
 	if r := fw.fwReq(t, "device.hello", map[string]any{"mac_address": "AA:BB:CC:DD:EE:01"}); !r.OK {
@@ -74,6 +85,21 @@ func TestMVPStreamableImplicitConfirmDispatchAndCompletion(t *testing.T) {
 	send("task.started", taskPipeEvent(payload, "task.started", 1))
 	pushState("running")
 	completed := taskPipeEvent(payload, "task.completed", 2)
+	if recovery {
+		send("task.completed", completed)
+		pushState("unknown")
+		check(fw.fwReq(t, "request.get", map[string]any{"request_id": "mvp-request"}), "unknown")
+		check(fw.fwReq(t, "request.confirm", map[string]any{"request_id": "mvp-request"}), "unknown")
+		blocked := fw.fwReq(t, "request.prepare", map[string]any{"request_id": "next-request", "agent_session_id": "sess-1"})
+		if blocked.OK || blocked.Code != "CONFLICT" {
+			t.Fatal("缺少结果时应保持原请求占用", blocked)
+		}
+		missing := fw.fwReq(t, "request.get", map[string]any{"request_id": "next-request"})
+		if missing.OK || missing.Code != "NOT_FOUND" {
+			t.Fatal("prepare 失败不能创建新请求", missing)
+		}
+		completed = taskPipeEvent(payload, "task.completed", 3)
+	}
 	completed["result"] = map[string]any{"contract_version": "task-result-v1", "status": "succeeded", "summary": "模拟执行完成", "changes": []any{}, "verification": []any{}, "risks": []any{}, "needs_user_action": nil, "voice_summary": "模拟执行完成"}
 	send("task.completed", completed)
 	pushState("completed")
@@ -87,5 +113,10 @@ func TestMVPStreamableImplicitConfirmDispatchAndCompletion(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatal("完整链路重复投递", count)
+	}
+	if recovery {
+		if r := fw.fwReq(t, "request.prepare", map[string]any{"request_id": "next-request", "agent_session_id": "sess-1"}); !r.OK {
+			t.Fatal("有效补报后应释放原请求占用", r)
+		}
 	}
 }

@@ -44,7 +44,7 @@ func (s *Server) bodyFields(key string, raw []byte) []any {
 					text, ok := child.(string)
 					if ok {
 						var hidden bool
-						out[field], hidden = peerErrorMessage(text)
+						out[field], hidden = publicErrorMessage(text)
 						redacted = redacted || hidden
 					} else {
 						out[field] = "[已脱敏]"

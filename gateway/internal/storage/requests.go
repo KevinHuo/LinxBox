@@ -78,13 +78,34 @@ expires_at=?,expired=?,linx_agent_id=?,linx_session_id=? WHERE request_id=?`,
 	return err
 }
 
-// Busy 检查每设备串行与每会话一条未结束请求。
-func (RequestRepo) Busy(ctx context.Context, q Queryer, device, desktop, session string) (bool, error) {
-	var count int
-	err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM requests WHERE
-status IN ('awaiting_text','awaiting_confirmation','sending','running','unknown') AND
-(device_id=? OR (desktop_client_id=? AND agent_session_id=?))`, device, desktop, session).Scan(&count)
-	return count > 0, err
+// RequestBlocker 只含内部诊断标识，不包含文字、标题或本机路径。
+type RequestBlocker struct {
+	RequestID string `json:"request_id"`
+	Status    string `json:"status"`
+	Scope     string `json:"scope"`
+}
+
+// Blockers 定位设备/会话占用者；两项唯一约束保证最多两条结果。
+func (RequestRepo) Blockers(ctx context.Context, q Queryer, device, desktop, session string) ([]RequestBlocker, error) {
+	rows, err := q.QueryContext(ctx, `SELECT request_id,status,
+CASE WHEN device_id=? AND desktop_client_id=? AND agent_session_id=? THEN 'device_and_session'
+WHEN device_id=? THEN 'device' ELSE 'session' END
+FROM requests WHERE status IN ('awaiting_text','awaiting_confirmation','sending','running','unknown')
+AND (device_id=? OR (desktop_client_id=? AND agent_session_id=?)) ORDER BY request_id LIMIT 2`,
+		device, desktop, session, device, device, desktop, session)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var blockers []RequestBlocker
+	for rows.Next() {
+		var blocker RequestBlocker
+		if err := rows.Scan(&blocker.RequestID, &blocker.Status, &blocker.Scope); err != nil {
+			return nil, err
+		}
+		blockers = append(blockers, blocker)
+	}
+	return blockers, rows.Err()
 }
 
 // ExpiredIDs 用固定截止时间读取待处理请求，供启动及周期清理。
