@@ -3,6 +3,43 @@
 本包实现连接后动态登记 MAC，不需要提前填写设备 MAC 或配对白名单。范围为 Gateway；
 固件与 Desktop 按[三端联调说明](integration.md)接入。本页使用通用占位符，不提供实际服务器、账号、设备身份或凭据，也不代表已完成目标服务器安装或真实板卡验收。
 
+## 编译与打包
+
+已有完整发布包时可跳过本节。从源码构建需要 Go `1.25+`、Make，以及 Bash、Python 3、tar；在仓库根目录执行下面的命令。示例打包 amd64，arm64 将 `LINX_ARCH` 改为 `arm64`。版本使用当前提交短号，工作区应保持干净，确保产物能对应到具体源码。
+
+```sh
+cd gateway
+go mod download
+make release
+
+LINX_ARCH=amd64
+LINX_VERSION=$(git rev-parse --short HEAD)
+LINX_PACKAGE="linxbox-gateway-linux-$LINX_ARCH-$LINX_VERSION"
+LINX_STAGE="dist/$LINX_PACKAGE"
+mkdir -p "$LINX_STAGE"
+cp "dist/linux-$LINX_ARCH/linxbox-gateway" "$LINX_STAGE/"
+CGO_ENABLED=0 GOOS=linux GOARCH="$LINX_ARCH" go build -trimpath \
+  -o "$LINX_STAGE/linxbox-smoke" ./cmd/linxbox-smoke
+cp deploy/install.sh deploy/linxbox-gateway.service config.example.json "$LINX_STAGE/"
+cp docs/ws-deployment.md "$LINX_STAGE/README.md"
+printf 'GOOS=linux\nGOARCH=%s\nCOMMIT=%s\n' \
+  "$LINX_ARCH" "$(git rev-parse HEAD)" > "$LINX_STAGE/VERSION"
+python3 - "$LINX_STAGE" <<'PYTHON'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+files = sorted(p for p in root.iterdir() if p.is_file() and p.name != 'SHA256SUMS')
+with (root / 'SHA256SUMS').open('w') as output:
+    for path in files:
+        output.write(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n')
+PYTHON
+tar -czf "dist/$LINX_PACKAGE.tar.gz" -C dist "$LINX_PACKAGE"
+```
+
+发布包位于 `gateway/dist/linxbox-gateway-linux-<架构>-<提交短号>.tar.gz`。包内包含服务、模拟联调工具、安装脚本、systemd 单元、无效示例配置、部署说明、版本信息和文件校验和；不打包本地配置、token 或数据库。`make release` 自动生成契约资源并构建两种架构的服务，本节另编译安装脚本所需的同架构 `linxbox-smoke`。发布前的代码验证命令见 [Gateway 验证说明](../README.md#验证)。
+
 ## 上传安装包
 
 在服务器执行 `uname -m`：`x86_64` 选 amd64，`aarch64` 选 arm64。

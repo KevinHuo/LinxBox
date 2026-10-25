@@ -117,7 +117,7 @@ cd firmware
 ## 架构与运行
 
 - [架构设计](docs/architecture.md)：总体拓扑、模块职责、规格与分工入口、数据流、安全边界和当前限制。
-- [运行说明](docs/runbook.md)：启动 Desktop、本地运行和常规部署 Gateway、固件构建／烧录入口及排障步骤。
+- [运行说明](docs/runbook.md)：启动 Desktop、本地运行、编译打包和常规部署 Gateway、固件构建／烧录入口及排障步骤。
 
 ## 代码
 

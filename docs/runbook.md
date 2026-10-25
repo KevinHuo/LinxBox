@@ -61,6 +61,20 @@ make test
 make smoke-local
 ```
 
+## 编译 Gateway
+
+从仓库根目录开始，准备 Go `1.25+` 和 Make，执行：
+
+```sh
+cd gateway
+go mod download
+make release
+```
+
+`make release` 自动生成共享契约资源，并以 `CGO_ENABLED=0` 交叉编译 Linux 服务，产物为 `gateway/dist/linux-amd64/linxbox-gateway` 和 `gateway/dist/linux-arm64/linxbox-gateway`（路径相对仓库根目录）。服务器 `uname -m` 为 `x86_64` 时选 amd64，为 `aarch64` 或 `arm64` 时选 arm64。服务器运行发布包不需要安装 Go。
+
+此命令只生成服务二进制，不会生成带 `install.sh` 的压缩包。采用下方安装方式时，继续按[编译与打包说明](../gateway/docs/ws-deployment.md#编译与打包)生成完整发布包；已有对应架构发布包的使用者可直接部署。
+
 ## 部署 Gateway
 
 生产环境使用与服务器架构匹配的 Linux 发布包，并通过 HTTPS/WSS 提供服务。以下以带安装脚本的发布包和 systemd 为例，部署流程不限定本机系统或文件传输工具。
