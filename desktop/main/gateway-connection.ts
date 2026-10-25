@@ -17,6 +17,8 @@ import { homedir } from 'node:os';
 import {
   buildAgentSessionsSyncFrame,
   buildDeviceBindFrame,
+  buildMessageAvailableFrame,
+  buildQueryResultFrame,
   buildTaskEventFrame,
   publicError,
 } from '../daemon/gateway-client/frames.js';
@@ -59,6 +61,7 @@ export interface GatewayConnectionManagerOptions {
   /** Called whenever the connection status changes. */
   readonly onStatusChange?: (status: GatewayConnectionStatus) => void;
   readonly onTaskEvent?: (event: DispatchedTaskEvent) => void;
+  readonly onProjectChange?: (frame: Extract<GatewayFrame, { type: 'project.upsert' | 'project.revoke' }>) => void;
   /** Desktop version reported in the hello frame. */
   readonly desktopVersion?: string;
   /**
@@ -180,6 +183,13 @@ export class GatewayConnectionManager {
             sentAt: new Date().toISOString(),
           }),
         );
+        if (event.type === 'task.completed' && event.payload.thread_id !== null) {
+          client.send(buildMessageAvailableFrame({
+            messageId: this.nextMessageId(), sequence: this.nextSequence(),
+            agentSessionId: `codex_${event.payload.thread_id}`,
+            availableMessageId: event.payload.event_id, sentAt: new Date().toISOString(),
+          }));
+        }
         if (event.type !== 'task.started' && event.type !== 'task.progress') {
           void this.syncAgentSessions();
         }
@@ -243,6 +253,14 @@ export class GatewayConnectionManager {
           }
           return;
         }
+        if (event.frame.type === 'messages.list' || event.frame.type === 'message.content.get') {
+          void this.handleHistoryQuery(event.frame);
+          return;
+        }
+        if (event.frame.type === 'project.upsert' || event.frame.type === 'project.revoke') {
+          this.options.onProjectChange?.(event.frame);
+          return;
+        }
         this.handleFrame(event.frame);
       }
     });
@@ -251,6 +269,31 @@ export class GatewayConnectionManager {
     this.dispatcher = dispatcher;
     client.connect();
     this.publishStatus();
+  }
+
+  private async handleHistoryQuery(frame: Extract<GatewayFrame, { type: 'messages.list' | 'message.content.get' }>): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    try {
+      const session = await this.options.session.readSession(frame.payload.agent_session_id);
+      if (!session) throw new Error('会话不存在');
+      if (frame.type === 'messages.list') {
+        const items = session.turns.flatMap((turn) => turn.messages)
+          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .slice(-16)
+          .map((message) => ({ message_id: message.id, role: message.role, summary: message.text.slice(0, 120) }));
+        client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), data: { items, next_cursor: null } }));
+      } else {
+        const message = session.turns.flatMap((turn) => turn.messages).find((item) => item.id === frame.payload.message_id);
+        if (!message) throw new Error('消息不存在');
+        const offset = frame.payload.offset ?? 0;
+        const text = Array.from(message.text).slice(offset, offset + 1024).join('');
+        const next = offset + text.length < Array.from(message.text).length ? offset + text.length : null;
+        client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), data: { text, next_offset: next } }));
+      }
+    } catch (error) {
+      client.send(buildQueryResultFrame({ messageId: this.nextMessageId(), sequence: this.nextSequence(), replyToMessageId: frame.message_id, sentAt: new Date().toISOString(), error: { code: 'NOT_FOUND', message: error instanceof Error ? error.message : '查询失败' } }));
+    }
   }
 
   bindDevice(macAddress: string): Promise<unknown> {

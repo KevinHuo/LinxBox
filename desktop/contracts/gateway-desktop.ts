@@ -48,9 +48,6 @@ export const DESKTOP_MESSAGE_TYPES = [
   'task.cancelled',
   'task.interrupted',
   'agent_sessions.sync',
-  'presentation.upsert',
-  'presentation.revoke',
-  'command.receipt',
   'message.available',
   'query.result',
 ] as const;
@@ -296,9 +293,6 @@ export interface DesktopPayloadByType {
   'task.cancelled': TaskEventPayload;
   'task.interrupted': TaskEventPayload;
   'agent_sessions.sync': AgentSessionsSyncPayload;
-  'presentation.upsert': Record<string, unknown>;
-  'presentation.revoke': Record<string, unknown>;
-  'command.receipt': Record<string, unknown>;
   'message.available': MessageAvailablePayload;
   'query.result': QueryResultPayload;
 }

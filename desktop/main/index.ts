@@ -107,6 +107,11 @@ const gateway = new GatewayConnectionManager({
   onTaskEvent: (event) => {
     recordTaskEvent(state, event.payload);
   },
+  onProjectChange: (frame) => {
+    if (frame.type === 'project.revoke') {
+      revokeProject(state, frame.payload.project_id);
+    }
+  },
 });
 
 /**

@@ -376,6 +376,31 @@ export function buildHeartbeatFrame(input: {
   };
 }
 
+/** Build a correlated history query response. */
+export function buildQueryResultFrame(input: {
+  messageId: string; sequence: number; replyToMessageId: string;
+  data?: unknown; error?: { code: PublicErrorCode; message: string }; sentAt: string;
+}): DesktopFrame<'query.result'> {
+  return {
+    protocol_version: PROTOCOL_VERSION, message_id: input.messageId, sequence: input.sequence,
+    type: 'query.result', sent_at: input.sentAt,
+    payload: input.error
+      ? { reply_to_message_id: input.replyToMessageId, ok: false, error: input.error }
+      : { reply_to_message_id: input.replyToMessageId, ok: true, data: input.data },
+  } as DesktopFrame<'query.result'>;
+}
+
+/** Build a notification that a final message is available. */
+export function buildMessageAvailableFrame(input: {
+  messageId: string; sequence: number; agentSessionId: string; availableMessageId: string; sentAt: string;
+}): DesktopFrame<'message.available'> {
+  return {
+    protocol_version: PROTOCOL_VERSION, message_id: input.messageId, sequence: input.sequence,
+    type: 'message.available', sent_at: input.sentAt,
+    payload: { agent_session_id: input.agentSessionId, message_id: input.availableMessageId },
+  };
+}
+
 /** Build a full replacement of the device-visible Codex session directory. */
 export function buildAgentSessionsSyncFrame(input: {
   messageId: string;
