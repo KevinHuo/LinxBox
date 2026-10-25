@@ -48,6 +48,7 @@ const state = {
   tasks: [] as TaskFacts[],
   appearance: { theme: 'warm' } as AppearanceFacts,
   float: { visible: true, position: null } as FloatFacts,
+  device: { mac: null as string | null, pairedAt: null as string | null, syncedAt: null as string | null },
 };
 
 const qs = <T extends Element>(selector: string): T | null => document.querySelector<T>(selector);
@@ -173,6 +174,13 @@ function renderDevice(): void {
   if (sub) {
     sub.textContent = deviceSubtitle(state.connection);
   }
+  const paired = qs('#device-paired-at');
+  const mac = qs('#device-mac');
+  const synced = qs('#device-synced-at');
+  const format = (value: string | null): string => value === null ? '—' : new Date(value).toLocaleString('zh-CN', { hour12: false });
+  if (paired) paired.textContent = format(state.device.pairedAt);
+  if (mac) mac.textContent = state.device.mac ?? '—';
+  if (synced) synced.textContent = format(state.device.syncedAt);
 }
 
 /** Render the settings view from the current preferences. */
@@ -299,6 +307,8 @@ async function startPairing(): Promise<void> {
     showToast(result?.message ?? '设备配对失败');
     return;
   }
+  state.device = { mac, pairedAt: new Date().toISOString(), syncedAt: new Date().toISOString() };
+  renderDevice();
   const note = qs('#pairing-note');
   if (note) note.textContent = `设备 ${mac} 已配对成功`;
   go('home');
@@ -559,6 +569,7 @@ function applyGatewayStatus(payload: unknown): void {
     lastActivityAt: status.lastActivityAt ?? null,
   };
   state.connection = { ...state.connection, connected: status.connected ?? false };
+  if (status.lastActivityAt !== null) state.device.syncedAt = status.lastActivityAt;
   renderAll();
 }
 
