@@ -1,0 +1,1584 @@
+[
+  {
+    "name": "device.hello 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "device.hello",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01"
+      }
+    }
+  },
+  {
+    "name": "device.hello 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "device.hello",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "device.hello 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello",
+    "valid": false,
+    "data": {
+      "type": "device.hello",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01"
+      }
+    }
+  },
+  {
+    "name": "device.hello 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "device.hello",
+      "payload": {
+        "mac_address": "34:00:00:00:00:01",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.list 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "agent_sessions.list",
+      "payload": {}
+    }
+  },
+  {
+    "name": "agent_sessions.list 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "agent_sessions.list",
+      "payload": {},
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_sessions.list 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list",
+    "valid": false,
+    "data": {
+      "type": "agent_sessions.list",
+      "payload": {}
+    }
+  },
+  {
+    "name": "agent_sessions.list 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "agent_sessions.list",
+      "payload": {
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "agent_session.get 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "agent_session.get",
+      "payload": {
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "agent_session.get 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "agent_session.get",
+      "payload": {
+        "agent_session_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_session.get 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get",
+    "valid": false,
+    "data": {
+      "type": "agent_session.get",
+      "payload": {
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "agent_session.get 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "agent_session.get",
+      "payload": {
+        "agent_session_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "messages.list 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "messages.list",
+      "payload": {
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "messages.list 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "messages.list",
+      "payload": {
+        "agent_session_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "messages.list 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list",
+    "valid": false,
+    "data": {
+      "type": "messages.list",
+      "payload": {
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "messages.list 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "messages.list",
+      "payload": {
+        "agent_session_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "message.content.get 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "message.content.get",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.content.get 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "message.content.get",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "message.content.get 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get",
+    "valid": false,
+    "data": {
+      "type": "message.content.get",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.content.get 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "message.content.get",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "request.prepare 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "request.prepare",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.prepare 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.prepare",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.prepare 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare",
+    "valid": false,
+    "data": {
+      "type": "request.prepare",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.prepare 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.prepare",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "request.confirm 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "request.confirm",
+      "payload": {
+        "request_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.confirm 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.confirm",
+      "payload": {
+        "request_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.confirm 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm",
+    "valid": false,
+    "data": {
+      "type": "request.confirm",
+      "payload": {
+        "request_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.confirm 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.confirm",
+      "payload": {
+        "request_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "request.cancel 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "request.cancel",
+      "payload": {
+        "request_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.cancel 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.cancel",
+      "payload": {
+        "request_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.cancel 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel",
+    "valid": false,
+    "data": {
+      "type": "request.cancel",
+      "payload": {
+        "request_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.cancel 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.cancel",
+      "payload": {
+        "request_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "request.get 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "request.get",
+      "payload": {
+        "request_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.get 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.get",
+      "payload": {
+        "request_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.get 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get",
+    "valid": false,
+    "data": {
+      "type": "request.get",
+      "payload": {
+        "request_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "request.get 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.get",
+      "payload": {
+        "request_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "device.hello.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "device.hello.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "device.hello.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "device.hello.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "device.hello.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.hello.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "device_id": "34:00:00:00:00:01",
+          "desktop_client_id": "示例"
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_sessions.list.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_sessions.list.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_sessions.list.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_sessions.list.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_sessions.list.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.list.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_session.get.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "agent_session_id": "示例",
+          "title": "示例",
+          "project_name": "示例",
+          "agent": "示例",
+          "status": "idle",
+          "summary": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_session.get.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "agent_session_id": "示例",
+          "title": "示例",
+          "project_name": "示例",
+          "agent": "示例",
+          "status": "idle",
+          "summary": "示例"
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_session.get.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "agent_session_id": "示例",
+          "title": "示例",
+          "project_name": "示例",
+          "agent": "示例",
+          "status": "idle",
+          "summary": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_session.get.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "agent_session.get.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_session.get.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "agent_session_id": "示例",
+          "title": "示例",
+          "project_name": "示例",
+          "agent": "示例",
+          "status": "idle",
+          "summary": "示例"
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "messages.list.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "messages.list.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "messages.list.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "messages.list.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "messages.list.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/messages.list.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "items": [],
+          "next_cursor": "示例"
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "message.content.get.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "text": "示例",
+          "next_offset": 0
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "message.content.get.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "text": "示例",
+          "next_offset": 0
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "message.content.get.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "text": "示例",
+          "next_offset": 0
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "message.content.get.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "message.content.get.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.content.get.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "text": "示例",
+          "next_offset": 0
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.prepare.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.prepare.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.prepare.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.prepare.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.prepare.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.prepare.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.confirm.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.confirm.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.confirm.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.confirm.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.confirm.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.confirm.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.cancel.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.cancel.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.cancel.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.cancel.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.cancel.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.cancel.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.get.response 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.get.response 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例",
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.get.response 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get.response",
+    "valid": false,
+    "data": {
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.get.response 失败应答",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get.response",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": false,
+        "error": {
+          "code": "CONFLICT",
+          "message": "当前状态不允许该操作"
+        }
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "request.get.response 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.get.response",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "response",
+      "payload": {
+        "ok": true,
+        "data": {
+          "request_id": "示例",
+          "agent_session_id": "示例",
+          "target_title": "示例",
+          "text": null,
+          "status": "awaiting_text",
+          "error": null
+        },
+        "unexpected": true
+      },
+      "reply_to": "示例"
+    }
+  },
+  {
+    "name": "device.bound 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/device.bound",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "device.bound",
+      "payload": {
+        "device_id": "34:00:00:00:00:01",
+        "desktop_client_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "device.bound 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.bound",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "device.bound",
+      "payload": {
+        "device_id": "34:00:00:00:00:01",
+        "desktop_client_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "device.bound 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.bound",
+    "valid": false,
+    "data": {
+      "type": "device.bound",
+      "payload": {
+        "device_id": "34:00:00:00:00:01",
+        "desktop_client_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "device.bound 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/device.bound",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "device.bound",
+      "payload": {
+        "device_id": "34:00:00:00:00:01",
+        "desktop_client_id": "示例",
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "request.proposed 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.proposed",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "request.proposed",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": "示例",
+        "status": "awaiting_confirmation",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "request.proposed 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.proposed",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.proposed",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": "示例",
+        "status": "awaiting_confirmation",
+        "error": null
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.proposed 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.proposed",
+    "valid": false,
+    "data": {
+      "type": "request.proposed",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": "示例",
+        "status": "awaiting_confirmation",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "request.proposed 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.proposed",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.proposed",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": "示例",
+        "status": "awaiting_confirmation",
+        "error": null,
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "request.updated 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/request.updated",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "request.updated",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": null,
+        "status": "awaiting_text",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "request.updated 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.updated",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.updated",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": null,
+        "status": "awaiting_text",
+        "error": null
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "request.updated 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.updated",
+    "valid": false,
+    "data": {
+      "type": "request.updated",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": null,
+        "status": "awaiting_text",
+        "error": null
+      }
+    }
+  },
+  {
+    "name": "request.updated 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/request.updated",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "request.updated",
+      "payload": {
+        "request_id": "示例",
+        "agent_session_id": "示例",
+        "target_title": "示例",
+        "text": null,
+        "status": "awaiting_text",
+        "error": null,
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "agent_sessions.updated 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.updated",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "agent_sessions.updated",
+      "payload": {}
+    }
+  },
+  {
+    "name": "agent_sessions.updated 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.updated",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "agent_sessions.updated",
+      "payload": {},
+      "unexpected": true
+    }
+  },
+  {
+    "name": "agent_sessions.updated 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.updated",
+    "valid": false,
+    "data": {
+      "type": "agent_sessions.updated",
+      "payload": {}
+    }
+  },
+  {
+    "name": "agent_sessions.updated 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/agent_sessions.updated",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "agent_sessions.updated",
+      "payload": {
+        "unexpected": true
+      }
+    }
+  },
+  {
+    "name": "message.available 合法",
+    "schema": "firmware-gateway.schema.json#/$defs/message.available",
+    "valid": true,
+    "data": {
+      "id": "示例",
+      "type": "message.available",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.available 拒绝额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.available",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "message.available",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "name": "message.available 拒绝缺少必填字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.available",
+    "valid": false,
+    "data": {
+      "type": "message.available",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例"
+      }
+    }
+  },
+  {
+    "name": "message.available 拒绝 payload 额外字段",
+    "schema": "firmware-gateway.schema.json#/$defs/message.available",
+    "valid": false,
+    "data": {
+      "id": "示例",
+      "type": "message.available",
+      "payload": {
+        "agent_session_id": "示例",
+        "message_id": "示例",
+        "unexpected": true
+      }
+    }
+  }
+]

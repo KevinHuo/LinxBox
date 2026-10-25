@@ -22,12 +22,17 @@ jobs:
   static:
     name: Firmware repository and host checks
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: firmware
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - run: ./tools/validate.sh --static
+      - name: 验证仓库、主机逻辑与真实 JSON 协议
+        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
+        with:
+          esp_idf_version: v5.5.3
+          target: esp32c3
+          command: |
+            set -e
+            cd firmware
+            ./tools/validate.sh --static
 
   build:
     name: ESP32-C3 构建与 C 覆盖率

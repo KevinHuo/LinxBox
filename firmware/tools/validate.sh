@@ -13,6 +13,12 @@ run_static_checks() (
     local git_root
     local test_dir
     local upstream_cc="${CC:-cc}"
+    local cjson_dir="${IDF_PATH:-}/components/json/cJSON"
+
+    if [[ ! -f "${cjson_dir}/cJSON.c" ]]; then
+        echo "错误：缺少 ESP-IDF 自带 cJSON，请先激活 ESP-IDF 5.5.3。" >&2
+        return 1
+    fi
 
     python3 tools/check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
@@ -63,6 +69,13 @@ EOF
         tests/test_linx_input.c main/linx_input.c \
         -o "${test_dir}/test_linx_input"
     "${test_dir}/test_linx_input"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
+        -Imain tests/test_linx_input_settings.c -o "${test_dir}/test_linx_input_settings"
+    "${test_dir}/test_linx_input_settings"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_linx_wifi.c main/linx_wifi.c \
+        -o "${test_dir}/test_linx_wifi"
+    "${test_dir}/test_linx_wifi"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_linx_demo.c main/linx_demo.c main/linx_content.c \
         -o "${test_dir}/test_linx_demo"
@@ -75,15 +88,38 @@ EOF
         tests/test_linx_reader.c main/linx_reader.c main/linx_navigation.c main/linx_content.c \
         -o "${test_dir}/test_linx_reader"
     "${test_dir}/test_linx_reader"
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        -Itests/device_stubs -I"${UPSTREAM_DIR}/main" \
-        tests/test_main_runtime.c main/main.c main/linx_input.c \
-        -o "${test_dir}/test_main_runtime"
     local scenarios
-    scenarios="$("${test_dir}/test_main_runtime" --list)"
-    while IFS= read -r scenario; do
-        "${test_dir}/test_main_runtime" "${scenario}"
-    done <<< "${scenarios}"
+    local variant
+    local runtime_flags
+    for variant in offline voice; do
+        runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main")
+        if [[ "${variant}" == "voice" ]]; then
+            runtime_flags+=(-DCONFIG_LINX_VOICE_ENABLE=1)
+        fi
+        "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain "${runtime_flags[@]}" \
+            tests/test_main_runtime.c main/main.c main/linx_input.c \
+            -o "${test_dir}/test_main_runtime_${variant}"
+        scenarios="$("${test_dir}/test_main_runtime_${variant}" --list)"
+        while IFS= read -r scenario; do
+            "${test_dir}/test_main_runtime_${variant}" "${scenario}"
+        done <<< "${scenarios}"
+    done
+    # 使用当前 ESP-IDF 的真实 JSON 实现；第三方对象与自有代码分开编译。
+    "${CC:-cc}" -std=c11 -O0 -g -c "${cjson_dir}/cJSON.c" -o "${test_dir}/cJSON.o"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Imain -I"${cjson_dir}" \
+        tests/test_linx_protocol.c main/linx_protocol.c \
+        "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_protocol"
+    "${test_dir}/test_linx_protocol"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
+        -Imain -I"${cjson_dir}" \
+        tests/test_linx_device.c main/linx_protocol.c main/linx_wifi.c \
+        "${test_dir}/cJSON.o" -lm -o "${test_dir}/test_linx_device"
+    "${test_dir}/test_linx_device"
+    "${CC:-cc}" -std=c11 -O0 -Wall -Wextra -Werror -Itests/sdk_stubs \
+        -Itests/device_stubs -Imain -I"${cjson_dir}" \
+        tests/test_linx_wifi_portal.c main/linx_wifi.c "${test_dir}/cJSON.o" \
+        -lm -o "${test_dir}/test_linx_wifi_portal"
+    "${test_dir}/test_linx_wifi_portal"
     python3 tools/check_linx_resources.py
     echo "LinX 主机测试：通过"
 )

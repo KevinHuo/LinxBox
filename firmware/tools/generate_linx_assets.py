@@ -53,6 +53,9 @@ ILLUSTRATION_TEXT = (
 def required_points() -> list[int]:
     text = ILLUSTRATION_TEXT
     for path in sorted((ROOT / "main").glob("*.[ch]")):
+        # 设备运行和手机网页不在设备屏幕绘制，无须进入屏幕字库。
+        if path.stem in ("linx_device", "linx_wifi_portal"):
+            continue
         text += path.read_text(encoding="utf-8")
     points = set(range(32, 127))
     points.update(ord(ch) for ch in text if ord(ch) >= 128 and not ch.isspace())

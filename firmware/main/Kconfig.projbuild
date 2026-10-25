@@ -1,0 +1,26 @@
+menu "LinX 灵矽语音"
+
+    config LINX_VOICE_ENABLE
+        bool "在语音页启用真实灵矽对话"
+        default y
+        help
+            进入语音页时连接 Wi-Fi 和灵矽，使用麦克风采集并播放智能体回复。
+            关闭后保留离线界面演示，不启动网络和音频。
+
+    config LINX_WIFI_SSID
+        string "开发用 Wi-Fi 名称（无已保存网络时回退）"
+        depends on LINX_VOICE_ENABLE
+        default ""
+        help
+            日常使用通过设备设置打开手机网页配网，选择网络并输入密码。
+            优先读取设备 NVS；只有未保存网络时才使用此开发配置。
+
+    config LINX_WIFI_PASSWORD
+        string "开发用 Wi-Fi 密码"
+        depends on LINX_VOICE_ENABLE
+        default ""
+        help
+            本机 sdkconfig 和生成的固件会包含此配置，不应分享这些文件。
+            灵矽令牌由设备绑定后的 HTTPS 网关动态获取，不写入源码。
+
+endmenu

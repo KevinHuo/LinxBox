@@ -17,6 +17,11 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "linx_ui.h"
+#include "linx_input_settings.h"
+#include "sdkconfig.h"
+#if CONFIG_LINX_VOICE_ENABLE
+#include "linx_device.h"
+#endif
 
 void app_main(void);
 
@@ -26,13 +31,26 @@ enum scenario {
     DISPLAY_FAIL, LVGL_FAIL, QUEUE_FAIL, BUTTON_FAIL, INITIAL_LOCK_FAIL,
     IDLE_METRICS, LOOP_LOCK_FAIL, FILTER_EVENTS, BUTTON_ACTIONS,
     WAKE_HELD, WAKE_RELEASED, WAKE_TIMEOUT, INPUT_OVERFLOW,
-    AUTOMATIC_BARRIER, MANUAL_BARRIER, SCENARIO_COUNT
+    AUTOMATIC_BARRIER, MANUAL_BARRIER, QUEUED_DOUBLE, DEFERRED_LOCK,
+    LOCK_QUEUED_DOUBLE, DOUBLE_LOCK_FAIL,
+    DEFAULT_LONG, SETTINGS_INIT_FAIL, SETTINGS_MODE_SWITCH, SETTINGS_SAVE_FAIL,
+    MANUAL_MODE_SWITCH, MODE_SWITCH_HELD, SETTINGS_ACK_QUEUED,
+#if CONFIG_LINX_VOICE_ENABLE
+    VOICE_INIT_FAIL, VOICE_EVENT_BARRIER,
+#endif
+    SCENARIO_COUNT
 };
 static const char *const scenario_names[SCENARIO_COUNT] = {
     "display_fail", "lvgl_fail", "queue_fail", "button_fail", "initial_lock_fail",
     "idle_metrics", "loop_lock_fail", "filter_events", "button_actions",
     "wake_held", "wake_released", "wake_timeout", "input_overflow",
-    "automatic_barrier", "manual_barrier"
+    "automatic_barrier", "manual_barrier", "queued_double", "deferred_lock",
+    "lock_queued_double", "double_lock_fail",
+    "default_long", "settings_init_fail", "settings_mode_switch", "settings_save_fail",
+    "manual_mode_switch", "mode_switch_held", "settings_ack_queued",
+#if CONFIG_LINX_VOICE_ENABLE
+    "voice_init_fail", "voice_event_barrier"
+#endif
 };
 
 typedef struct {
@@ -47,6 +65,13 @@ typedef struct {
     bool fail_lock;
     bool automatic_change;
     bool manual_change;
+    bool voice_change;
+    bool double_during_lock;
+    bool settings_result;
+    bool settings_saved;
+    bool settings_events_during_ack;
+    bool manual_mode_change;
+    linx_back_mode_t settings_mode;
 } step_t;
 
 /* 队列容量遵循真实入口的 24 项；不假设私有事件结构的布局。 */
@@ -86,9 +111,20 @@ static unsigned display_calls, lvgl_calls, backlight_calls, queue_create_calls;
 static unsigned button_calls, read_mv_calls, queue_delete_calls, queue_reset_calls;
 static unsigned send_calls, send_failures, receive_calls;
 static unsigned initial_locks, loop_locks, failed_loop_locks, unlocks;
+static bool retry_lock;
+static unsigned lock_retries;
 static unsigned ui_init_calls, ui_ticks, automatic_changes, manual_changes;
+/* 原有双击场景模拟已保存的偏好；新增场景单独验证出厂默认长按。 */
+static linx_back_mode_t stored_mode = LINX_BACK_DOUBLE_CLICK;
+static linx_back_mode_t ui_back_mode = LINX_BACK_LONG_PRESS;
+static bool settings_init_fail;
+static unsigned settings_inits, settings_binds, settings_polls, settings_results;
 static unsigned info_logs, error_logs, warning_logs, metric_logs;
 static unsigned free_calls, minimum_calls, largest_calls, stack_calls;
+#if CONFIG_LINX_VOICE_ENABLE
+static bool voice_init_fail;
+static unsigned voice_inits, voice_binds, voice_polls, voice_events;
+#endif
 
 static step_t *step(uint64_t now_ms)
 {
@@ -148,15 +184,18 @@ static void configure(enum scenario scenario)
         event_step(220, BSP_BTN_DOWN, BSP_BTN_RELEASE);
         event_step(300, BSP_BTN_OK, BSP_BTN_PRESS);
         event_step(350, BSP_BTN_OK, BSP_BTN_RELEASE);
-        event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
-        event_step(900, BSP_BTN_OK, BSP_BTN_LONG);
-        event_step(950, BSP_BTN_OK, BSP_BTN_RELEASE);
-        event_step(1000, BSP_BTN_OK, BSP_BTN_PRESS);
-        event_step(1500, BSP_BTN_OK, BSP_BTN_RELEASE);
-        expected_sends = 11;
+        step(650); step(651);
+        event_step(800, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(850, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(950, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(1000, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(1200, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(1700, BSP_BTN_OK, BSP_BTN_LONG);
+        event_step(1750, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(2050); step(2051);
+        expected_sends = 13;
         expect_key(LINX_UI_KEY_UP, 100); expect_key(LINX_UI_KEY_DOWN, 200);
-        expect_key(LINX_UI_KEY_OK, 350); expect_key(LINX_UI_KEY_OK_LONG, 900);
-        expect_key(LINX_UI_KEY_OK_LONG, 1500);
+        expect_key(LINX_UI_KEY_OK, 651); expect_key(LINX_UI_KEY_BACK, 1000);
         break;
     case WAKE_HELD:
         wake_causes = 1U << ESP_SLEEP_WAKEUP_GPIO;
@@ -166,8 +205,9 @@ static void configure(enum scenario scenario)
         event_step(700, BSP_BTN_OK, BSP_BTN_RELEASE);
         event_step(800, BSP_BTN_OK, BSP_BTN_PRESS);
         event_step(900, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(1201);
         expected_sends = 2;
-        expect_key(LINX_UI_KEY_OK, 900);
+        expect_key(LINX_UI_KEY_OK, 1201);
         break;
     case WAKE_RELEASED:
         wake_causes = 1U << ESP_SLEEP_WAKEUP_GPIO;
@@ -186,6 +226,8 @@ static void configure(enum scenario scenario)
         expect_key(LINX_UI_KEY_UP, 10001);
         break;
     case INPUT_OVERFLOW: {
+        event_step(50, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(60, BSP_BTN_OK, BSP_BTN_RELEASE);
         step_t *events = step(100);
         for (unsigned index = 0; index < 25; ++index) {
             add_event(events, BSP_BTN_UP, BSP_BTN_PRESS, 100);
@@ -193,9 +235,10 @@ static void configure(enum scenario scenario)
         event_step(200, BSP_BTN_OK, BSP_BTN_RELEASE);
         event_step(300, BSP_BTN_OK, BSP_BTN_PRESS);
         event_step(350, BSP_BTN_OK, BSP_BTN_RELEASE);
-        expected_sends = 28;
+        step(651);
+        expected_sends = 30;
         expected_warnings = 1;
-        expect_key(LINX_UI_KEY_OK, 350);
+        expect_key(LINX_UI_KEY_OK, 651);
         break;
     }
     case AUTOMATIC_BARRIER: {
@@ -205,31 +248,181 @@ static void configure(enum scenario scenario)
         events->automatic_change = true;
         step(220);
         event_step(300, BSP_BTN_OK, BSP_BTN_PRESS);
-        step(400)->automatic_change = true;
-        event_step(500, BSP_BTN_OK, BSP_BTN_RELEASE);
-        event_step(600, BSP_BTN_OK, BSP_BTN_PRESS);
-        event_step(650, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(350, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(700)->automatic_change = true;
+        event_step(800, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(850, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(1151);
         expected_sends = 6;
-        expect_key(LINX_UI_KEY_OK, 650);
+        expect_key(LINX_UI_KEY_OK, 1151);
         break;
     }
     case MANUAL_BARRIER: {
         step_t *events = step(160);
         add_event(events, BSP_BTN_OK, BSP_BTN_PRESS, 100);
         add_event(events, BSP_BTN_OK, BSP_BTN_RELEASE, 150);
-        add_event(events, BSP_BTN_UP, BSP_BTN_PRESS, 155);
-        add_event(events, BSP_BTN_UP, BSP_BTN_RELEASE, 157);
-        step(180)->manual_change = true;
-        step(200); step(220);
-        event_step(300, BSP_BTN_UP, BSP_BTN_PRESS);
+        step(180);
+        step(451)->manual_change = true;
+        events = step(470);
+        add_event(events, BSP_BTN_UP, BSP_BTN_PRESS, 440);
+        add_event(events, BSP_BTN_UP, BSP_BTN_RELEASE, 445);
+        step(480);
+        event_step(600, BSP_BTN_UP, BSP_BTN_PRESS);
         steps[step_count - 1].manual_change = true;
-        event_step(301, BSP_BTN_UP, BSP_BTN_PRESS);
-        event_step(320, BSP_BTN_UP, BSP_BTN_RELEASE);
+        event_step(601, BSP_BTN_UP, BSP_BTN_PRESS);
+        event_step(620, BSP_BTN_UP, BSP_BTN_RELEASE);
         expected_sends = 7;
-        expect_key(LINX_UI_KEY_OK, 180); expect_key(LINX_UI_KEY_UP, 300);
-        expect_key(LINX_UI_KEY_UP, 301);
+        expect_key(LINX_UI_KEY_OK, 451); expect_key(LINX_UI_KEY_UP, 600);
+        expect_key(LINX_UI_KEY_UP, 601);
         break;
     }
+    case QUEUED_DOUBLE: {
+        /* 主循环落后于按键时间时，必须先处理完队列，再派发到期单击。 */
+        step_t *events = step(1000);
+        add_event(events, BSP_BTN_OK, BSP_BTN_PRESS, 100);
+        add_event(events, BSP_BTN_OK, BSP_BTN_RELEASE, 140);
+        add_event(events, BSP_BTN_OK, BSP_BTN_PRESS, 200);
+        add_event(events, BSP_BTN_OK, BSP_BTN_RELEASE, 240);
+        step(1001); step(1002); step(1003); step(1004);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_BACK, 1003);
+        break;
+    }
+    case DEFERRED_LOCK: {
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(150, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(451)->fail_lock = true;
+        step(452);
+        expected_sends = 2;
+        expect_key(LINX_UI_KEY_OK, 452);
+        break;
+    }
+    case LOCK_QUEUED_DOUBLE:
+        event_step(50, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(100, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(350)->double_during_lock = true;
+        step(470); step(490); step(510);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_BACK, 490);
+        break;
+    case DOUBLE_LOCK_FAIL:
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(140, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(200, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(240, BSP_BTN_OK, BSP_BTN_RELEASE);
+        steps[step_count - 1].fail_lock = true;
+        step(260); step(280);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_BACK, 260);
+        break;
+    case DEFAULT_LONG:
+        stored_mode = LINX_BACK_LONG_PRESS;
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(150, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(200, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(700, BSP_BTN_OK, BSP_BTN_LONG);
+        event_step(750, BSP_BTN_OK, BSP_BTN_LONG);
+        event_step(800, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(900, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(950, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 8;
+        expect_key(LINX_UI_KEY_OK, 150); expect_key(LINX_UI_KEY_BACK, 700); expect_key(LINX_UI_KEY_OK, 950);
+        break;
+    case SETTINGS_INIT_FAIL:
+        settings_init_fail = true;
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(150, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 2; expected_warnings = 1;
+        expect_key(LINX_UI_KEY_OK, 150);
+        break;
+    case SETTINGS_MODE_SWITCH: {
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(150, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step_t *change = step(200);
+        add_event(change, BSP_BTN_UP, BSP_BTN_PRESS, 190);
+        add_event(change, BSP_BTN_UP, BSP_BTN_RELEASE, 195);
+        add_event(change, BSP_BTN_OK, BSP_BTN_PRESS, 196);
+        add_event(change, BSP_BTN_OK, BSP_BTN_RELEASE, 197);
+        change->settings_result = change->settings_saved = true;
+        change->settings_mode = LINX_BACK_LONG_PRESS;
+        step(210); step(220); step(230);
+        event_step(300, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(350, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(700);
+        expected_sends = 8;
+        expect_key(LINX_UI_KEY_OK, 350);
+        break;
+    }
+    case SETTINGS_SAVE_FAIL: {
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(150, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step_t *failed = step(200);
+        failed->settings_result = true; failed->settings_mode = LINX_BACK_LONG_PRESS;
+        step(451);
+        event_step(500, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(550, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(600, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(650, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 6;
+        expect_key(LINX_UI_KEY_OK, 451); expect_key(LINX_UI_KEY_BACK, 650);
+        break;
+    }
+    case MANUAL_MODE_SWITCH: {
+        stored_mode = LINX_BACK_LONG_PRESS;
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        step_t *change = step(150);
+        add_event(change, BSP_BTN_OK, BSP_BTN_RELEASE, 150);
+        add_event(change, BSP_BTN_OK, BSP_BTN_PRESS, 145);
+        add_event(change, BSP_BTN_OK, BSP_BTN_RELEASE, 149);
+        change->manual_mode_change = true;
+        step(160); step(170);
+        event_step(200, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(250, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(300, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(350, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 8;
+        expect_key(LINX_UI_KEY_OK, 150); expect_key(LINX_UI_KEY_BACK, 350);
+        break;
+    }
+    case SETTINGS_ACK_QUEUED: {
+        step_t *change = step(200);
+        change->settings_result = change->settings_saved = true;
+        change->settings_mode = LINX_BACK_LONG_PRESS;
+        change->settings_events_during_ack = true;
+        step(300); step(320);
+        event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(450, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_OK, 450);
+        break;
+    }
+    case MODE_SWITCH_HELD: {
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        step_t *change = step(200);
+        change->settings_result = change->settings_saved = true; change->settings_mode = LINX_BACK_LONG_PRESS;
+        event_step(300, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(450, BSP_BTN_OK, BSP_BTN_RELEASE);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_OK, 450);
+        break;
+    }
+#if CONFIG_LINX_VOICE_ENABLE
+    case VOICE_INIT_FAIL:
+        voice_init_fail = true;
+        step(100);
+        break;
+    case VOICE_EVENT_BARRIER:
+        event_step(100, BSP_BTN_OK, BSP_BTN_PRESS);
+        step(200)->voice_change = true;
+        event_step(300, BSP_BTN_OK, BSP_BTN_RELEASE);
+        event_step(400, BSP_BTN_OK, BSP_BTN_PRESS);
+        event_step(450, BSP_BTN_OK, BSP_BTN_RELEASE);
+        step(751);
+        expected_sends = 4;
+        expect_key(LINX_UI_KEY_OK, 751);
+        break;
+#endif
     case SCENARIO_COUNT: assert(false); break;
     }
 }
@@ -312,14 +505,11 @@ BaseType_t xQueueReset(QueueHandle_t queue)
     return pdTRUE;
 }
 
-BaseType_t xQueueReceive(QueueHandle_t queue, void *item, TickType_t wait)
+static void begin_step(void)
 {
-    assert(queue == &queue_storage && queue->allocated && item != NULL);
-    assert(wait == pdMS_TO_TICKS(20) && !locked);
-    /* 只在模拟的阻塞队列边界终止，不向业务代码注入退出分支。 */
+    /* 只在模拟的队列等待或锁重试边界终止，不向业务代码注入退出分支。 */
     if (steps_started == step_count) longjmp(loop_finished, 1);
     active_step = &steps[steps_started++];
-    ++receive_calls;
     for (size_t index = 0; index < active_step->event_count; ++index) {
         const button_event_t *event = &active_step->events[index];
         assert(event->at_ms <= active_step->now_ms);
@@ -327,11 +517,26 @@ BaseType_t xQueueReceive(QueueHandle_t queue, void *item, TickType_t wait)
         button_callback(event->key, event->event, button_user);
     }
     clock_ms = active_step->now_ms;
+}
+
+BaseType_t xQueueReceive(QueueHandle_t queue, void *item, TickType_t wait)
+{
+    assert(queue == &queue_storage && queue->allocated && item != NULL);
+    assert(wait == pdMS_TO_TICKS(20) && !locked);
+    retry_lock = false;
+    begin_step();
+    ++receive_calls;
     if (queue->count == 0) return pdFALSE;
     memcpy(item, queue->items[queue->head], queue->item_size);
     queue->head = (queue->head + 1) % 24;
     --queue->count;
     return pdTRUE;
+}
+
+UBaseType_t uxQueueMessagesWaiting(const QueueHandle_t queue)
+{
+    assert(queue == &queue_storage && queue->allocated && locked);
+    return (UBaseType_t)queue->count;
 }
 
 bool bsp_lvgl_lock(int timeout_ms)
@@ -343,10 +548,24 @@ bool bsp_lvgl_lock(int timeout_ms)
         if (failure == INITIAL_LOCK_FAILURE) return false;
     } else {
         assert(timeout_ms == 100 && active_step != NULL);
+        if (retry_lock) {
+            retry_lock = false;
+            ++lock_retries;
+            begin_step();
+        }
         ++loop_locks;
         if (active_step->fail_lock) {
             ++failed_loop_locks;
+            retry_lock = true;
             return false;
+        }
+        if (active_step->double_during_lock) {
+            clock_ms = active_step->now_ms + 10;
+            button_callback(BSP_BTN_OK, BSP_BTN_PRESS, button_user);
+            clock_ms = active_step->now_ms + 40;
+            button_callback(BSP_BTN_OK, BSP_BTN_RELEASE, button_user);
+            active_step->now_ms += 100;
+            clock_ms = active_step->now_ms;
         }
     }
     locked = true;
@@ -376,6 +595,62 @@ void linx_ui_init(lv_obj_t *target, uint64_t now_ms)
     page = LINX_UI_TASKS;
 }
 
+bool linx_input_settings_init(linx_back_mode_t *mode)
+{
+    assert(!locked && ui_init_calls == 0 && read_mv_calls == 1 && mode);
+    ++settings_inits;
+    *mode = settings_init_fail ? LINX_BACK_LONG_PRESS : stored_mode;
+    return !settings_init_fail;
+}
+
+bool linx_input_settings_request(linx_back_mode_t mode, void *user)
+{
+    assert(locked && user == NULL && (mode == LINX_BACK_LONG_PRESS || mode == LINX_BACK_DOUBLE_CLICK));
+    return !settings_init_fail;
+}
+
+bool linx_input_settings_poll(linx_input_settings_event_t *event)
+{
+    assert(locked && event && settings_binds == 1);
+    ++settings_polls;
+    if (!active_step->settings_result) return false;
+    *event = (linx_input_settings_event_t){.mode = active_step->settings_mode, .saved = active_step->settings_saved};
+    return true;
+}
+
+void linx_ui_set_back_mode(linx_back_mode_t mode)
+{
+    assert(locked && ui_init_calls == 1);
+    ui_back_mode = mode;
+}
+
+linx_back_mode_t linx_ui_back_mode(void)
+{
+    assert(locked && ui_init_calls == 1);
+    return ui_back_mode;
+}
+
+void linx_ui_set_back_mode_handler(linx_ui_back_mode_handler_t handler, void *user)
+{
+    assert(locked && handler == linx_input_settings_request && user == NULL && settings_inits == 1);
+    ++settings_binds;
+}
+
+void linx_ui_back_mode_result(linx_back_mode_t mode, bool saved)
+{
+    assert(locked && settings_binds == 1);
+    ++settings_results;
+    if (saved) ui_back_mode = mode;
+    if (active_step->settings_events_during_ack) {
+        /* ACK 的 UI 重绘期间按键仍在排队，时间晚于主循环提前采样的 now_ms。 */
+        clock_ms = active_step->now_ms + 10;
+        button_callback(BSP_BTN_OK, BSP_BTN_PRESS, button_user);
+        clock_ms = active_step->now_ms + 40;
+        button_callback(BSP_BTN_OK, BSP_BTN_RELEASE, button_user);
+        clock_ms = active_step->now_ms + 80;
+    }
+}
+
 linx_ui_page_t linx_ui_page(void)
 {
     assert(locked);
@@ -386,6 +661,45 @@ static void change_page(void)
 {
     page = page == LINX_UI_TASKS ? LINX_UI_OVERVIEW : LINX_UI_TASKS;
 }
+
+#if CONFIG_LINX_VOICE_ENABLE
+bool linx_device_init(void)
+{
+    assert(locked && ui_init_calls == 1);
+    ++voice_inits;
+    return !voice_init_fail;
+}
+
+bool linx_device_request(const linx_voice_request_t *request, void *user)
+{
+    (void)request; (void)user;
+    assert(false);
+    return false;
+}
+
+void linx_ui_set_voice_handler(linx_voice_handler_t handler, void *user)
+{
+    assert(locked && handler == linx_device_request && user == NULL);
+    assert(voice_inits == 1);
+    ++voice_binds;
+}
+
+bool linx_device_poll(linx_voice_event_t *event)
+{
+    assert(locked && voice_binds == 1 && event != NULL);
+    ++voice_polls;
+    *event = (linx_voice_event_t){.generation = 42, .state = LINX_VOICE_FINISHED};
+    return active_step->voice_change;
+}
+
+bool linx_ui_voice_event(const linx_voice_event_t *event)
+{
+    assert(locked && event->generation == 42 && event->state == LINX_VOICE_FINISHED);
+    ++voice_events;
+    change_page();
+    return true;
+}
+#endif
 
 void linx_ui_tick(uint64_t now_ms)
 {
@@ -403,6 +717,7 @@ void linx_ui_handle_key(linx_ui_key_t key)
     assert(dispatch_count < sizeof(dispatched) / sizeof(dispatched[0]));
     dispatched[dispatch_count] = key;
     dispatched_at_ms[dispatch_count++] = clock_ms;
+    if (active_step->manual_mode_change) ui_back_mode = LINX_BACK_DOUBLE_CLICK;
     if (active_step->manual_change) {
         change_page();
         ++manual_changes;
@@ -452,14 +767,26 @@ void device_test_log(char level, const char *tag, const char *format, ...)
             ++metric_logs;
             assert(strcmp(message, "heap free=65536 min=32768 largest=16384 stack=2048") == 0);
         } else {
+#if CONFIG_LINX_VOICE_ENABLE
+            assert(strcmp(message, "LinX voice connects on demand") == 0);
+#else
             assert(strstr(message, "LinX warm-white offline demo") != NULL);
+#endif
         }
     } else if (level == 'W') {
         ++warning_logs;
-        assert(strcmp(message, "Input overflow recovered; discarded stale taps") == 0);
+        assert(strcmp(message, settings_init_fail
+            ? "Input settings worker unavailable; using loaded return mode"
+            : "Input overflow recovered; discarded stale taps") == 0);
     } else {
         ++error_logs;
         assert(level == 'E');
+#if CONFIG_LINX_VOICE_ENABLE
+        if (voice_init_fail) {
+            assert(strcmp(message, "Voice worker allocation failed") == 0);
+            return;
+        }
+#endif
         const char *expected = failure == DISPLAY_FAILURE || failure == LVGL_FAILURE
             ? "Display initialization failed" : failure == QUEUE_FAILURE
             ? "Input queue allocation failed" : failure == BUTTON_FAILURE
@@ -472,7 +799,14 @@ static void verify(enum scenario scenario)
 {
     assert(display_calls == 1 && !locked);
     assert(info_logs == 1 + expected_metrics);
+#if CONFIG_LINX_VOICE_ENABLE
+    assert(error_logs == (failure == NO_FAILURE && !voice_init_fail ? 0U : 1U));
+    assert(voice_inits == ui_init_calls && voice_binds == ui_init_calls);
+    assert(voice_polls == ui_ticks);
+    assert(voice_events == (scenario == VOICE_EVENT_BARRIER ? 1U : 0U));
+#else
     assert(error_logs == (failure == NO_FAILURE ? 0U : 1U));
+#endif
     assert(warning_logs == expected_warnings && metric_logs == expected_metrics);
     assert(free_calls == expected_metrics && minimum_calls == expected_metrics);
     assert(largest_calls == expected_metrics && stack_calls == expected_metrics);
@@ -485,13 +819,17 @@ static void verify(enum scenario scenario)
     assert(queue_delete_calls == (failure == BUTTON_FAILURE ? 1U : 0U));
     const bool button_ready = queue_ready && failure != BUTTON_FAILURE;
     assert(read_mv_calls == (button_ready ? 1U : 0U));
+    assert(settings_inits == (button_ready ? 1U : 0U));
     assert(initial_locks == (button_ready ? 1U : 0U));
+    assert(settings_binds == ui_init_calls && settings_polls == ui_ticks);
+    assert(settings_results == (scenario == SETTINGS_MODE_SWITCH || scenario == SETTINGS_SAVE_FAIL || scenario == MODE_SWITCH_HELD || scenario == SETTINGS_ACK_QUEUED ? 1U : 0U));
     assert(ui_init_calls == (failure == NO_FAILURE ? 1U : 0U));
     assert(send_calls == expected_sends);
     assert(send_failures == (scenario == INPUT_OVERFLOW ? 1U : 0U));
     assert(queue_reset_calls == (scenario == INPUT_OVERFLOW ? 1U : 0U));
-    assert(receive_calls == step_count && loop_locks == step_count);
-    assert(failed_loop_locks == (scenario == LOOP_LOCK_FAIL ? 1U : 0U));
+    assert(receive_calls + lock_retries == step_count && loop_locks == step_count);
+    assert(failed_loop_locks == (scenario == LOOP_LOCK_FAIL || scenario == DEFERRED_LOCK ||
+                                 scenario == DOUBLE_LOCK_FAIL ? 1U : 0U));
     assert(ui_ticks == step_count - failed_loop_locks);
     assert(unlocks == ui_init_calls + ui_ticks);
     assert(dispatch_count == expected_key_count);

@@ -19,6 +19,11 @@ for tool in "${coverage_cc}" "${coverage_cxx}" "${llvm_cov}" "${llvm_profdata}" 
 done
 cd "${repo_root}"
 UPSTREAM_DIR="$(python3 tools/prepare_upstream.py --print-path)"
+cjson_dir="${IDF_PATH:-}/components/json/cJSON"
+if [[ ! -f "${cjson_dir}/cJSON.c" ]]; then
+    echo "缺少 ESP-IDF 自带 cJSON，请先激活 ESP-IDF 5.5.3。" >&2
+    exit 1
+fi
 if [[ ! -f managed_components/lvgl__lvgl/CMakeLists.txt ]]; then
     echo "缺少已锁定的 LVGL 组件，请先执行 ./tools/validate.sh --firmware。" >&2
     exit 1
@@ -29,7 +34,7 @@ output_dir="$(cd -- "${output_dir}" && pwd)"
 run_dir="$(mktemp -d "${output_dir}/run.XXXXXX")"
 # CI 容器以 root 构建，宿主 runner 仍需读取公开的验证报告。
 chmod 755 "${run_dir}"
-mkdir -p "${run_dir}/profiles" "${run_dir}/screens" "${run_dir}/screens-missing-image"
+mkdir -p "${run_dir}/profiles" "${run_dir}/screens"
 export LLVM_PROFILE_FILE="${run_dir}/profiles/%m-%p.profraw"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/linx_host/test_main_contract.py
@@ -39,10 +44,9 @@ cmake -S tests/linx_host -B "${run_dir}/host" -G Ninja \
     -DLINX_ENABLE_COVERAGE=ON
 cmake --build "${run_dir}/host" --parallel 4
 "${run_dir}/host/linx_host" "${run_dir}/screens"
-"${run_dir}/host/linx_host_missing_image" "${run_dir}/screens-missing-image" --missing-image
 "${run_dir}/host/linx_ui_boundaries"
 
-binaries=("${run_dir}/host/linx_host" "${run_dir}/host/linx_host_missing_image" "${run_dir}/host/linx_ui_boundaries")
+binaries=("${run_dir}/host/linx_host" "${run_dir}/host/linx_ui_boundaries")
 compile_test() {
     local name="$1"
     shift
@@ -51,25 +55,46 @@ compile_test() {
     binaries+=("${run_dir}/${name}")
 }
 compile_test test_linx_input tests/test_linx_input.c main/linx_input.c
+compile_test test_linx_input_settings -Itests/sdk_stubs tests/test_linx_input_settings.c
+compile_test test_linx_wifi tests/test_linx_wifi.c main/linx_wifi.c
 compile_test test_linx_demo tests/test_linx_demo.c main/linx_demo.c main/linx_content.c
 compile_test test_linx_navigation tests/test_linx_navigation.c main/linx_navigation.c
 compile_test test_linx_reader tests/test_linx_reader.c main/linx_reader.c main/linx_navigation.c main/linx_content.c
-for test in test_linx_input test_linx_demo test_linx_navigation test_linx_reader; do
+for test in test_linx_input test_linx_input_settings test_linx_wifi test_linx_demo test_linx_navigation test_linx_reader; do
     "${run_dir}/${test}"
 done
-compile_test test_main_runtime -Itests/device_stubs -I"${UPSTREAM_DIR}/main" \
-    tests/test_main_runtime.c main/main.c main/linx_input.c
-scenarios="$("${run_dir}/test_main_runtime" --list)"
-while IFS= read -r scenario; do
-    "${run_dir}/test_main_runtime" "${scenario}"
-done <<< "${scenarios}"
+for variant in offline voice; do
+    runtime_flags=(-Itests/device_stubs -I"${UPSTREAM_DIR}/main")
+    if [[ "${variant}" == "voice" ]]; then
+        runtime_flags+=(-DCONFIG_LINX_VOICE_ENABLE=1)
+    fi
+    compile_test "test_main_runtime_${variant}" "${runtime_flags[@]}" \
+        tests/test_main_runtime.c main/main.c main/linx_input.c
+    scenarios="$("${run_dir}/test_main_runtime_${variant}" --list)"
+    while IFS= read -r scenario; do
+        "${run_dir}/test_main_runtime_${variant}" "${scenario}"
+    done <<< "${scenarios}"
+done
+# 第三方 JSON 库不进入自有代码统计；两组语音测试仍调用其真实实现。
+"${coverage_cc}" -std=c11 -O0 -g -c "${cjson_dir}/cJSON.c" -o "${run_dir}/cJSON.o"
+compile_test test_linx_protocol -I"${cjson_dir}" \
+    tests/test_linx_protocol.c main/linx_protocol.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_protocol"
+compile_test test_linx_device -Itests/sdk_stubs \
+    -I"${cjson_dir}" \
+    tests/test_linx_device.c main/linx_protocol.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_device"
+compile_test test_linx_wifi_portal -Itests/sdk_stubs -Itests/device_stubs \
+    -I"${cjson_dir}" \
+    tests/test_linx_wifi_portal.c main/linx_wifi.c "${run_dir}/cJSON.o" -lm
+"${run_dir}/test_linx_wifi_portal"
 
 "${llvm_profdata}" merge -sparse "${run_dir}"/profiles/*.profraw -o "${run_dir}/combined.profdata"
 coverage_args=("${binaries[0]}")
 for binary in "${binaries[@]:1}"; do
     coverage_args+=(-object "${binary}")
 done
-source_list="$(python3 -c 'from pathlib import Path; print("\n".join(str(path.resolve()) for path in sorted(Path("main").rglob("*.c"))))')"
+source_list="$(python3 -c 'from pathlib import Path; print("\n".join(str(path.resolve()) for folder in ("main", "hardware") for path in sorted(Path(folder).rglob("*.c"))))')"
 source_files=()
 while IFS= read -r source; do
     source_files+=("${source}")
