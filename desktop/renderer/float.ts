@@ -138,16 +138,37 @@ function wireDrag(): void {
   let moved = false;
   let startX = 0;
   let startY = 0;
-  let originX = 0;
-  let originY = 0;
+  let pointerOffsetX = 0;
+  let pointerOffsetY = 0;
+  let pendingPosition: { x: number; y: number } | null = null;
+  let framePending = false;
+
+  const flushPosition = (): void => {
+    framePending = false;
+    const position = pendingPosition;
+    pendingPosition = null;
+    if (position !== null) {
+      void reportPosition(position.x, position.y);
+    }
+  };
+
+  const schedulePosition = (x: number, y: number): void => {
+    pendingPosition = { x, y };
+    if (!framePending) {
+      framePending = true;
+      window.requestAnimationFrame(flushPosition);
+    }
+  };
 
   ball.addEventListener('pointerdown', (raw: Event) => {
     const event = raw as unknown as PointerPayload;
     moved = false;
     startX = event.clientX;
     startY = event.clientY;
-    originX = event.clientX;
-    originY = event.clientY;
+    const bounds = ball.getBoundingClientRect();
+    pointerOffsetX = event.clientX - bounds.left;
+    pointerOffsetY = event.clientY - bounds.top;
+    raw.preventDefault();
     ball.setPointerCapture(event.pointerId);
   });
 
@@ -164,12 +185,16 @@ function wireDrag(): void {
     if (!moved) {
       return;
     }
-    originX = event.clientX;
-    originY = event.clientY;
-    void reportPosition(originX, originY);
+    // Convert renderer-local coordinates into the screen coordinates expected
+    // by the main process. Coalesce rapid pointer events into one IPC update
+    // per animation frame so stale positions cannot make the window oscillate.
+    schedulePosition(
+      window.screenX + event.clientX - pointerOffsetX,
+      window.screenY + event.clientY - pointerOffsetY,
+    );
   });
 
-  ball.addEventListener('pointerup', (raw: Event) => {
+  const finishDrag = (raw: Event): void => {
     const event = raw as unknown as PointerPayload;
     if (ball.hasPointerCapture(event.pointerId)) {
       ball.releasePointerCapture(event.pointerId);
@@ -177,7 +202,10 @@ function wireDrag(): void {
     if (!moved) {
       setOpen(!state.open);
     }
-  });
+  };
+
+  ball.addEventListener('pointerup', finishDrag);
+  ball.addEventListener('pointercancel', finishDrag);
 }
 
 /** Report the ball position to the main process. */
