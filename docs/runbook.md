@@ -101,7 +101,7 @@ cd firmware
 ./tools/validate.sh
 ```
 
-这些命令不自动烧录设备。首次安装、仅更新应用及串口查看的命令见[固件烧录说明](../firmware/README.md#烧录与串口查看)，配网和录放音操作见[固件配置说明](../firmware/README.md#灵矽配置与操作)。当前固件的直连灵矽语音不等于 Cloud MCP Gateway 的真实任务链路已经接通。
+这些命令不自动烧录设备。首次安装、仅更新应用及串口查看的命令见[固件烧录说明](../firmware/README.md#烧录与串口查看)，配网和录放音操作见[固件配置说明](../firmware/README.md#灵矽配置与操作)。固件默认独立模式不启用 Gateway；使用真实会话目录时，先在 menuconfig 的“LinX 网络与语音”中启用 Gateway，并填写自己的 WSS 地址和独立设备凭据。接线及验收限制见[固件 Gateway 接入说明](../firmware/docs/gateway-client.md)，不需要预填设备 MAC。可选模式已有接线，不等于真实平台、设备和 Desktop 完整链路已验收。
 
 ## 常见问题
 

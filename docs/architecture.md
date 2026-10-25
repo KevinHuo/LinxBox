@@ -8,12 +8,12 @@ LinxBox 把 AI Passport 上的设备请求交给云端 Gateway，再由 macOS De
 
 ## 总体拓扑
 
-下图表示三端目标链路。当前固件默认实现的是直连灵矽录放音，Cloud MCP Gateway 的设备业务接线仍需完成并单独验收；图中的连线不代表整条链路已通过真机测试。
+下图表示三端链路。固件默认保留独立灵矽录放音模式，可选 Gateway 模式已接入设备业务 WSS、真实目录、正文和请求流程；默认开关与配置见[固件接入说明](../firmware/docs/gateway-client.md)。图中的连线不代表整条链路已通过真机验收。
 
 ```text
 AI Passport ── 语音 WSS ──> 灵矽服务
     │                           │ MCP 文字提案
-    │ 设备业务 WSS（待接线）     ▼
+    │ 设备业务 WSS（可选模式）     ▼
     └──────────────────> Cloud MCP Gateway
                                 │       └─ SQLite：设备登记、绑定、目录、请求与执行事实
                                 │ Desktop 主动建立 WSS
@@ -30,7 +30,7 @@ Desktop 主动连接 Gateway，公网不暴露本地监听端口。Gateway 是�
 
 | 模块 | 目录 | 负责 | 明确不负责 |
 | --- | --- | --- | --- |
-| 固件 | `firmware/` | 配网、设备交互、灵矽录放音；Cloud Gateway 目录与请求接线按固件进度实现 | Codex 执行、Mac 文件授权 |
+| 固件 | `firmware/` | 配网、设备交互、灵矽录放音；可选 Gateway 模式读取目录、正文及处理请求 | Codex 执行、Mac 文件授权 |
 | 共享契约 | `contracts/` | 消息 Envelope、字段、方向、响应配对和错误结构 | 网络传输、业务存储和副作用 |
 | Gateway | `gateway/` | WSS/MCP 接入、认证、设备绑定、目录、查询关联、请求生命周期和 SQLite | 本机路径解析、Codex 调用 |
 | Desktop 主进程 | `desktop/main/` | Electron 生命周期、连接配置、项目/会话注册、Gateway 编排和窗口状态 | Renderer 直接访问 token、文件系统或子进程 |
@@ -44,7 +44,7 @@ Desktop 主动连接 Gateway，公网不暴露本地监听端口。Gateway 是�
 
 | 模块 | 当前负责人 | 规格、运行与验收入口 |
 | --- | --- | --- |
-| 设备固件 | KevinHuo | [固件说明](../firmware/README.md)、[应用与验收边界](../firmware/main/README.md)、[硬件接入](../firmware/hardware/folotoy/ai-passport/README.md) |
+| 设备固件 | KevinHuo | [固件说明](../firmware/README.md)、[应用与验收边界](../firmware/main/README.md)、[Gateway 接线](../firmware/docs/gateway-client.md)、[硬件接入](../firmware/hardware/folotoy/ai-passport/README.md) |
 | Gateway | BoleLiu | [Gateway 说明](../gateway/README.md)、[执行流程与状态](../gateway/docs/execution.md)、[MCP 接入](../gateway/docs/mcp.md) |
 | macOS Desktop | yydounai1234 | [Desktop 说明](../desktop/README.md)、[Gateway / Desktop API](../desktop/GATEWAY_API.md) |
 | 三端字段契约 | 按 Issue #14 组织三端评审 | [共享 Schema 与 fixtures](../contracts/README.md)、[联调说明](../gateway/docs/integration.md) |
@@ -55,11 +55,11 @@ Desktop 主动连接 Gateway，公网不暴露本地监听端口。Gateway 是�
 
 ### 设备请求与本机执行
 
-以下是 Gateway / Desktop 已提供的处理流程，固件和灵矽接线仍需真实环境验收；完整时序、状态与限制见[确认执行说明](../gateway/docs/execution.md)。
+以下处理已在 Gateway / Desktop 及可选固件 Gateway 模式接线，灵矽逐轮透传与完整真实链路仍需环境验收；完整时序、状态与限制见[确认执行说明](../gateway/docs/execution.md)。
 
 1. 设备先通过 `request.prepare` 固定绑定 Desktop 和目标会话，成功后再开始录音。
 2. 灵矽通过 MCP `propose_task_reply` 提交文字，Gateway 校验来源并保存为待确认提案，此时不投递执行任务。
-3. 用户确认后，设备发送 `request.confirm`；Gateway 先保存固定投递身份，再向原 Desktop 发送 `task.dispatch`。重复确认不重复投递。
+3. 固件 Gateway 模式以停录 OK 记录本轮授权，等原文就绪后发送一次 `request.confirm`，不增加二次确认页面；Gateway 先保存固定投递身份，再向原 Desktop 发送 `task.dispatch`。重复确认不重复投递。
 4. Desktop 根据本地保存的项目与会话映射解析目标，校验去重、过期和固定目标；不会把远端绝对路径作为工作目录。已发布会话沿用本机目录，WSS 任务不重复触发项目授权弹窗。
 5. 已有会话由 adapter 执行 `thread/resume`、`turn/start`；固定会话续接失败时明确报错，不静默改成新会话。
 6. ACK 只表示接收，`task.started` 才表示运行；一致成功 TaskResult 才推进 completed，失败或中断按真实事实回传。
@@ -98,7 +98,7 @@ MCP 使用独立凭据，并按主线配置限制设备和智能体；设备 WS 
 
 - Gateway 已提供 WSS 设备/Desktop 入口、动态登记与绑定、目录、历史/正文查询、新消息通知、MCP 提案、确认投递和执行恢复；完整的灵矽逐轮语音闭环仍需真实环境验收。
 - Desktop 已有 Gateway 连接、会话目录同步、任务调度和 Codex app-server 适配；真实线上链路的凭据、网络和 Codex Desktop writer 竞争仍需按部署环境验证。
-- 本仓库固件默认实现直连灵矽录放音，目录与回复仍使用本地演示数据；其中“设备接入网关”不是本项目 Cloud MCP Gateway。设备业务 WSS、真实目录与追问确认流程仍需接线，不能用固件构建或直连灵矽的短流程验收证明三端闭环可用。
+- 固件默认独立模式保留直连灵矽与演示目录；可选 Gateway 模式已有真实绑定、目录、历史正文和准备／确认／恢复接线。灵矽设备接入服务与本项目 Cloud MCP Gateway 分工不同；可选模式已实现也不代表真实平台逐轮透传、实际 Desktop 执行及双 TLS／音频内存峰值已验收。
 
 ## 评审入口
 

@@ -97,6 +97,8 @@ HTTPS 和 WSS 使用证书与主机名校验；网络时间无法满足校验条
 
 以下命令会实际写入设备，应由操作者确认设备、镜像版本和数据影响后执行。设备需通过 USB 数据线连接；先激活 ESP-IDF **5.5.3** 环境，检查 `idf.py --version`，不要直接使用其他版本的工具链。
 
+需要启用真实 Gateway 目录与请求时，先从固件目录执行 `idf.py -B build/device menuconfig`，在“LinX 网络与语音”启用 Gateway，填写自己的 WSS 地址及独立设备凭据；默认关闭时保留独立语音与演示目录。设备身份自动上报，不填写 MAC；配置详情见[Gateway 接入说明](docs/gateway-client.md#部署后配置)。
+
 在仓库根目录进入固件工程，生成可用于烧录的本地构建目录：
 
 ```sh
@@ -129,7 +131,7 @@ idf.py -B build/device -p "$LINX_PORT" app-flash monitor
 idf.py -B build/device -p "$LINX_PORT" monitor
 ```
 
-烧录后按[灵矽配置与操作](#灵矽配置与操作)完成配网和录放音验证。写入成功不代表已接通 Cloud MCP Gateway 或真实 Codex 任务链路。合并镜像 `build/FoloToy-AI-Passport-full.bin` 包含多个区域及中间填充，直接写入可能覆盖 NVS，不应作为保留设备设置的应用更新方式。
+烧录后按[灵矽配置与操作](#灵矽配置与操作)完成配网和录放音验证。写入成功不代表与实际 Cloud MCP Gateway 的连接或真实 Codex 任务链路已验收。合并镜像 `build/FoloToy-AI-Passport-full.bin` 包含多个区域及中间填充，直接写入可能覆盖 NVS，不应作为保留设备设置的应用更新方式。
 
 命令依据 [ESP-IDF 5.5.3 的 idf.py 说明](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32c3/api-guides/tools/idf-py.html)及对应版本的[烧录目标定义](https://github.com/espressif/esp-idf/blob/v5.5.3/components/esptool_py/project_include.cmake)核对。本节补充操作说明，不新增真机烧录或验收记录；历史真机结果见[应用验收记录](main/README.md#验收状态)。
 

@@ -131,4 +131,4 @@ cd firmware
 
 ## 共享协议契约
 
-固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由及 [MCP 文字提案接收](gateway/docs/mcp.md)。固件按正式契约读取内容、处理通知，并在录音前固定目标；灵矽原会话负责 MCP 调用及自然语音反馈，不使用设备直传识别文字或独立播报。接入与限制见[固件接入说明](firmware/docs/gateway-client.md)。
+固件、Gateway、Desktop 与 MCP 的字段定义及离线校验命令见 [contracts/README.md](contracts/README.md)。Gateway 已实现只读路由、[MCP 文字提案接收](gateway/docs/mcp.md)及[用户确认后的投递与执行恢复](gateway/docs/execution.md)。固件按正式契约读取内容、处理通知，并在录音前固定目标；灵矽原会话负责 MCP 调用及自然语音反馈，不使用设备直传识别文字或独立播报。接入与限制见[固件接入说明](firmware/docs/gateway-client.md)。

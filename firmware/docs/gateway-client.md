@@ -69,7 +69,7 @@ ESP32-C3 没有 PSRAM，网络、音频和显示共用内部 RAM。优先减少�
 
 Gateway 默认关闭。在 menuconfig 的“LinX 网络与语音”打开 `LINX_GATEWAY_ENABLE`，填写 `LINX_GATEWAY_URL` 和 `LINX_GATEWAY_TOKEN`。地址和令牌可以在服务部署后再配；未配置时明确显示错误，不连接旧演示服务，也不回退假数据。Wi-Fi 仍使用手机配网。
 
-Gateway 默认只接受 `wss://`。开发服务明确使用 `ws://` 时，需另开默认关闭的 `LINX_GATEWAY_ALLOW_WS`；例如 `ws://124.220.162.10:8787/v1/devices/connect` 使用 TCP，设备 Bearer 令牌和协议内容明文传输。该开关只影响 Gateway；WSS 仍保留证书、主机名和时间校验，灵矽语音始终使用 WSS。
+Gateway 默认只接受 `wss://`。开发服务明确使用 `ws://` 时，需另开默认关闭的 `LINX_GATEWAY_ALLOW_WS`；例如 `ws://gateway.example.com:8787/v1/devices/connect` 中的域名需替换为自己的隔离测试服务；该连接使用 TCP，设备 Bearer 令牌和协议内容明文传输。该开关只影响 Gateway；WSS 仍保留证书、主机名和时间校验，灵矽语音始终使用 WSS。
 
 设备、Desktop、MCP 各用独立凭据。真实 MCP 地址和可信来源头由平台／Gateway 配置，不把令牌放在 URL 或提交到 Git。`sdkconfig` 和固件镜像可能包含凭据，保持本地私有。
 
