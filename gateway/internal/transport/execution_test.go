@@ -2,6 +2,7 @@ package transport
 
 import (
 	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -10,9 +11,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func preparePipeExecution(t *testing.T) (*Server, *websocket.Conn, *websocket.Conn, contracts.DesktopMessage, contracts.TaskDispatchPayload) {
+func preparePipeExecution(t *testing.T, loggers ...*slog.Logger) (*Server, *websocket.Conn, *websocket.Conn, contracts.DesktopMessage, contracts.TaskDispatchPayload) {
 	t.Helper()
-	s, fw, dt := setupPipe(t)
+	s, fw, dt := setupPipe(t, loggers...)
 	pipeWrite(t, fw, firmwareWire("request.prepare", "prepare", map[string]any{"request_id": "execute", "agent_session_id": "sess-1"}))
 	pipeRead(t, fw, "response")
 	if _, err := s.requests.Propose(t.Context(), "AA:BB:CC:DD:EE:01", "execute", "agent", "voice", "继续检查这段代码"); err != nil {
@@ -139,5 +140,62 @@ func TestExecutionPrepareDispatchBoundaries(t *testing.T) {
 	s.conns.UnregisterDesktop("desktop-1", old)
 	if err := delivery.Send(); err == nil {
 		t.Fatal("旧连接不得投递")
+	}
+}
+
+func TestExecutionInteropIncompleteResultRecovery(t *testing.T) {
+	capture := &logCapture{}
+	_, fw, dt, _, payload := preparePipeExecution(t, slog.New(slog.NewJSONHandler(capture, nil)))
+	pipeWrite(t, dt, desktopWire("task.completed", "missing-result", taskPipeEvent(payload, "task.completed", 1)))
+	expectRequestPush(t, fw, "unknown")
+	pipeWrite(t, fw, firmwareWire("request.get", "log-barrier", map[string]any{"request_id": "execute"}))
+	pipeRead(t, fw, "response")
+	records := waitLog(t, capture, "request.notification.enqueued")
+	const reason = "完成事件缺少一致的成功结果，不能确认任务成功"
+	found := false
+	for _, r := range records {
+		if r["event"] == "request.notification.enqueued" && r["status"] == "unknown" {
+			found = true
+			if r["state_error_message"] != reason || r["state_error_redacted"] != false || r["state_error_source"] != "gateway" {
+				t.Fatalf("Gateway 原因被错误归为 Desktop: %+v", r)
+			}
+			if r["body"].(map[string]any)["error"].(map[string]any)["message"] != reason {
+				t.Fatal("body 丢失安全错误原因", r)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("缺少 unknown 诊断")
+	}
+	pipeWrite(t, fw, firmwareWire("request.prepare", "blocked", map[string]any{"request_id": "next", "agent_session_id": "sess-1"}))
+	response := pipeRead(t, fw, "response")
+	var body contracts.FirmwareResponseBody
+	if err := json.Unmarshal(response["payload"], &body); err != nil || body.OK || body.Error == nil || body.Error.Code != "CONFLICT" {
+		t.Fatalf("应保留设备占用: %+v %v", body, err)
+	}
+	records = waitLog(t, capture, "request.state")
+	found = false
+	for _, r := range records {
+		if r["event"] == "request.state" && r["message_id"] == "blocked" {
+			found = true
+			if r["blocking_request_id"] != "execute" || r["blocking_status"] != "unknown" || r["blocking_scope"] != "device_and_session" {
+				t.Fatal("未定位真正占用者", r)
+			}
+			if r["response_body"].(map[string]any)["error"].(map[string]any)["code"] != "CONFLICT" {
+				t.Fatal("失败日志必须记录实际错误响应", r)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("缺少冲突诊断")
+	}
+	fixed := taskPipeEvent(payload, "task.completed", 2)
+	fixed["result"] = map[string]any{"contract_version": "task-result-v1", "status": "succeeded", "summary": "本轮完成", "changes": []any{}, "verification": []any{}, "risks": []any{}, "needs_user_action": nil, "voice_summary": "本轮完成"}
+	pipeWrite(t, dt, desktopWire("task.completed", "corrected-result", fixed))
+	expectRequestPush(t, fw, "completed")
+	pipeWrite(t, fw, firmwareWire("request.prepare", "unblocked", map[string]any{"request_id": "next", "agent_session_id": "sess-1"}))
+	response = pipeRead(t, fw, "response")
+	if err := json.Unmarshal(response["payload"], &body); err != nil || !body.OK {
+		t.Fatalf("恢复后新请求仍失败: %+v %v", body, err)
 	}
 }

@@ -8,7 +8,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/KevinHuo/LinxBox/gateway/internal/config"
+	"github.com/KevinHuo/LinxBox/gateway/internal/contracts"
 	"github.com/KevinHuo/LinxBox/gateway/internal/domain"
+	"github.com/KevinHuo/LinxBox/gateway/internal/service"
+	"github.com/KevinHuo/LinxBox/gateway/internal/storage"
 )
 
 func fieldMap(fields []any) map[string]any {
@@ -111,5 +114,37 @@ func TestReadableErrorDiagnostics(t *testing.T) {
 	}
 	if operationName("unknown") != "处理消息" || traceID(1, "a") == traceID(2, "a") {
 		t.Fatal("未知操作或跨连接追踪错误")
+	}
+}
+
+func TestRequestStateErrorMessagesRemainReadableAndPrivateErrorsStayHidden(t *testing.T) {
+	s := &Server{cfg: &config.Config{}}
+	for _, message := range []string{
+		"任务发送结果不确定，请核对原任务；不会自动重发", "Desktop 未接受任务投递",
+		"完成事件缺少一致的成功结果，不能确认任务成功", "Desktop 报告任务执行失败，请在电脑端查看详情",
+		"Desktop 报告任务中断，结果未确认；不会自动重发", "任务需要在电脑端处理审批，当前入口不自动授权",
+		"连接中断或 Gateway 重启，执行结果未确认；不会自动重发",
+	} {
+		if got, hidden := publicErrorMessage(message); got != message || hidden {
+			t.Fatal("已知状态原因不能被隐藏", got, hidden)
+		}
+		fields := fieldMap(s.logValueFields("body", contracts.Request{Error: &contracts.Error{Code: "DEPENDENCY_UNAVAILABLE", Message: message}}))
+		if fields["body"].(map[string]any)["error"].(map[string]any)["message"] != message {
+			t.Fatal(fields)
+		}
+	}
+	const secret = "Desktop unexpected error /private/project token=secret-value"
+	if got, hidden := publicErrorMessage(secret); !hidden || strings.Contains(got, "secret-value") || strings.Contains(got, "/private/project") {
+		t.Fatal("未知对端错误仍须脱敏", got)
+	}
+	conflict := domain.WrapError(domain.CodeConflict, "设备或目标会话存在未结束请求", &service.RequestConflict{
+		TargetStatus: "idle", Blockers: []storage.RequestBlocker{
+			{RequestID: "old-device", Status: "unknown", Scope: "device"},
+			{RequestID: "old-session", Status: "running", Scope: "session"},
+		},
+	})
+	fields := fieldMap(errorFields(conflict, "gateway"))
+	if fields["blocking_request_id"] != "old-device" || fields["blocking_request_id_2"] != "old-session" || fields["blocking_scope_2"] != "session" || fields["blocking_request_count"] != 2 {
+		t.Fatal("两种占用应分别定位", fields)
 	}
 }

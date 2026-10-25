@@ -20,6 +20,14 @@ type RequestNotifier interface {
 	NotifyRequest(deviceID, event string, request contracts.Request)
 }
 
+// RequestConflict 是内部排查信息，不扩展固件的共享 Error 字段。
+type RequestConflict struct {
+	Blockers     []storage.RequestBlocker
+	TargetStatus string
+}
+
+func (*RequestConflict) Error() string { return "设备或目标会话存在未结束请求" }
+
 // RequestService 实现 #14 的准备、原文、确认投递与执行事实持久化。
 // 锁覆盖提交与通知，避免同一进程中旧通知越过取消/过期事件。
 type RequestService struct {
@@ -79,12 +87,13 @@ func (s *RequestService) Prepare(ctx context.Context, device domain.DeviceID, id
 		if err != nil {
 			return err
 		}
-		busy, err := s.requests.Busy(ctx, tx, string(device), binding.DesktopClientID, session)
+		blockers, err := s.requests.Blockers(ctx, tx, string(device), binding.DesktopClientID, session)
 		if err != nil {
 			return err
 		}
-		if busy || target.Status == "running" || target.Status == "unknown" {
-			return domain.ErrConflict("设备或目标会话存在未结束请求")
+		if len(blockers) > 0 || target.Status == "running" || target.Status == "unknown" {
+			return domain.WrapError(domain.CodeConflict, "设备或目标会话存在未结束请求",
+				&RequestConflict{Blockers: blockers, TargetStatus: target.Status})
 		}
 		r := &storage.RequestRow{
 			Request:  contracts.Request{RequestID: id, AgentSessionID: session, TargetTitle: target.Title, Status: "awaiting_text"},

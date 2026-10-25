@@ -179,7 +179,11 @@ func (s *Server) dispatchFirmwareMessage(ctx context.Context, wsConn *lifecycle.
 			sessionID = payload.AgentSessionID
 		}
 		fields := []any{"direction", "Gateway→固件", "device_id", p.DeviceID, "request_id", payload.RequestID, "agent_session_id", sessionID, "status", request.Status, "duration_ms", elapsedMillis(started)}
-		fields = append(fields, s.logValueFields("response_body", request)...)
+		response := contracts.FirmwareResponseBody{OK: err == nil, Data: request}
+		if err != nil {
+			response.Data, response.Error = nil, wireError(err)
+		}
+		fields = append(fields, s.logValueFields("response_body", response)...)
 		s.logOperation("request.state", wsConn, msg.Type, msg.ID, err, fields...)
 		s.respondFirmware(wsConn, msg.Type, msg.ID, request, err)
 	default:

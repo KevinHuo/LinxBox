@@ -161,8 +161,8 @@ func (s *Server) NotifyRequest(deviceID, event string, request contracts.Request
 	}
 	fields = append(fields, s.logValueFields("body", request)...)
 	if request.Error != nil {
-		message, redacted := peerErrorMessage(request.Error.Message)
-		fields = append(fields, "state_error_code", request.Error.Code, "state_error_message", message, "state_error_redacted", redacted)
+		message, redacted := publicErrorMessage(request.Error.Message)
+		fields = append(fields, "state_error_code", request.Error.Code, "state_error_message", message, "state_error_source", "gateway", "state_error_redacted", redacted)
 	}
 	conn := s.conns.Device(deviceID)
 	if conn == nil {

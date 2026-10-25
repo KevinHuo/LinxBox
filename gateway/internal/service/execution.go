@@ -13,6 +13,9 @@ import (
 	"github.com/KevinHuo/LinxBox/gateway/internal/storage"
 )
 
+// 保持与已部署版本的持久错误文案一致，用于识别旧库中误设 terminal 的记录。
+const incompleteCompletionMessage = "完成事件缺少一致的成功结果，不能确认任务成功"
+
 // TaskDelivery 在落盘前准备已校验的帧；Send 只能在确认事务成功后调用一次。
 type TaskDelivery struct {
 	MessageID  string
@@ -232,8 +235,15 @@ func (s *RequestService) applyEvent(ctx context.Context, tx *sql.Tx, msg contrac
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
-	if execution.Terminal || event.EventSequence <= execution.LastEvent {
+	// 旧版本曾将缺少成功结果的 completed 错标为 terminal。只为这个
+	// 可辨识的 unknown 接受原任务后续终态事实；真实 interrupted 等终态仍不可覆盖。
+	pendingCompletion := request.Status == "unknown" && request.Error != nil &&
+		request.Error.Code == "DEPENDENCY_UNAVAILABLE" && request.Error.Message == incompleteCompletionMessage
+	if (execution.Terminal && !pendingCompletion) || event.EventSequence <= execution.LastEvent {
 		return false, domain.ErrConflict("任务事件已结束或序号过期")
+	}
+	if pendingCompletion && msg.Type != "task.completed" && msg.Type != "task.failed" && msg.Type != "task.cancelled" && msg.Type != "task.interrupted" {
+		return false, domain.ErrConflict("完成结果待核实，只接受原任务后续终态事实")
 	}
 	if event.ThreadID != nil && *event.ThreadID != request.ThreadID {
 		return false, domain.ErrConflict("执行事件不属于固定 thread")
@@ -263,12 +273,12 @@ func (s *RequestService) applyEvent(ctx context.Context, tx *sql.Tx, msg contrac
 		valid = identity && execution.TurnID != "" && event.State == "running" && event.Error == nil && result.Status == ""
 	case "task.completed":
 		valid = identity && event.State == "succeeded" && event.Error == nil
-		if result.Status == "succeeded" {
+		execution.Terminal = result.Status == "succeeded"
+		if execution.Terminal {
 			request.Status, request.Error = "completed", nil
 		} else {
-			request.Status, request.Error = "unknown", executionUnknown("完成事件缺少一致的成功结果，不能确认任务成功")
+			request.Status, request.Error = "unknown", executionUnknown(incompleteCompletionMessage)
 		}
-		execution.Terminal = true
 	case "task.failed":
 		valid = event.State == "failed" && event.Error != nil && (result.Status == "" || result.Status == "failed" || result.Status == "rejected")
 		request.Status, request.Error = "failed", &contracts.Error{Code: "DEPENDENCY_UNAVAILABLE", Message: "Desktop 报告任务执行失败，请在电脑端查看详情"}
