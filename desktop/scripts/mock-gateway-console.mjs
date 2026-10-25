@@ -78,6 +78,12 @@ export function buildCancelFrame(taskId, reason = '用户在控制台取消') {
   };
 }
 
+export function buildGatewayTestFrame(type, payload) {
+  const now = Date.now();
+  return { protocol_version: '1.0', message_id: `msg_ui_${now.toString(36)}_gateway`, sequence: now,
+    type, sent_at: new Date(now).toISOString(), payload };
+}
+
 /** Acknowledge one replace-all session catalogue from the Desktop. */
 export function buildAgentSessionsSyncResult(syncFrame, ok = true, message = '') {
   const now = Date.now();
@@ -341,9 +347,18 @@ export async function startMockGatewayConsole(options = {}) {
           return;
         }
 
-        const kind = payload.kind === 'cancel' ? 'cancel' : 'dispatch';
+        const gatewayKinds = new Set(['messages.list', 'message.content.get', 'project.upsert', 'project.revoke']);
+        const kind = gatewayKinds.has(payload.kind) ? payload.kind : payload.kind === 'cancel' ? 'cancel' : 'dispatch';
         let frame;
-        if (kind === 'cancel') {
+        if (gatewayKinds.has(kind)) {
+          const defaults = {
+            'messages.list': { agent_session_id: payload.agent_session_id ?? agentSessions[0]?.agent_session_id ?? 'codex_missing' },
+            'message.content.get': { agent_session_id: payload.agent_session_id ?? agentSessions[0]?.agent_session_id ?? 'codex_missing', message_id: payload.message_id ?? 'msg_missing', offset: 0 },
+            'project.upsert': { project_id: payload.project_id ?? 'prj_demo_0001', display_name: payload.display_name ?? 'LinxBox', capabilities: ['read', 'write', 'test'], availability: 'online', grant_version: Number(payload.grant_version ?? 1) },
+            'project.revoke': { project_id: payload.project_id ?? 'prj_demo_0001', grant_version: Number(payload.grant_version ?? 1), revoked_at: new Date().toISOString() },
+          };
+          frame = buildGatewayTestFrame(kind, { ...defaults[kind], ...payload.payload });
+        } else if (kind === 'cancel') {
           frame = buildCancelFrame(payload.task_id ?? '', payload.reason ?? '用户在控制台取消');
         } else {
           const requested = payload.agent_session_id;

@@ -197,6 +197,21 @@
         font-weight: 700;
       }
 
+      .gateway-test-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+
+      .gateway-test-actions strong {
+        grid-column: 1 / -1;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
       /* ---------- 主体 ---------- */
       main {
         display: grid;
@@ -539,6 +554,13 @@
             <button class="btn btn-primary dispatch-primary" id="btn-dispatch" type="button" style="width: 100%">
               下达测试指令
             </button>
+            <div class="gateway-test-actions">
+              <strong>Gateway → Electron 契约测试</strong>
+              <button class="btn" type="button" data-gateway-kind="messages.list">查询消息目录</button>
+              <button class="btn" type="button" data-gateway-kind="message.content.get">查询消息正文</button>
+              <button class="btn" type="button" data-gateway-kind="project.upsert">推送项目更新</button>
+              <button class="btn" type="button" data-gateway-kind="project.revoke">推送项目撤销</button>
+            </div>
             <p class="hint" style="margin-top: 10px">
               下发的帧会走真实的 Gateway/Desktop 1.0 校验。Desktop 回传的
               <code>task.ack</code> 与任务事件会出现在左侧消息流里。
@@ -755,6 +777,14 @@
         }
         const result = await post('/api/dispatch', { kind: 'cancel', task_id: taskId });
         toast(result.ok ? '已下达 task.cancel' : result.message || '下达失败');
+      });
+
+      document.querySelectorAll('[data-gateway-kind]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const kind = button.dataset.gatewayKind;
+          const result = await post('/api/dispatch', { kind });
+          toast(result.ok ? `已发送 ${kind}` : result.message || '发送失败');
+        });
       });
 
       function setConnected(connected) {
