@@ -321,8 +321,9 @@ export class GatewayConnectionManager {
     const client = this.client;
     if (!client) return;
     try {
-      if (!this.agentSessions.has(frame.payload.agent_session_id)) throw new Error('会话不属于当前 Desktop');
-      const session = await this.options.session.readSession(frame.payload.agent_session_id);
+      const published = this.agentSessions.get(frame.payload.agent_session_id);
+      if (published === undefined) throw new Error('会话不属于当前 Desktop');
+      const session = await this.options.session.readSession(published.threadId);
       if (!session) throw new Error('会话不存在');
       if (frame.type === 'messages.list') {
         const items = session.turns.flatMap((turn) => turn.messages)
